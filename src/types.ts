@@ -22,6 +22,11 @@ export interface SongMetadata {
   measures: number;
 }
 
+export interface ImportedSong extends SongMetadata {
+  notes: TabNote[];
+  sourceFileName: string;
+}
+
 export interface FeedbackData {
   matchType: 'HIT' | 'CLOSE' | 'WRONG' | 'MISS';
   headline: 'PERFECT' | 'GOOD' | 'CLOSE' | 'WRONG NOTE' | 'MISSED';
