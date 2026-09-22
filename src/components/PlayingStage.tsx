@@ -19,7 +19,7 @@ import {
   ShieldCheck,
   Info,
 } from 'lucide-react';
-import { TabNote, SongMetadata, FeedbackData } from '../types';
+import { TabNote, SongMetadata, FeedbackData, SongSection } from '../types';
 import { GuitarTuner } from './GuitarTuner';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector } from '../utils/pitchDetector';
@@ -28,6 +28,7 @@ import { SONG_CATALOG, SONG_TABS } from '../data/songTabs';
 interface PlayingStageProps {
   selectedSong?: SongMetadata | null;
   selectedNotes?: TabNote[] | null;
+  selectedSections?: SongSection[] | null;
   onOpenLibrary: () => void;
 }
 
@@ -98,9 +99,15 @@ function getExpectedNoteName(stringNum: number, fret: number): string {
   return getNoteNameFromMidi(getExpectedMidi(stringNum, fret));
 }
 
-export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, selectedNotes, onOpenLibrary }) => {
+export const PlayingStage: React.FC<PlayingStageProps> = ({
+  selectedSong,
+  selectedNotes,
+  selectedSections,
+  onOpenLibrary,
+}) => {
   const activeSong = selectedSong || SONG_CATALOG[0];
   const currentSongDurationMs = activeSong.durationMs || TOTAL_SONG_DURATION_MS;
+  const songSections = selectedSections && selectedSections.length > 0 ? selectedSections : [];
   const activeTabList =
     selectedNotes && selectedNotes.length > 0
       ? selectedNotes
@@ -605,6 +612,9 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, select
       hitState: undefined,
     })),
   ];
+  const activeSection = songSections.find(
+    (section) => playbackMs >= section.startMs && playbackMs <= section.endMs
+  );
 
   return (
     <div
@@ -1198,6 +1208,67 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, select
           </div>
         </div>
       </main>
+
+      {/* Song Structure Map */}
+      {songSections.length > 0 && (
+        <div
+          id="song-section-map"
+          className="px-5 py-2 bg-[#070A10] border-t border-[#151D2A] shrink-0"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#00E5BE]">
+                Song Map
+              </span>
+              {activeSection && (
+                <span className="text-[11px] text-white font-bold bg-[#101A28] border border-[#263850] px-2 py-0.5 rounded-full">
+                  Сега: {activeSection.name}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] text-[#5C7189] font-mono">
+              {songSections.length} части • клик за упражняване
+            </span>
+          </div>
+          <div className="flex h-8 rounded-xl overflow-hidden border border-[#1E2B3E] bg-[#0E1420]">
+            {songSections.map((section, index) => {
+              const width = Math.max(
+                7,
+                ((section.endMs - section.startMs) / Math.max(1, noteSequenceDurationMs)) * 100
+              );
+              const isActive = activeSection?.id === section.id;
+              const isPast = playbackMs > section.endMs;
+
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => seekTo(section.startMs)}
+                  className={`relative h-full px-2 text-[10px] font-black uppercase tracking-wide border-r border-[#070A10] transition cursor-pointer overflow-hidden ${
+                    isActive
+                      ? 'bg-[#00E5BE] text-[#061014] shadow-[0_0_16px_rgba(0,229,190,0.35)]'
+                      : isPast
+                      ? 'bg-[#173024] text-[#80EBCF]'
+                      : 'bg-[#121B2A] text-[#8DA1B8] hover:bg-[#18263A] hover:text-white'
+                  }`}
+                  style={{ flexBasis: `${width}%` }}
+                  title={`${section.name}: тактове ${section.startMeasure}-${section.endMeasure}`}
+                >
+                  <span className="relative z-10 truncate block">
+                    {section.name}
+                  </span>
+                  {section.confidence === 'marker' && (
+                    <span className="absolute right-1 top-1 w-1.5 h-1.5 rounded-full bg-white/80" />
+                  )}
+                  {index === 0 && (
+                    <span className="absolute left-1 bottom-0.5 text-[8px] opacity-60">M{section.startMeasure}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Song Timeline & Scrub Bar */}
       <div
