@@ -1,4 +1,4 @@
-// Real-time Web Audio Pitch Detector using Normalized Autocorrelation (McLeod / YIN)
+// Low-latency guitar detector: AudioWorklet capture + event-driven pitch analysis.
 export interface PitchResult {
   frequency: number;
   noteName: string;
@@ -6,26 +6,36 @@ export interface PitchResult {
   cents: number;
   volumeRms: number;
   inTune: boolean;
+  audioTimeMs: number;
+  onset: boolean;
+  confidence: number;
   stringIndex?: number;
   fret?: number;
 }
+
+type PitchListener = (result: PitchResult | null) => void;
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export class MicrophonePitchDetector {
   private audioContext: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
   private mediaStream: MediaStream | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private buffer: Float32Array = new Float32Array(2048);
+  private workletNode: AudioWorkletNode | null = null;
+  private silentGain: GainNode | null = null;
   private isListening = false;
-  // Guitar-friendly noise threshold: 0.005 lets acoustic & unplugged electric plucks register cleanly
   private noiseThreshold = 0.005;
-  private speakerMuteUntil = 0;
   private lastRms = 0;
+  private latestResult: PitchResult | null = null;
+  private listeners = new Set<PitchListener>();
+  private estimatedInputLatencyMs = 0;
 
   setNoiseThreshold(threshold: number) {
     this.noiseThreshold = Math.max(0.001, Math.min(0.05, threshold));
+    this.workletNode?.port.postMessage({
+      type: 'threshold',
+      value: this.noiseThreshold,
+    });
   }
 
   getNoiseThreshold(): number {
@@ -36,193 +46,222 @@ export class MicrophonePitchDetector {
     return this.lastRms;
   }
 
-  // Prevent speaker-to-microphone acoustic feedback loops
+  getEstimatedInputLatencyMs(): number {
+    return this.estimatedInputLatencyMs;
+  }
+
+  subscribe(listener: PitchListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private emit(result: PitchResult | null) {
+    for (const listener of this.listeners) listener(result);
+  }
+
   notifySpeakerPlayed(refractoryMs = 350) {
-    this.speakerMuteUntil = Date.now() + refractoryMs;
+    this.workletNode?.port.postMessage({
+      type: 'mute',
+      durationMs: refractoryMs,
+    });
   }
 
   async startListening(): Promise<boolean> {
     try {
-      if (this.isListening && this.audioContext && this.audioContext.state === 'running') {
-        return true;
-      }
+      if (this.isListening && this.audioContext?.state === 'running') return true;
 
       const AudioCtx =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.audioContext = new AudioCtx();
+
+      this.audioContext = new AudioCtx({
+        latencyHint: 'interactive',
+      });
+
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
 
-      // CRITICAL FOR MUSICAL INSTRUMENTS:
-      // Voice filters (echoCancellation, noiseSuppression) distort guitar harmonics and mute plucks!
-      // Raw audio delivers the true musical acoustic waveform into Web Audio.
       try {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
-            latency: 0,
+            channelCount: 1,
+            sampleRate: { ideal: 48000 },
+            latency: { ideal: 0.01 },
           } as MediaTrackConstraints,
         });
       } catch {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
 
+      await this.audioContext.audioWorklet.addModule(
+        `${import.meta.env.BASE_URL}pitch-worklet.js`
+      );
+
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-      this.analyser.smoothingTimeConstant = 0.2;
-      this.sourceNode.connect(this.analyser);
-      this.buffer = new Float32Array(this.analyser.fftSize);
+      this.workletNode = new AudioWorkletNode(
+        this.audioContext,
+        'guitar-pitch-processor',
+        {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          processorOptions: { noiseThreshold: this.noiseThreshold },
+        }
+      );
+
+      // Keep the worklet graph alive without feeding microphone audio to speakers.
+      this.silentGain = this.audioContext.createGain();
+      this.silentGain.gain.value = 0;
+      this.sourceNode.connect(this.workletNode);
+      this.workletNode.connect(this.silentGain);
+      this.silentGain.connect(this.audioContext.destination);
+
+      const trackLatency =
+        this.mediaStream.getAudioTracks()[0]?.getSettings().latency || 0;
+      this.estimatedInputLatencyMs = Math.round(
+        (trackLatency + this.audioContext.baseLatency) * 1000
+      );
+
+      this.workletNode.port.onmessage = (event) => {
+        const message = event.data;
+        if (message?.type === 'level') {
+          this.lastRms = message.rms;
+          return;
+        }
+        if (message?.type !== 'samples') return;
+
+        this.lastRms = message.rms;
+        const result = this.analysePitch(
+          message.samples as Float32Array,
+          this.audioContext!.sampleRate,
+          message.rms,
+          message.audioTimeMs,
+          message.onset
+        );
+        this.latestResult = result;
+        this.emit(result);
+      };
+
       this.isListening = true;
       return true;
-    } catch (err) {
-      console.warn('Microphone access denied or unavailable:', err);
-      this.isListening = false;
+    } catch (error) {
+      console.warn('Microphone access denied or unavailable:', error);
+      this.stopListening();
       return false;
     }
   }
 
   stopListening() {
     this.isListening = false;
-    if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach((track) => track.stop());
-      this.mediaStream = null;
-    }
+    this.workletNode?.disconnect();
+    this.sourceNode?.disconnect();
+    this.silentGain?.disconnect();
+    this.workletNode = null;
+    this.sourceNode = null;
+    this.silentGain = null;
+
+    this.mediaStream?.getTracks().forEach((track) => track.stop());
+    this.mediaStream = null;
+
     if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close();
-      this.audioContext = null;
+      void this.audioContext.close();
     }
+    this.audioContext = null;
+    this.latestResult = null;
   }
 
   getIsListening(): boolean {
     return this.isListening;
   }
 
+  // Kept for compatibility with tuner code; event subscribers are preferred.
   detectPitch(): PitchResult | null {
-    if (!this.isListening || !this.analyser || !this.audioContext) {
-      return null;
-    }
+    const result = this.latestResult;
+    this.latestResult = null;
+    return result;
+  }
 
-    // Ignore audio if speaker sound was recently played (prevents feedback loops)
-    if (Date.now() < this.speakerMuteUntil) {
-      return null;
-    }
+  private analysePitch(
+    buffer: Float32Array,
+    sampleRate: number,
+    rms: number,
+    audioTimeMs: number,
+    onset: boolean
+  ): PitchResult | null {
+    if (rms < this.noiseThreshold) return null;
 
-    if (this.audioContext.state === 'suspended') {
-      this.audioContext.resume();
-    }
+    const minPeriod = Math.floor(sampleRate / 1350);
+    const maxPeriod = Math.min(
+      Math.floor(sampleRate / 68),
+      Math.floor(buffer.length / 2)
+    );
 
-    this.analyser.getFloatTimeDomainData(this.buffer as unknown as Float32Array<ArrayBuffer>);
-
-    // Compute RMS signal volume
-    let sumSquares = 0;
-    for (let i = 0; i < this.buffer.length; i++) {
-      const val = this.buffer[i];
-      sumSquares += val * val;
-    }
-    const rms = Math.sqrt(sumSquares / this.buffer.length);
-    this.lastRms = rms;
-
-    // Filter silence and background room hum
-    if (rms < this.noiseThreshold) {
-      return null;
-    }
-
-    const sampleRate = this.audioContext.sampleRate;
-    const minPeriod = Math.floor(sampleRate / 1350); // Up to ~1350 Hz (high guitar frets)
-    const maxPeriod = Math.floor(sampleRate / 68);   // Down to ~68 Hz (Low E, Drop D, Low C)
-
-    // Normalized Autocorrelation with step optimization
     let bestCorrelation = 0;
     let bestPeriod = -1;
+    const correlations = new Float32Array(maxPeriod + 2);
 
     for (let period = minPeriod; period <= maxPeriod; period++) {
       let sumProd = 0;
       let energy1 = 0;
       let energy2 = 0;
-      const len = this.buffer.length - period;
+      const length = buffer.length - period;
 
-      for (let i = 0; i < len; i += 2) {
-        const x1 = this.buffer[i];
-        const x2 = this.buffer[i + period];
+      for (let i = 0; i < length; i += 2) {
+        const x1 = buffer[i];
+        const x2 = buffer[i + period];
         sumProd += x1 * x2;
         energy1 += x1 * x1;
         energy2 += x2 * x2;
       }
 
       const denominator = Math.sqrt(energy1 * energy2);
-      const normCorrelation = denominator > 0 ? sumProd / denominator : 0;
+      const correlation = denominator > 0 ? sumProd / denominator : 0;
+      correlations[period] = correlation;
 
-      if (normCorrelation > bestCorrelation) {
-        bestCorrelation = normCorrelation;
+      if (correlation > bestCorrelation) {
+        bestCorrelation = correlation;
         bestPeriod = period;
       }
     }
 
-    // Correlation threshold: 0.48 reliably captures guitar plucks while rejecting random hiss
-    if (bestPeriod === -1 || bestCorrelation < 0.48) {
-      return null;
-    }
+    if (bestPeriod < 0 || bestCorrelation < 0.52) return null;
 
-    // Parabolic interpolation around peak for micro-tuning cents accuracy
     let adjustedPeriod = bestPeriod;
     if (bestPeriod > minPeriod && bestPeriod < maxPeriod) {
-      const cPrev = this.getNormalizedCorrelation(bestPeriod - 1);
-      const cCurr = bestCorrelation;
-      const cNext = this.getNormalizedCorrelation(bestPeriod + 1);
-      const denom = 2 * (2 * cCurr - cNext - cPrev);
-      if (denom !== 0) {
-        const shift = (cNext - cPrev) / denom;
-        if (Math.abs(shift) < 1) {
-          adjustedPeriod += shift;
-        }
+      const previous = correlations[bestPeriod - 1];
+      const current = correlations[bestPeriod];
+      const next = correlations[bestPeriod + 1];
+      const denominator = 2 * (2 * current - next - previous);
+      if (denominator !== 0) {
+        const shift = (next - previous) / denominator;
+        if (Math.abs(shift) < 1) adjustedPeriod += shift;
       }
     }
 
     const frequency = sampleRate / adjustedPeriod;
-    if (frequency < 65 || frequency > 1400) {
-      return null;
-    }
+    if (frequency < 65 || frequency > 1400) return null;
 
-    // Convert frequency to MIDI number: 69 + 12 * log2(freq / 440)
     const midiExact = 69 + 12 * Math.log2(frequency / 440);
-    const midiRound = Math.round(midiExact);
-    const cents = Math.round((midiExact - midiRound) * 100);
-
-    const noteIndex = ((midiRound % 12) + 12) % 12;
-    const octave = Math.floor(midiRound / 12) - 1;
-    const noteName = `${NOTE_NAMES[noteIndex]}${octave}`;
+    const midiNumber = Math.round(midiExact);
+    const cents = Math.round((midiExact - midiNumber) * 100);
+    const noteIndex = ((midiNumber % 12) + 12) % 12;
+    const octave = Math.floor(midiNumber / 12) - 1;
 
     return {
       frequency,
-      noteName,
-      midiNumber: midiRound,
+      noteName: `${NOTE_NAMES[noteIndex]}${octave}`,
+      midiNumber,
       cents,
       volumeRms: rms,
       inTune: Math.abs(cents) <= 20,
+      audioTimeMs,
+      onset,
+      confidence: bestCorrelation,
     };
-  }
-
-  private getNormalizedCorrelation(period: number): number {
-    let sumProd = 0;
-    let energy1 = 0;
-    let energy2 = 0;
-    const len = this.buffer.length - period;
-    for (let i = 0; i < len; i++) {
-      const x1 = this.buffer[i];
-      const x2 = this.buffer[i + period];
-      sumProd += x1 * x2;
-      energy1 += x1 * x1;
-      energy2 += x2 * x2;
-    }
-    const denom = Math.sqrt(energy1 * energy2);
-    return denom > 0 ? sumProd / denom : 0;
   }
 }
 
