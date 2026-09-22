@@ -583,6 +583,18 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
   const ballStringIndex = currentApproachingNote ? currentApproachingNote.string - 1 : 2;
   const ballYPercent = (ballStringIndex + 0.5) * (100 / 6);
 
+  // Pre-render the next loop before the current one ends, so new notes are
+  // already entering from the right instead of leaving an empty highway.
+  const scrollingNotes: TabNote[] = [
+    ...notes,
+    ...notes.map((note) => ({
+      ...note,
+      id: `${note.id}-next-loop`,
+      timestampMs: note.timestampMs + noteSequenceDurationMs,
+      hitState: undefined,
+    })),
+  ];
+
   return (
     <div
       id="playing-stage-container"
@@ -1071,7 +1083,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
 
           {/* Animated Scrolling Notes with Sustain Trails */}
           <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
-            {notes.map((note) => {
+            {scrollingNotes.map((note) => {
               const diffMs = note.timestampMs - playbackMs;
               const xPercent =
                 hitZoneFraction * 100 + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * 100);
