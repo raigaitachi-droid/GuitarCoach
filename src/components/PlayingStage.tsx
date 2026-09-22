@@ -1100,13 +1100,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
               return (
                 <div
                   key={note.id}
-                  className={`absolute flex items-center transition-all ${
+                  className={`absolute flex items-center ${
                     isMiss ? 'opacity-95' : isPast && !isHit ? 'opacity-35' : 'opacity-100'
                   }`}
                   style={{
                     left: `${xPercent}%`,
                     top: `${yPercent}%`,
                     height: `${noteHeightPercent}%`,
+                    willChange: 'left',
                   }}
                 >
                   {/* Translucent Sustain Trail Ribbon */}
