@@ -288,6 +288,19 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
           const next = prev + delta * tempoFactor;
           if (next >= currentSongDurationMs) {
             setIsPlaying(false);
+            const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
+            setNotes(tabList.map((n) => ({ ...n })));
+            setIsFrozenWaiting(false);
+            setActiveTargetNote(null);
+            setFeedback(null);
+            setParticles([]);
+            setActiveFlashes({});
+            setMissFlash(false);
+            setStreak(0);
+            setMultiplier(1);
+            setScore(0);
+            setStars(0);
+            setStats({ hits: 0, close: 0, misses: 0 });
             return 0;
           }
           return next;
@@ -1206,6 +1219,11 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
               const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
               setNotes(tabList.map((n) => ({ ...n })));
               setIsFrozenWaiting(false);
+              setActiveTargetNote(null);
+              setFeedback(null);
+              setParticles([]);
+              setActiveFlashes({});
+              setMissFlash(false);
               setStreak(0);
               setMultiplier(1);
               setScore(0);
