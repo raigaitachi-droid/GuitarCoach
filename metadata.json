@@ -1,0 +1,6 @@
+{
+  "name": "Guitar Trainer",
+  "description": "Desktop guitar practice and tab training application with real-time pitch detection, precision timing feedback, and modern visual design.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
