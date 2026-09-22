@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
-import { Search, Play, ArrowLeft, Mic, SlidersHorizontal, Award, Music, Sparkles } from 'lucide-react';
-import { SongMetadata } from '../types';
+import React, { useRef, useState } from 'react';
+import { Search, Play, ArrowLeft, SlidersHorizontal, Award, UploadCloud, FileMusic, LoaderCircle } from 'lucide-react';
+import { ImportedSong, SongMetadata } from '../types';
+import { importGuitarProFile, isSupportedGuitarProFile } from '../utils/guitarProImporter';
 
 interface SongMenuProps {
   onSelectSong: (song: SongMetadata) => void;
+  onImportSong: (song: ImportedSong) => void;
+  importedSongs: ImportedSong[];
   onBackToStage: () => void;
 }
 
@@ -88,12 +91,41 @@ const SAMPLE_SONGS: SongMetadata[] = [
   },
 ];
 
-export const SongMenu: React.FC<SongMenuProps> = ({ onSelectSong, onBackToStage }) => {
+export const SongMenu: React.FC<SongMenuProps> = ({
+  onSelectSong,
+  onImportSong,
+  importedSongs,
+  onBackToStage,
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [sortMode, setSortMode] = useState<'name' | 'tempo' | 'accuracy'>('name');
+  const [isDragging, setIsDragging] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredSongs = SAMPLE_SONGS.filter(
+  const handleFile = async (file: File) => {
+    setImportError(null);
+    if (!isSupportedGuitarProFile(file)) {
+      setImportError('Изберете Guitar Pro файл: .gp, .gpx, .gp3, .gp4 или .gp5');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const importedSong = await importGuitarProFile(file);
+      onImportSong(importedSong);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Файлът не можа да бъде импортиран.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const allSongs: SongMetadata[] = [...importedSongs, ...SAMPLE_SONGS];
+
+  const filteredSongs = allSongs.filter(
     (s) =>
       s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.artist.toLowerCase().includes(searchQuery.toLowerCase())
@@ -154,6 +186,77 @@ export const SongMenu: React.FC<SongMenuProps> = ({ onSelectSong, onBackToStage 
 
       {/* Songs List */}
       <main id="menu-song-list" className="flex-1 overflow-y-auto px-8 py-6 space-y-3">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".gp,.gpx,.gp3,.gp4,.gp5"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void handleFile(file);
+            event.currentTarget.value = '';
+          }}
+        />
+
+        <button
+          type="button"
+          id="guitar-pro-drop-zone"
+          onClick={() => fileInputRef.current?.click()}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+              setIsDragging(false);
+            }
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setIsDragging(false);
+            const file = event.dataTransfer.files?.[0];
+            if (file) void handleFile(file);
+          }}
+          className={`w-full min-h-28 rounded-2xl border-2 border-dashed flex items-center justify-center gap-4 px-6 transition cursor-pointer ${
+            isDragging
+              ? 'bg-[#00E5BE]/15 border-[#00E5BE] scale-[1.01]'
+              : 'bg-[#0D1520] border-[#2A3D54] hover:border-[#00E5BE]/70 hover:bg-[#101B28]'
+          }`}
+        >
+          <div className="w-12 h-12 rounded-2xl bg-[#00E5BE]/15 border border-[#00E5BE]/30 flex items-center justify-center text-[#00E5BE]">
+            {isImporting ? (
+              <LoaderCircle className="w-6 h-6 animate-spin" />
+            ) : (
+              <UploadCloud className="w-6 h-6" />
+            )}
+          </div>
+          <div className="text-left">
+            <div className="text-sm font-black text-white">
+              {isImporting ? 'Импортиране на таблатурата...' : 'Пуснете Guitar Pro файл тук'}
+            </div>
+            <div className="text-xs text-[#7F94AC] mt-1">
+              или кликнете за избор • .gp, .gpx, .gp3, .gp4, .gp5
+            </div>
+          </div>
+        </button>
+
+        {importError && (
+          <div className="px-4 py-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/40 text-[#FF9A9A] text-xs font-bold">
+            {importError}
+          </div>
+        )}
+
+        {importedSongs.length > 0 && (
+          <div className="flex items-center gap-2 pt-2 text-[11px] font-black uppercase tracking-wider text-[#00E5BE]">
+            <FileMusic className="w-4 h-4" />
+            <span>Моите таблатури ({importedSongs.length})</span>
+          </div>
+        )}
         {filteredSongs.map((song, idx) => {
           const isSelected = idx === selectedIndex;
 
