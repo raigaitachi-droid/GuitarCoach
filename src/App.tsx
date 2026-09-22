@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { PlayingStage } from './components/PlayingStage';
 import { SongMenu } from './components/SongMenu';
 import { DesktopGuide } from './components/DesktopGuide';
-import { ImportedSong, SongMetadata, TabNote } from './types';
-import { Play, Music, Terminal, Layers } from 'lucide-react';
+import { ImportedSong, SongMetadata, SongSection, TabNote } from './types';
+import { Play, Music, Terminal } from 'lucide-react';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'stage' | 'menu' | 'guide'>('stage');
   const [selectedSong, setSelectedSong] = useState<SongMetadata | null>(null);
   const [selectedNotes, setSelectedNotes] = useState<TabNote[] | null>(null);
+  const [selectedSections, setSelectedSections] = useState<SongSection[] | null>(null);
   const [importedSongs, setImportedSongs] = useState<ImportedSong[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('guitar-coach-imported-songs') || '[]');
@@ -21,6 +22,7 @@ export default function App() {
     setSelectedSong(song);
     const imported = importedSongs.find((candidate) => candidate.id === song.id);
     setSelectedNotes(imported?.notes || null);
+    setSelectedSections(imported?.sections || null);
     setCurrentView('stage');
   };
 
@@ -32,6 +34,7 @@ export default function App() {
     });
     setSelectedSong(song);
     setSelectedNotes(song.notes);
+    setSelectedSections(song.sections);
     setCurrentView('stage');
   };
 
@@ -103,6 +106,7 @@ export default function App() {
           <PlayingStage
             selectedSong={selectedSong}
             selectedNotes={selectedNotes}
+            selectedSections={selectedSections}
             onOpenLibrary={() => setCurrentView('menu')}
           />
         )}
