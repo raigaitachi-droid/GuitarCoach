@@ -197,6 +197,10 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     }
   };
 
+  const sourceIsReliableForLatency = (confidence: number, onset: boolean) => {
+    return onset && confidence >= 0.62;
+  };
+
   // Live Tuner state
   const [pitchData, setPitchData] = useState({
     pitch: '---',
@@ -205,6 +209,15 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     inTune: false,
   });
   const lastPluckTimeRef = useRef(0);
+  const playbackMsRef = useRef(0);
+  const isPlayingRef = useRef(isPlaying);
+  const isAutoDemoRef = useRef(isAutoDemo);
+  const isFrozenWaitingRef = useRef(isFrozenWaiting);
+  const activeTargetNoteRef = useRef<TabNote | null>(null);
+  const notesRef = useRef<TabNote[]>([]);
+  const latencyOffsetRef = useRef(latencyOffsetMs);
+  const hitToleranceRef = useRef(hitTolerance);
+  const timingDriftSamplesRef = useRef<number[]>([]);
 
   // Current active note near hit zone
   const [activeTargetNote, setActiveTargetNote] = useState<TabNote | null>(null);
@@ -218,6 +231,38 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
   const hitZoneFraction = 0.22;
   const visibleWindowMs = 5500;
+
+  useEffect(() => {
+    playbackMsRef.current = playbackMs;
+  }, [playbackMs]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    isAutoDemoRef.current = isAutoDemo;
+  }, [isAutoDemo]);
+
+  useEffect(() => {
+    isFrozenWaitingRef.current = isFrozenWaiting;
+  }, [isFrozenWaiting]);
+
+  useEffect(() => {
+    activeTargetNoteRef.current = activeTargetNote;
+  }, [activeTargetNote]);
+
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
+    latencyOffsetRef.current = latencyOffsetMs;
+  }, [latencyOffsetMs]);
+
+  useEffect(() => {
+    hitToleranceRef.current = hitTolerance;
+  }, [hitTolerance]);
 
   // Event-driven microphone processing. Audio capture runs in AudioWorklet;
   // React receives only completed pitch events instead of polling every frame.
@@ -235,19 +280,24 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         inTune: result.inTune,
       });
 
-      if (!isPlaying && playbackMs <= 50 && !isAutoDemo) {
+      const currentPlaybackMs = playbackMsRef.current;
+      const currentLatencyOffsetMs = latencyOffsetRef.current;
+      const currentNotes = notesRef.current;
+      const currentTargetNote = activeTargetNoteRef.current;
+
+      if (!isPlayingRef.current && currentPlaybackMs <= 50 && !isAutoDemoRef.current) {
         setIsPlaying(true);
       }
 
       const now = performance.now();
       if (now - lastPluckTimeRef.current <= 90) return;
 
-      const effectiveTime = playbackMs - latencyOffsetMs;
-      const windowMs = getToleranceWindowMs(hitTolerance);
+      const effectiveTime = currentPlaybackMs - currentLatencyOffsetMs;
+      const windowMs = getToleranceWindowMs(hitToleranceRef.current);
       const candidateNotes =
-        isFrozenWaiting && activeTargetNote
-          ? [activeTargetNote]
-          : notes.filter(
+        isFrozenWaitingRef.current && currentTargetNote
+          ? [currentTargetNote]
+          : currentNotes.filter(
               (note) =>
                 !note.hitState &&
                 Math.abs(note.timestampMs - effectiveTime) <= windowMs
@@ -262,6 +312,31 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       if (matched) {
         lastPluckTimeRef.current = now;
         const timingOffset = Math.round(effectiveTime - matched.timestampMs);
+        const absTimingOffset = Math.abs(timingOffset);
+
+        if (sourceIsReliableForLatency(result.confidence, result.onset) && absTimingOffset >= 70 && absTimingOffset <= 180) {
+          timingDriftSamplesRef.current = [
+            ...timingDriftSamplesRef.current.slice(-7),
+            timingOffset,
+          ];
+          const samples = timingDriftSamplesRef.current;
+          if (samples.length >= 5) {
+            const averageDrift =
+              samples.reduce((sum, sample) => sum + sample, 0) / samples.length;
+            const sameDirection = samples.every((sample) => Math.sign(sample) === Math.sign(averageDrift));
+            if (sameDirection && Math.abs(averageDrift) >= 45) {
+              setLatencyOffsetMs((offset) => {
+                const nextOffset = Math.max(0, Math.min(180, Math.round(offset + averageDrift * 0.35)));
+                latencyOffsetRef.current = nextOffset;
+                return nextOffset;
+              });
+              timingDriftSamplesRef.current = [];
+            }
+          }
+        } else if (absTimingOffset < 70) {
+          timingDriftSamplesRef.current = [];
+        }
+
         handleHitExecution(
           matched.id,
           matched.string,
@@ -273,17 +348,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     });
 
     return unsubscribe;
-  }, [
-    isListeningMic,
-    isFrozenWaiting,
-    activeTargetNote,
-    playbackMs,
-    notes,
-    latencyOffsetMs,
-    hitTolerance,
-    isPlaying,
-    isAutoDemo,
-  ]);
+  }, [isListeningMic]);
 
   const handleToggleMic = async () => {
     if (isListeningMic) {
@@ -324,6 +389,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           const next = prev + delta * tempoFactor;
           if (next >= noteSequenceDurationMs) {
             // Keep playback running so the note highway auto-scrolls from the beginning.
+            playbackMsRef.current = 0;
             setNotes(activeTabList.map((n) => ({ ...n })));
             setIsFrozenWaiting(false);
             setActiveTargetNote(null);
@@ -338,6 +404,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             setStats({ hits: 0, close: 0, misses: 0 });
             return 0;
           }
+          playbackMsRef.current = next;
           return next;
         });
       }
@@ -569,10 +636,12 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   };
 
   const seekTo = (nextPlaybackMs: number) => {
+    const clampedPlaybackMs = Math.max(0, Math.min(noteSequenceDurationMs, nextPlaybackMs));
     setIsPlaying(false);
     setIsFrozenWaiting(false);
     setActiveTargetNote(null);
-    setPlaybackMs(Math.max(0, Math.min(noteSequenceDurationMs, nextPlaybackMs)));
+    playbackMsRef.current = clampedPlaybackMs;
+    setPlaybackMs(clampedPlaybackMs);
   };
 
   // Keyboard shortcut listener
