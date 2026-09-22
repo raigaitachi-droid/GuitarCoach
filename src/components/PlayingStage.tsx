@@ -287,7 +287,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
         setPlaybackMs((prev) => {
           const next = prev + delta * tempoFactor;
           if (next >= currentSongDurationMs) {
-            setIsPlaying(false);
+            // Keep playback running so the note highway auto-scrolls from the beginning.
             const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
             setNotes(tabList.map((n) => ({ ...n })));
             setIsFrozenWaiting(false);
@@ -1214,7 +1214,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
           <button
             id="btn-restart-song"
             onClick={() => {
-              setIsPlaying(false);
+              // Restart immediately and keep the note highway auto-scrolling.
+              setIsPlaying(true);
               setPlaybackMs(0);
               const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
               setNotes(tabList.map((n) => ({ ...n })));
