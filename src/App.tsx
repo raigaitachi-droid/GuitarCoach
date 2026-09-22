@@ -2,15 +2,36 @@ import React, { useState } from 'react';
 import { PlayingStage } from './components/PlayingStage';
 import { SongMenu } from './components/SongMenu';
 import { DesktopGuide } from './components/DesktopGuide';
-import { SongMetadata } from './types';
+import { ImportedSong, SongMetadata, TabNote } from './types';
 import { Play, Music, Terminal, Layers } from 'lucide-react';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'stage' | 'menu' | 'guide'>('stage');
   const [selectedSong, setSelectedSong] = useState<SongMetadata | null>(null);
+  const [selectedNotes, setSelectedNotes] = useState<TabNote[] | null>(null);
+  const [importedSongs, setImportedSongs] = useState<ImportedSong[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('guitar-coach-imported-songs') || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   const handleSelectSong = (song: SongMetadata) => {
     setSelectedSong(song);
+    const imported = importedSongs.find((candidate) => candidate.id === song.id);
+    setSelectedNotes(imported?.notes || null);
+    setCurrentView('stage');
+  };
+
+  const handleImportSong = (song: ImportedSong) => {
+    setImportedSongs((current) => {
+      const updated = [song, ...current];
+      localStorage.setItem('guitar-coach-imported-songs', JSON.stringify(updated));
+      return updated;
+    });
+    setSelectedSong(song);
+    setSelectedNotes(song.notes);
     setCurrentView('stage');
   };
 
@@ -81,12 +102,15 @@ export default function App() {
         {currentView === 'stage' && (
           <PlayingStage
             selectedSong={selectedSong}
+            selectedNotes={selectedNotes}
             onOpenLibrary={() => setCurrentView('menu')}
           />
         )}
         {currentView === 'menu' && (
           <SongMenu
             onSelectSong={handleSelectSong}
+            onImportSong={handleImportSong}
+            importedSongs={importedSongs}
             onBackToStage={() => setCurrentView('stage')}
           />
         )}
