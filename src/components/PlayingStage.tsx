@@ -1093,6 +1093,10 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
               const isMiss = note.hitState === 'miss';
               const isWaitingThisNote = isFrozenWaiting && activeTargetNote?.id === note.id;
 
+              // Keep a missed note visible only briefly at the hit line.
+              // This prevents old crosses from filling the scrolling highway.
+              if (isMiss && diffMs < -450) return null;
+
               return (
                 <div
                   key={note.id}
