@@ -52,6 +52,15 @@ const STRING_GRADIENTS = [
   'linear-gradient(90deg, #78350F, #B45309, #78350F)', // 6: Low E - deep bronze wound
 ];
 
+const SECTION_GRADIENTS = [
+  'linear-gradient(135deg, #00E5BE, #2ED573)',
+  'linear-gradient(135deg, #38BDF8, #1E90FF)',
+  'linear-gradient(135deg, #FFD32A, #F59E0B)',
+  'linear-gradient(135deg, #FF7F50, #FF5E7E)',
+  'linear-gradient(135deg, #A55EEA, #7C3AED)',
+  'linear-gradient(135deg, #94A3B8, #475569)',
+];
+
 const TOTAL_SONG_DURATION_MS = 13500;
 
 function formatTime(ms: number): string {
@@ -615,20 +624,29 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   const activeSection = songSections.find(
     (section) => playbackMs >= section.startMs && playbackMs <= section.endMs
   );
+  const sectionProgressPct =
+    activeSection
+      ? Math.round(
+          ((playbackMs - activeSection.startMs) /
+            Math.max(1, activeSection.endMs - activeSection.startMs)) *
+            100
+        )
+      : 0;
+  const completedSectionCount = songSections.filter((section) => playbackMs > section.endMs).length;
 
   return (
     <div
       id="playing-stage-container"
-      className="flex flex-col h-full bg-[#0B0F17] text-[#E2E8F0] select-none overflow-hidden font-sans"
+      className="flex flex-col h-full bg-[radial-gradient(circle_at_20%_0%,rgba(0,229,190,0.12),transparent_30%),#0B0F17] text-[#E2E8F0] select-none overflow-hidden font-sans"
     >
       {/* Top HUD Bar */}
       <header
         id="playing-stage-header"
-        className="h-[78px] bg-[#080C14]/90 backdrop-blur-md border-b border-[#182333] px-5 flex items-center justify-between z-20 shrink-0 shadow-lg shadow-black/30"
+        className="h-[82px] bg-[#070B12]/92 backdrop-blur-xl border-b border-[#1C2B3E] px-5 flex items-center justify-between z-20 shrink-0 shadow-[0_18px_45px_rgba(0,0,0,0.35)]"
       >
         {/* Left: Song details & Rating Stars */}
         <div className="flex items-center space-x-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#1B2536] to-[#0F1624] border border-[#2A3B52] flex items-center justify-center text-[#00E5BE] shadow-md shadow-black/40 shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#00E5BE] via-[#0F766E] to-[#0F172A] border border-[#61FFE6]/40 flex items-center justify-center text-white shadow-[0_0_24px_rgba(0,229,190,0.22)] shrink-0">
             <Music className="w-5 h-5 drop-shadow-[0_0_6px_rgba(0,229,190,0.5)]" />
           </div>
 
@@ -677,7 +695,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           {/* Combo Multiplier Flame Pill */}
           <div
             id="streak-multiplier-badge"
-            className="flex items-center space-x-2.5 bg-gradient-to-r from-[#171622] via-[#1E1B28] to-[#25181E] border border-[#FF6B35]/50 rounded-2xl px-3.5 py-2 shadow-lg shadow-[#FF6B35]/15"
+            className="flex items-center space-x-2.5 bg-gradient-to-r from-[#171622] via-[#241B2F] to-[#2A1820] border border-[#FF7F50]/60 rounded-2xl px-3.5 py-2 shadow-[0_0_28px_rgba(255,107,53,0.16)]"
           >
             <div className="w-7 h-7 rounded-xl bg-[#FF6B35]/20 flex items-center justify-center border border-[#FF6B35]/40 shadow-[0_0_8px_rgba(255,107,53,0.3)]">
               <Flame className="w-4 h-4 text-[#FF6B35] animate-pulse fill-[#FF6B35]" />
@@ -695,7 +713,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
         {/* Right: Accuracy card & Song Library toggle */}
         <div className="flex items-center space-x-3">
-          <div className="bg-[#0D131D] border border-[#202E42] rounded-2xl px-3.5 py-1.5 text-right shadow-inner">
+          <div className="bg-[#0D131D]/90 border border-[#243650] rounded-2xl px-3.5 py-1.5 text-right shadow-inner">
             <div className="text-[11px] font-black tracking-wider text-[#00E5BE] font-mono">
               ACCURACY {accuracyPct}%
             </div>
@@ -1213,24 +1231,36 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       {songSections.length > 0 && (
         <div
           id="song-section-map"
-          className="px-5 py-2 bg-[#070A10] border-t border-[#151D2A] shrink-0"
+          className="px-5 py-3 bg-[#060A10]/98 border-t border-[#172235] shrink-0 shadow-[0_-12px_35px_rgba(0,0,0,0.28)]"
         >
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#00E5BE]">
-                Song Map
-              </span>
-              {activeSection && (
-                <span className="text-[11px] text-white font-bold bg-[#101A28] border border-[#263850] px-2 py-0.5 rounded-full">
-                  Сега: {activeSection.name}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#00E5BE] shadow-[0_0_12px_#00E5BE]" />
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#00E5BE]">
+                  Smart Song Map
                 </span>
-              )}
+              </div>
+              <div className="h-5 w-px bg-[#223147]" />
+              <span className="text-[11px] text-[#8EA4BC]">
+                {completedSectionCount}/{songSections.length} части • клик върху блок за упражняване
+              </span>
             </div>
-            <span className="text-[10px] text-[#5C7189] font-mono">
-              {songSections.length} части • клик за упражняване
-            </span>
+            {activeSection && (
+              <div className="flex items-center gap-2 rounded-full bg-[#0D1522] border border-[#253850] px-3 py-1 shadow-inner">
+                <span className="text-[10px] uppercase font-black tracking-wider text-[#6EE7D8]">
+                  Coach focus
+                </span>
+                <span className="text-xs text-white font-black">
+                  {activeSection.name}
+                </span>
+                <span className="text-[10px] text-[#7F94AC] font-mono">
+                  {Math.max(0, Math.min(100, sectionProgressPct))}%
+                </span>
+              </div>
+            )}
           </div>
-          <div className="flex h-8 rounded-xl overflow-hidden border border-[#1E2B3E] bg-[#0E1420]">
+          <div className="flex h-11 rounded-2xl overflow-hidden border border-[#21324A] bg-[#0B111C] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             {songSections.map((section, index) => {
               const width = Math.max(
                 7,
@@ -1238,30 +1268,64 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               );
               const isActive = activeSection?.id === section.id;
               const isPast = playbackMs > section.endMs;
+              const sectionColor = SECTION_GRADIENTS[index % SECTION_GRADIENTS.length];
+              const activeProgress =
+                isActive
+                  ? Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        ((playbackMs - section.startMs) /
+                          Math.max(1, section.endMs - section.startMs)) *
+                          100
+                      )
+                    )
+                  : 0;
 
               return (
                 <button
                   key={section.id}
                   type="button"
                   onClick={() => seekTo(section.startMs)}
-                  className={`relative h-full px-2 text-[10px] font-black uppercase tracking-wide border-r border-[#070A10] transition cursor-pointer overflow-hidden ${
+                  className={`relative h-full px-2 text-[10px] font-black uppercase tracking-wide border-r border-[#070A10] transition-all cursor-pointer overflow-hidden group ${
                     isActive
-                      ? 'bg-[#00E5BE] text-[#061014] shadow-[0_0_16px_rgba(0,229,190,0.35)]'
+                      ? 'text-[#061014] shadow-[0_0_22px_rgba(0,229,190,0.32)] scale-[1.01] z-10'
                       : isPast
-                      ? 'bg-[#173024] text-[#80EBCF]'
-                      : 'bg-[#121B2A] text-[#8DA1B8] hover:bg-[#18263A] hover:text-white'
+                      ? 'text-[#C9FFF0]'
+                      : 'text-[#D5E2F2] hover:text-white'
                   }`}
-                  style={{ flexBasis: `${width}%` }}
+                  style={{
+                    flexBasis: `${width}%`,
+                    background: isActive
+                      ? sectionColor
+                      : isPast
+                      ? 'linear-gradient(135deg, rgba(0,229,190,0.22), rgba(46,213,115,0.10))'
+                      : 'linear-gradient(135deg, rgba(18,27,42,0.96), rgba(11,17,28,0.98))',
+                  }}
                   title={`${section.name}: тактове ${section.startMeasure}-${section.endMeasure}`}
                 >
+                  {!isActive && (
+                    <span
+                      className="absolute inset-x-0 bottom-0 h-1 opacity-70 group-hover:opacity-100 transition-opacity"
+                      style={{ background: sectionColor }}
+                    />
+                  )}
+                  {isActive && (
+                    <span
+                      className="absolute left-0 bottom-0 h-1.5 bg-white/80 shadow-[0_0_10px_rgba(255,255,255,0.7)]"
+                      style={{ width: `${activeProgress}%` }}
+                    />
+                  )}
                   <span className="relative z-10 truncate block">
                     {section.name}
                   </span>
+                  <span className={`relative z-10 mt-0.5 block text-[8px] font-mono ${
+                    isActive ? 'text-[#061014]/70' : 'text-[#8EA4BC]'
+                  }`}>
+                    M{section.startMeasure}-{section.endMeasure}
+                  </span>
                   {section.confidence === 'marker' && (
                     <span className="absolute right-1 top-1 w-1.5 h-1.5 rounded-full bg-white/80" />
-                  )}
-                  {index === 0 && (
-                    <span className="absolute left-1 bottom-0.5 text-[8px] opacity-60">M{section.startMeasure}</span>
                   )}
                 </button>
               );
