@@ -174,11 +174,12 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
 
   // Live Tuner state
   const [pitchData, setPitchData] = useState({
-    pitch: 'D3',
-    frequency: 146.8,
+    pitch: '---',
+    frequency: 0,
     cents: 0,
-    inTune: true,
+    inTune: false,
   });
+  const lastPluckTimeRef = useRef(0);
 
   // Current active note near hit zone
   const [activeTargetNote, setActiveTargetNote] = useState<TabNote | null>(null);
@@ -198,8 +199,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
     if (!isListeningMic) return;
 
     let animId: number;
-    let lastPluckTime = 0;
-
     const detectAudioPitch = () => {
       const result = micDetector.detectPitch();
       if (result) {
@@ -212,8 +211,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
         });
 
         const now = Date.now();
+        // In practice mode the first real guitar pluck can start the transport.
+        // It only arms at the beginning, so later pauses remain under user control.
+        if (!isPlaying && playbackMs <= 50 && !isAutoDemo) {
+          setIsPlaying(true);
+        }
+
         // Pluck debounce: 110ms lets fast musical arpeggios & eighths pass cleanly
-        if (now - lastPluckTime > 110) {
+        if (now - lastPluckTimeRef.current > 110) {
           const effectiveTime = playbackMs - latencyOffsetMs;
           const windowMs = getToleranceWindowMs(hitTolerance);
 
@@ -236,7 +241,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
             });
 
             if (matched) {
-              lastPluckTime = now;
+              lastPluckTimeRef.current = now;
               const timingOffset = Math.round(effectiveTime - matched.timestampMs);
               handleHitExecution(matched.id, matched.string, matched.fret, timingOffset, 'mic');
             }
@@ -250,7 +255,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
 
     animId = requestAnimationFrame(detectAudioPitch);
     return () => cancelAnimationFrame(animId);
-  }, [isListeningMic, isFrozenWaiting, activeTargetNote, playbackMs, notes, latencyOffsetMs, hitTolerance]);
+  }, [isListeningMic, isFrozenWaiting, activeTargetNote, playbackMs, notes, latencyOffsetMs, hitTolerance, isPlaying, isAutoDemo]);
 
   const handleToggleMic = async () => {
     if (isListeningMic) {
@@ -298,6 +303,12 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
 
   // Handle Wait-For-Me freezing and active target note detection
   useEffect(() => {
+    // Pause and timeline seeking must always release the practice gate.
+    if (!isPlaying) {
+      if (isFrozenWaiting) setIsFrozenWaiting(false);
+      return;
+    }
+
     // When in Auto-Demo mode, do not freeze; let the computer demonstrate the song continuously
     if (isAutoDemo) {
       if (isFrozenWaiting) setIsFrozenWaiting(false);
@@ -308,7 +319,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
       return;
     }
 
-    const unhitNoteAtLine = notes.find((n) => !n.hitState && n.timestampMs <= playbackMs + 25);
+    // Only capture a note that is actually crossing the hit line now.
+    // Without the lower bound, seeking forward snaps back to the oldest missed note.
+    const unhitNoteAtLine = notes.find(
+      (n) =>
+        !n.hitState &&
+        n.timestampMs >= playbackMs - 120 &&
+        n.timestampMs <= playbackMs + 25
+    );
 
     if (waitForMeMode && unhitNoteAtLine) {
       // Freeze playback right at the target note timestamp until user plays it
@@ -324,7 +342,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
       );
       setActiveTargetNote(upcoming || null);
     }
-  }, [playbackMs, waitForMeMode, notes, isFrozenWaiting, isAutoDemo]);
+  }, [playbackMs, waitForMeMode, notes, isFrozenWaiting, isAutoDemo, isPlaying]);
 
   // Auto-Demo mode: plays notes when user requests a computer demonstration
   useEffect(() => {
@@ -498,6 +516,17 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
     }
   };
 
+  const togglePlayback = () => {
+    setIsPlaying((playing) => !playing);
+  };
+
+  const seekTo = (nextPlaybackMs: number) => {
+    setIsPlaying(false);
+    setIsFrozenWaiting(false);
+    setActiveTargetNote(null);
+    setPlaybackMs(Math.max(0, Math.min(currentSongDurationMs, nextPlaybackMs)));
+  };
+
   // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -509,9 +538,15 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
         handleHitExecution(noteId, stringNum, fret, 0, 'manual');
       } else if (e.code === 'Space') {
         e.preventDefault();
-        setIsPlaying((prev) => !prev);
+        togglePlayback();
       } else if (e.key.toLowerCase() === 'w') {
-        setWaitForMeMode((w) => !w);
+        setWaitForMeMode((enabled) => {
+          if (enabled) {
+            setIsFrozenWaiting(false);
+            setActiveTargetNote(null);
+          }
+          return !enabled;
+        });
       }
     };
 
@@ -1128,7 +1163,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickFraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            setPlaybackMs(clickFraction * currentSongDurationMs);
+            seekTo(clickFraction * currentSongDurationMs);
           }}
           className="flex-1 h-2 bg-[#121926] hover:h-2.5 rounded-full relative cursor-pointer group transition-all"
         >
@@ -1156,7 +1191,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
         <div className="flex items-center space-x-2.5">
           <button
             id="btn-play-pause-toggle"
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={togglePlayback}
             className="w-11 h-11 rounded-2xl bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] flex items-center justify-center font-black shadow-lg shadow-[#00E5BE]/30 transition active:scale-95 cursor-pointer"
             title="Space: Play / Pause"
           >
@@ -1166,6 +1201,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
           <button
             id="btn-restart-song"
             onClick={() => {
+              setIsPlaying(false);
               setPlaybackMs(0);
               const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
               setNotes(tabList.map((n) => ({ ...n })));
@@ -1185,7 +1221,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
           {/* Wait-for-Me Practice Mode Toggle */}
           <button
             id="btn-wait-for-me"
-            onClick={() => setWaitForMeMode(!waitForMeMode)}
+            onClick={() => {
+              const next = !waitForMeMode;
+              setWaitForMeMode(next);
+              if (!next) {
+                setIsFrozenWaiting(false);
+                setActiveTargetNote(null);
+              }
+            }}
             className={`px-3.5 py-2 rounded-2xl text-xs font-extrabold border flex items-center space-x-2 transition cursor-pointer shadow active:scale-95 ${
               waitForMeMode
                 ? 'bg-[#FFD32A] text-[#080C12] border-[#FFD32A] shadow-md shadow-[#FFD32A]/25'
