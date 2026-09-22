@@ -4,8 +4,19 @@ export interface TabNote {
   fret: number;
   timestampMs: number;
   durationMs: number;
+  measureIndex?: number;
   hitState?: 'unhit' | 'hit' | 'close' | 'miss' | 'wrong';
   timingOffsetMs?: number;
+}
+
+export interface SongSection {
+  id: string;
+  name: string;
+  startMeasure: number;
+  endMeasure: number;
+  startMs: number;
+  endMs: number;
+  confidence: 'marker' | 'auto';
 }
 
 export interface SongMetadata {
@@ -24,6 +35,7 @@ export interface SongMetadata {
 
 export interface ImportedSong extends SongMetadata {
   notes: TabNote[];
+  sections: SongSection[];
   sourceFileName: string;
 }
 
