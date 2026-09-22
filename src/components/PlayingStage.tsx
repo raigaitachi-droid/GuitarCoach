@@ -100,6 +100,13 @@ function getExpectedNoteName(stringNum: number, fret: number): string {
 export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpenLibrary }) => {
   const activeSong = selectedSong || SONG_CATALOG[0];
   const currentSongDurationMs = activeSong.durationMs || TOTAL_SONG_DURATION_MS;
+  const activeTabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
+  // Avoid an empty tail where every visible note has already become a miss.
+  // 350ms leaves enough time to score the final note, then loops immediately.
+  const noteSequenceDurationMs = Math.min(
+    currentSongDurationMs,
+    Math.max(...activeTabList.map((note) => note.timestampMs)) + 350
+  );
 
   const [notes, setNotes] = useState<TabNote[]>(() => {
     const songId = activeSong.id;
@@ -287,7 +294,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
       if (isPlaying && !isFrozenWaiting) {
         setPlaybackMs((prev) => {
           const next = prev + delta * tempoFactor;
-          if (next >= currentSongDurationMs) {
+          if (next >= noteSequenceDurationMs) {
             // Keep playback running so the note highway auto-scrolls from the beginning.
             const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
             setNotes(tabList.map((n) => ({ ...n })));
@@ -313,7 +320,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
 
     frameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frameId);
-  }, [isPlaying, tempoFactor, isFrozenWaiting, currentSongDurationMs]);
+  }, [isPlaying, tempoFactor, isFrozenWaiting, noteSequenceDurationMs, activeSong.id]);
 
   // Handle Wait-For-Me freezing and active target note detection
   useEffect(() => {
@@ -538,7 +545,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
     setIsPlaying(false);
     setIsFrozenWaiting(false);
     setActiveTargetNote(null);
-    setPlaybackMs(Math.max(0, Math.min(currentSongDurationMs, nextPlaybackMs)));
+    setPlaybackMs(Math.max(0, Math.min(noteSequenceDurationMs, nextPlaybackMs)));
   };
 
   // Keyboard shortcut listener
@@ -1177,14 +1184,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickFraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            seekTo(clickFraction * currentSongDurationMs);
+            seekTo(clickFraction * noteSequenceDurationMs);
           }}
           className="flex-1 h-2 bg-[#121926] hover:h-2.5 rounded-full relative cursor-pointer group transition-all"
         >
           <div
             className="h-full bg-gradient-to-r from-[#00A389] via-[#00E5BE] to-[#2ED573] rounded-full relative shadow-[0_0_10px_#00E5BE]"
             style={{
-              width: `${Math.min(100, (playbackMs / currentSongDurationMs) * 100)}%`,
+              width: `${Math.min(100, (playbackMs / noteSequenceDurationMs) * 100)}%`,
             }}
           >
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-[0_0_8px_#00E5BE] opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1192,7 +1199,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
         </div>
 
         <span className="text-[11px] font-mono font-bold text-[#56687D] w-9">
-          {formatTime(currentSongDurationMs)}
+          {formatTime(noteSequenceDurationMs)}
         </span>
       </div>
 
