@@ -203,68 +203,71 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, select
   const hitZoneFraction = 0.22;
   const visibleWindowMs = 5500;
 
-  // Real-time microphone listening loop with latency compensation, octave harmonics, and anti-feedback
+  // Event-driven microphone processing. Audio capture runs in AudioWorklet;
+  // React receives only completed pitch events instead of polling every frame.
   useEffect(() => {
     if (!isListeningMic) return;
 
-    let animId: number;
-    const detectAudioPitch = () => {
-      const result = micDetector.detectPitch();
-      if (result) {
-        setMicRms(result.volumeRms);
-        setPitchData({
-          pitch: result.noteName,
-          frequency: result.frequency,
-          cents: result.cents,
-          inTune: result.inTune,
-        });
+    const unsubscribe = micDetector.subscribe((result) => {
+      setMicRms(result?.volumeRms ?? micDetector.getVolumeRms());
+      if (!result) return;
 
-        const now = Date.now();
-        // In practice mode the first real guitar pluck can start the transport.
-        // It only arms at the beginning, so later pauses remain under user control.
-        if (!isPlaying && playbackMs <= 50 && !isAutoDemo) {
-          setIsPlaying(true);
-        }
+      setPitchData({
+        pitch: result.noteName,
+        frequency: result.frequency,
+        cents: result.cents,
+        inTune: result.inTune,
+      });
 
-        // Pluck debounce: 110ms lets fast musical arpeggios & eighths pass cleanly
-        if (now - lastPluckTimeRef.current > 110) {
-          const effectiveTime = playbackMs - latencyOffsetMs;
-          const windowMs = getToleranceWindowMs(hitTolerance);
-
-          // In Wait-for-Me mode, target is the frozen active note;
-          // in Normal Mode, search across candidate notes within the hit tolerance window
-          const candidateNotes = isFrozenWaiting && activeTargetNote
-            ? [activeTargetNote]
-            : notes.filter(
-                (n) => !n.hitState && Math.abs(n.timestampMs - effectiveTime) <= windowMs
-              );
-
-          if (candidateNotes.length > 0) {
-            // Find if any candidate note matches the played pitch:
-            // Matches if exact pitch or octave harmonic (midiDiff % 12 === 0),
-            // which accounts for acoustic guitar overtones & pickup response!
-            const matched = candidateNotes.find((cand) => {
-              const expectedMidi = getExpectedMidi(cand.string, cand.fret);
-              const midiDiff = Math.abs(result.midiNumber - expectedMidi);
-              return midiDiff % 12 === 0;
-            });
-
-            if (matched) {
-              lastPluckTimeRef.current = now;
-              const timingOffset = Math.round(effectiveTime - matched.timestampMs);
-              handleHitExecution(matched.id, matched.string, matched.fret, timingOffset, 'mic');
-            }
-          }
-        }
-      } else {
-        setMicRms(micDetector.getVolumeRms());
+      if (!isPlaying && playbackMs <= 50 && !isAutoDemo) {
+        setIsPlaying(true);
       }
-      animId = requestAnimationFrame(detectAudioPitch);
-    };
 
-    animId = requestAnimationFrame(detectAudioPitch);
-    return () => cancelAnimationFrame(animId);
-  }, [isListeningMic, isFrozenWaiting, activeTargetNote, playbackMs, notes, latencyOffsetMs, hitTolerance, isPlaying, isAutoDemo]);
+      const now = performance.now();
+      if (now - lastPluckTimeRef.current <= 90) return;
+
+      const effectiveTime = playbackMs - latencyOffsetMs;
+      const windowMs = getToleranceWindowMs(hitTolerance);
+      const candidateNotes =
+        isFrozenWaiting && activeTargetNote
+          ? [activeTargetNote]
+          : notes.filter(
+              (note) =>
+                !note.hitState &&
+                Math.abs(note.timestampMs - effectiveTime) <= windowMs
+            );
+
+      const matched = candidateNotes.find((candidate) => {
+        const expectedMidi = getExpectedMidi(candidate.string, candidate.fret);
+        const midiDifference = Math.abs(result.midiNumber - expectedMidi);
+        return midiDifference % 12 === 0;
+      });
+
+      if (matched) {
+        lastPluckTimeRef.current = now;
+        const timingOffset = Math.round(effectiveTime - matched.timestampMs);
+        handleHitExecution(
+          matched.id,
+          matched.string,
+          matched.fret,
+          timingOffset,
+          'mic'
+        );
+      }
+    });
+
+    return unsubscribe;
+  }, [
+    isListeningMic,
+    isFrozenWaiting,
+    activeTargetNote,
+    playbackMs,
+    notes,
+    latencyOffsetMs,
+    hitTolerance,
+    isPlaying,
+    isAutoDemo,
+  ]);
 
   const handleToggleMic = async () => {
     if (isListeningMic) {
@@ -275,7 +278,15 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, select
       const started = await micDetector.startListening();
       if (started) {
         setIsListeningMic(true);
-        setMicNotice('Микрофонът е активен! Свирете на китарата си.');
+        const measuredLatency = micDetector.getEstimatedInputLatencyMs();
+        if (measuredLatency > 0) {
+          setLatencyOffsetMs(Math.max(0, Math.min(160, measuredLatency)));
+        }
+        setMicNotice(
+          measuredLatency > 0
+            ? `Микрофонът е активен • измерена латентност: ${measuredLatency} ms`
+            : 'Микрофонът е активен! Свирете на китарата си.'
+        );
         setTimeout(() => setMicNotice(null), 4000);
       } else {
         setMicNotice('Моля, разрешете достъп до микрофона в браузъра си.');
