@@ -111,7 +111,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackMs, setPlaybackMs] = useState(0);
   const [tempoFactor, setTempoFactor] = useState(1.0);
-  const [waitForMeMode, setWaitForMeMode] = useState(true);
+  // Auto-scroll continuously by default; Wait For Me can still be enabled manually.
+  const [waitForMeMode, setWaitForMeMode] = useState(false);
   const [isFrozenWaiting, setIsFrozenWaiting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -1219,6 +1220,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
               setPlaybackMs(0);
               const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
               setNotes(tabList.map((n) => ({ ...n })));
+              setWaitForMeMode(false);
               setIsFrozenWaiting(false);
               setActiveTargetNote(null);
               setFeedback(null);
