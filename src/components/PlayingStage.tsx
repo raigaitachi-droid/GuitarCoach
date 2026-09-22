@@ -690,6 +690,34 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       hitState: undefined,
     })),
   ];
+  const timingCueNote = notes.find(
+    (note) =>
+      !note.hitState &&
+      note.timestampMs >= playbackMs - 140 &&
+      note.timestampMs <= playbackMs + 1800
+  );
+  const timingCueDiffMs = timingCueNote ? timingCueNote.timestampMs - playbackMs : null;
+  const timingCueWindowMs = getToleranceWindowMs(hitTolerance);
+  const timingCueUrgency =
+    timingCueDiffMs === null
+      ? 'idle'
+      : Math.abs(timingCueDiffMs) <= 95
+      ? 'hit'
+      : timingCueDiffMs <= 420
+      ? 'ready'
+      : 'wait';
+  const timingCueProgress =
+    timingCueDiffMs === null
+      ? 0
+      : Math.max(0, Math.min(100, ((1800 - timingCueDiffMs) / 1800) * 100));
+  const timingCueLabel =
+    timingCueUrgency === 'hit'
+      ? 'УДАРИ СЕГА'
+      : timingCueUrgency === 'ready'
+      ? 'ГОТОВ'
+      : timingCueUrgency === 'wait'
+      ? 'СЛЕДИ НОТАТА'
+      : 'ЧАКА СЛЕДВАЩА НОТА';
   const activeSection = songSections.find(
     (section) => playbackMs >= section.startMs && playbackMs <= section.endMs
   );
@@ -919,6 +947,46 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             className="absolute top-0 bottom-0 z-20 pointer-events-none"
             style={{ left: `${hitZoneFraction * 100}%` }}
           >
+            <div
+              className={`absolute top-4 bottom-4 -translate-x-1/2 rounded-3xl border transition-all duration-150 ${
+                timingCueUrgency === 'hit'
+                  ? 'w-20 bg-[#00E5BE]/18 border-[#00E5BE]/70 shadow-[0_0_30px_rgba(0,229,190,0.28)]'
+                  : 'w-14 bg-[#00E5BE]/8 border-[#00E5BE]/25'
+              }`}
+            />
+
+            <div
+              className={`absolute -left-20 top-4 w-40 rounded-2xl border px-3 py-2 text-center shadow-xl backdrop-blur-md transition-all duration-150 ${
+                timingCueUrgency === 'hit'
+                  ? 'bg-[#00E5BE] text-[#061014] border-white/70 scale-105 shadow-[0_0_28px_rgba(0,229,190,0.42)]'
+                  : timingCueUrgency === 'ready'
+                  ? 'bg-[#101A28]/95 text-white border-[#FFD32A]/60 shadow-[0_0_20px_rgba(255,211,42,0.18)]'
+                  : 'bg-[#080D16]/90 text-[#9CB1C8] border-[#21324A]'
+              }`}
+            >
+              <div className="text-[10px] font-black uppercase tracking-[0.18em]">
+                {timingCueLabel}
+              </div>
+              {timingCueNote && (
+                <div className="mt-1 flex items-center justify-center gap-2 text-xs font-black">
+                  <span>Струна {timingCueNote.string}</span>
+                  <span className="opacity-60">•</span>
+                  <span>Прагче {timingCueNote.fret}</span>
+                </div>
+              )}
+              <div className="mt-1 text-[9px] font-mono opacity-70">
+                точен прозорец ±{timingCueWindowMs}ms
+              </div>
+              <div className="mt-2 h-1.5 rounded-full bg-black/25 overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    timingCueUrgency === 'hit' ? 'bg-white' : 'bg-[#00E5BE]'
+                  }`}
+                  style={{ width: `${timingCueProgress}%` }}
+                />
+              </div>
+            </div>
+
             {/* Top Laser Emitter Stud */}
             <div
               className={`absolute -top-1 -left-1.5 w-3 h-3 rounded-full transition-colors duration-150 ${
