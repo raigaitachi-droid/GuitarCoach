@@ -27,6 +27,7 @@ import { SONG_CATALOG, SONG_TABS } from '../data/songTabs';
 
 interface PlayingStageProps {
   selectedSong?: SongMetadata | null;
+  selectedNotes?: TabNote[] | null;
   onOpenLibrary: () => void;
 }
 
@@ -97,10 +98,13 @@ function getExpectedNoteName(stringNum: number, fret: number): string {
   return getNoteNameFromMidi(getExpectedMidi(stringNum, fret));
 }
 
-export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpenLibrary }) => {
+export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, selectedNotes, onOpenLibrary }) => {
   const activeSong = selectedSong || SONG_CATALOG[0];
   const currentSongDurationMs = activeSong.durationMs || TOTAL_SONG_DURATION_MS;
-  const activeTabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
+  const activeTabList =
+    selectedNotes && selectedNotes.length > 0
+      ? selectedNotes
+      : SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
   // Avoid an empty tail where every visible note has already become a miss.
   // 350ms leaves enough time to score the final note, then loops immediately.
   const noteSequenceDurationMs = Math.min(
@@ -109,9 +113,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
   );
 
   const [notes, setNotes] = useState<TabNote[]>(() => {
-    const songId = activeSong.id;
-    const tabList = SONG_TABS[songId] || INITIAL_DEMO_NOTES;
-    return tabList.map((n) => ({ ...n }));
+    return activeTabList.map((n) => ({ ...n }));
   });
 
   // Keep playback paused by default on load so it NEVER starts playing by itself unexpectedly!
@@ -132,13 +134,12 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
   // Update notes whenever a new song is selected from the menu
   useEffect(() => {
     if (selectedSong) {
-      const tabList = SONG_TABS[selectedSong.id] || INITIAL_DEMO_NOTES;
-      setNotes(tabList.map((n) => ({ ...n })));
+      setNotes(activeTabList.map((n) => ({ ...n })));
       setPlaybackMs(0);
       setIsPlaying(false);
       setIsFrozenWaiting(false);
     }
-  }, [selectedSong]);
+  }, [selectedSong, selectedNotes]);
 
   useEffect(() => {
     const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -296,8 +297,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
           const next = prev + delta * tempoFactor;
           if (next >= noteSequenceDurationMs) {
             // Keep playback running so the note highway auto-scrolls from the beginning.
-            const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
-            setNotes(tabList.map((n) => ({ ...n })));
+            setNotes(activeTabList.map((n) => ({ ...n })));
             setIsFrozenWaiting(false);
             setActiveTargetNote(null);
             setFeedback(null);
@@ -1242,8 +1242,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({ selectedSong, onOpen
               // Restart immediately and keep the note highway auto-scrolling.
               setIsPlaying(true);
               setPlaybackMs(0);
-              const tabList = SONG_TABS[activeSong.id] || INITIAL_DEMO_NOTES;
-              setNotes(tabList.map((n) => ({ ...n })));
+              setNotes(activeTabList.map((n) => ({ ...n })));
               setWaitForMeMode(false);
               setIsFrozenWaiting(false);
               setActiveTargetNote(null);
