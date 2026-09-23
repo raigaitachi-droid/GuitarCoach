@@ -1002,7 +1002,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         const y = laneHeight * (stringIdx + 0.5);
         const color = note.hitState === 'hit' ? '#10B981' : note.hitState === 'miss' ? '#EF4444' : STRING_COLORS[stringIdx];
         const isOpen = note.fret === 0;
-        const radius = isOpen ? 15 : 18;
+        const radius = isOpen ? 18 : 22;
         const sustain = Math.max(0, (note.durationMs / visibleWindowMs) * 300);
 
         if (sustain > 24) {
@@ -1016,21 +1016,25 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         }
 
         ctx.shadowColor = color;
-        ctx.shadowBlur = note.hitState ? 18 : 10;
-        ctx.fillStyle = isOpen ? '#05070B' : color;
+        ctx.shadowBlur = note.hitState ? 18 : 14;
+        ctx.fillStyle = isOpen ? '#071018' : color;
         ctx.strokeStyle = note.hitState === 'miss' ? '#FFD1D1' : 'rgba(255,255,255,0.85)';
-        ctx.lineWidth = isOpen ? 2 : 1.5;
+        ctx.lineWidth = isOpen ? 3 : 2.5;
         ctx.beginPath();
-        ctx.roundRect(x - radius, y - 16, radius * 2, 32, 10);
+        ctx.roundRect(x - radius, y - 20, radius * 2, 40, 12);
         ctx.fill();
         ctx.stroke();
         ctx.shadowBlur = 0;
 
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '900 14px JetBrains Mono, monospace';
+        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+        ctx.lineWidth = 4;
+        ctx.font = '900 20px JetBrains Mono, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : String(note.fret), x, y + 0.5);
+        const noteLabel = note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : String(note.fret);
+        ctx.strokeText(noteLabel, x, y + 0.5);
+        ctx.fillText(noteLabel, x, y + 0.5);
       }
 
       if (activeTargetNoteRef.current) {
@@ -1662,7 +1666,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           })}
 
           {/* Animated Scrolling Notes with Sustain Trails */}
-          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden opacity-0">
+          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden opacity-20">
             {scrollingNotes.map((note) => {
               const diffMs = note.timestampMs - playbackMs;
               const xPercent =
