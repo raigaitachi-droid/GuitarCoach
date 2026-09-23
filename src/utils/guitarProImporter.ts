@@ -32,6 +32,7 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
   const rawValue = effectSource.harmonicValue ?? candidate.harmonicValue;
   const hasTrueFlag = (...values: unknown[]) => values.some((value) => value === true);
   const rawTypeIsNumeric = rawType.length > 0 && /^-?\d+(\.\d+)?$/.test(rawType);
+  const knownNumericHarmonicType = rawTypeIsNumeric && Number(rawType) > 0;
   const hasMeaningfulType =
     rawType.length > 0 &&
     !rawTypeIsNumeric &&
@@ -43,15 +44,17 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
       ? rawValue.trim().length > 0 &&
         !['0', 'false', 'none', 'normal', 'null', 'undefined'].includes(rawValue.trim().toLowerCase())
       : rawValue === true;
-  const isHarmonic =
+  const hasExplicitHarmonicFlag =
     hasTrueFlag(effectSource.isHarmonic, candidate.isHarmonic) ||
     hasTrueFlag(effectSource.isNaturalHarmonic, candidate.isNaturalHarmonic) ||
     hasTrueFlag(effectSource.isArtificialHarmonic, candidate.isArtificialHarmonic) ||
     hasTrueFlag(effectSource.isPinchHarmonic, candidate.isPinchHarmonic) ||
     hasTrueFlag(effectSource.isTapHarmonic, candidate.isTapHarmonic) ||
-    hasTrueFlag(effectSource.isSemiHarmonic, candidate.isSemiHarmonic) ||
-    hasMeaningfulValue ||
-    hasMeaningfulType;
+    hasTrueFlag(effectSource.isSemiHarmonic, candidate.isSemiHarmonic);
+  const isHarmonic =
+    hasExplicitHarmonicFlag ||
+    (hasMeaningfulType && hasMeaningfulValue) ||
+    (knownNumericHarmonicType && hasMeaningfulValue);
 
   if (!isHarmonic) return { isHarmonic: false };
   if (rawType.includes('natural') || hasTrueFlag(effectSource.isNaturalHarmonic, candidate.isNaturalHarmonic)) {
