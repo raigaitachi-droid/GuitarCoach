@@ -9,6 +9,40 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { micDetector } from './utils/pitchDetector';
 import { SONG_CATALOG } from './data/songTabs';
 
+const IMPORTED_SONGS_STORAGE_KEY = 'guitar-coach-imported-songs';
+
+function sanitizeImportedSong(song: ImportedSong): ImportedSong {
+  const harmonicNotes = song.notes.filter((note) => note.isHarmonic);
+  if (song.notes.length === 0 || harmonicNotes.length === 0) return song;
+
+  const harmonicRatio = harmonicNotes.length / song.notes.length;
+  const unknownRatio =
+    harmonicNotes.filter((note) => !note.harmonicType || note.harmonicType === 'unknown').length /
+    harmonicNotes.length;
+
+  if (harmonicRatio < 0.35 || unknownRatio < 0.8) return song;
+
+  return {
+    ...song,
+    notes: song.notes.map(({ isHarmonic, harmonicType, ...note }) => note),
+  };
+}
+
+function loadImportedSongs(): ImportedSong[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(IMPORTED_SONGS_STORAGE_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+
+    const sanitized = parsed.map((song) => sanitizeImportedSong(song));
+    if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
+      localStorage.setItem(IMPORTED_SONGS_STORAGE_KEY, JSON.stringify(sanitized));
+    }
+    return sanitized;
+  } catch {
+    return [];
+  }
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState<'stage' | 'coach' | 'menu' | 'tuner'>('stage');
   const [tempoPercent, setTempoPercent] = useState(100);
@@ -19,13 +53,7 @@ export default function App() {
 
   const activeSong = selectedSong || SONG_CATALOG[0];
 
-  const [importedSongs, setImportedSongs] = useState<ImportedSong[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('guitar-coach-imported-songs') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [importedSongs, setImportedSongs] = useState<ImportedSong[]>(loadImportedSongs);
 
   // Global pitch monitoring for Tuner & HUD
   const [tunerPitch, setTunerPitch] = useState({
@@ -77,15 +105,16 @@ export default function App() {
   };
 
   const handleImportSong = (song: ImportedSong) => {
+    const sanitizedSong = sanitizeImportedSong(song);
     setImportedSongs((current) => {
-      const updated = [song, ...current];
-      localStorage.setItem('guitar-coach-imported-songs', JSON.stringify(updated));
+      const updated = [sanitizedSong, ...current];
+      localStorage.setItem(IMPORTED_SONGS_STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
-    setSelectedSong(song);
-    setSelectedNotes(song.notes);
-    setSelectedSections(song.sections);
-    setSelectedAnalysis(song.analysis || null);
+    setSelectedSong(sanitizedSong);
+    setSelectedNotes(sanitizedSong.notes);
+    setSelectedSections(sanitizedSong.sections);
+    setSelectedAnalysis(sanitizedSong.analysis || null);
     setCurrentView('stage');
   };
 
