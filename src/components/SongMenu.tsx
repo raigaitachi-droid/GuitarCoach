@@ -167,7 +167,7 @@ export const SongMenu: React.FC<SongMenuProps> = ({
   return (
     <div
       id="guitar-trainer-menu"
-      className={`flex flex-col h-full bg-[#070A10] text-[#E2E8F0] select-none font-sans overflow-hidden ${
+      className={`flex flex-col h-full bg-[#030508] text-[#E2E8F0] select-none font-sans overflow-hidden ${
         isDragging ? 'ring-2 ring-inset ring-[#00E5BE]' : ''
       }`}
       onDragOver={(event) => {
@@ -187,13 +187,13 @@ export const SongMenu: React.FC<SongMenuProps> = ({
       }}
     >
       {/* Menu Header */}
-      <header id="menu-header" className="h-20 bg-[#090E17]/95 backdrop-blur-md border-b border-[#182436] px-8 flex items-center justify-between shrink-0">
+      <header id="menu-header" className="h-16 bg-[#030508]/95 backdrop-blur-md border-b border-white/5 px-5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <motion.button
             id="btn-back-to-stage"
             whileTap={{ scale: 0.94 }}
             onClick={onBackToStage}
-            className="w-10 h-10 rounded-xl bg-[#111824] hover:bg-[#182335] border border-[#202E42] flex items-center justify-center text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 flex items-center justify-center text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
             title="Върни се към сцената за свирене"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -204,7 +204,7 @@ export const SongMenu: React.FC<SongMenuProps> = ({
               <span aria-hidden="true">·</span>
               <span className="font-mono tabular-nums">{filteredSongs.length} песни</span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-white mt-0.5">Изберете таблатура за тренировка</h1>
+            <h1 className="text-base font-bold tracking-tight text-white mt-0.5">Изберете таблатура за тренировка</h1>
           </div>
         </div>
 
@@ -218,12 +218,12 @@ export const SongMenu: React.FC<SongMenuProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Търсене по заглавие или автор..."
-              className="w-64 bg-[#0F1624] border border-[#202E42] rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-[#5B6D83] focus:outline-none focus:border-[#00E5BE] transition-colors"
+              className="w-64 bg-white/[0.03] border border-white/10 rounded-full pl-9 pr-3 py-1.5 text-xs text-white placeholder-[#5B6D83] focus:outline-none focus:border-[#00E5BE]/60 transition-colors"
             />
           </div>
 
           {/* Segmented Sort Controls with Framer Motion Layout Animation */}
-          <div className="flex items-center bg-[#0F1624] p-1 rounded-xl border border-[#202E42]">
+          <div className="flex items-center bg-white/[0.03] p-0.5 rounded-full border border-white/10">
             {(
               [
                 { id: 'name', label: 'Име' },
@@ -256,14 +256,14 @@ export const SongMenu: React.FC<SongMenuProps> = ({
       </header>
 
       {/* Main Content Area */}
-      <main id="menu-song-list" className="flex-1 overflow-y-auto px-8 py-6 space-y-3">
+      <main id="menu-song-list" className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
         {/* Featured Masterclass Banner */}
         {featuredSong && searchQuery === '' && categoryFilter === 'all' && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             onClick={() => onSelectSong(featuredSong)}
-            className="relative rounded-2xl bg-gradient-to-r from-[#0C1626] via-[#0E1B2E] to-[#0A111C] border border-[#1E2E46] p-6 shadow-2xl overflow-hidden cursor-pointer group hover:border-[#00E5BE]/50 transition-all"
+            className="relative rounded-xl bg-[#070B12] border border-white/10 p-5 overflow-hidden cursor-pointer group hover:border-[#00E5BE]/40 transition-all"
           >
             <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-[#00E5BE]/10 to-transparent pointer-events-none" />
             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -411,8 +411,8 @@ export const SongMenu: React.FC<SongMenuProps> = ({
                 onMouseEnter={() => setSelectedIndex(idx)}
                 className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
                   isSelected
-                    ? 'bg-[#101724] border-[#00E5BE]/60 shadow-lg shadow-black/40'
-                    : 'bg-[#0A0F18] border-[#182333] hover:border-[#223146] hover:bg-[#0D1420]'
+                    ? 'bg-[#081611] border-[#00E5BE]/50'
+                    : 'bg-white/[0.025] border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
                 }`}
               >
                 {/* Left: Play Icon & Song Details */}
@@ -476,7 +476,7 @@ export const SongMenu: React.FC<SongMenuProps> = ({
       </main>
 
       {/* Clean Footer Navigation Hints */}
-      <footer id="menu-footer" className="h-11 bg-[#090E17] border-t border-[#182436] px-8 flex items-center justify-between shrink-0 text-xs text-[#63768D] font-mono">
+      <footer id="menu-footer" className="h-10 bg-[#030508] border-t border-white/5 px-5 flex items-center justify-between shrink-0 text-xs text-[#63768D] font-mono">
         <div className="flex items-center gap-2">
           <span>Сцена за интерактивна китарна таблатура</span>
         </div>
