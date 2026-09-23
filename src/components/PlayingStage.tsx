@@ -876,6 +876,25 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       hitState: undefined,
     })),
   ];
+
+  const getVisualNoteOffset = (note: TabNote, visibleNotes: TabNote[]) => {
+    const chordNotes = visibleNotes
+      .filter((candidate) => Math.abs(candidate.timestampMs - note.timestampMs) <= 35)
+      .sort((a, b) => a.string - b.string || a.fret - b.fret || a.id.localeCompare(b.id));
+    const sameStringNotes = chordNotes.filter((candidate) => candidate.string === note.string);
+    const sameStringIndex = sameStringNotes.findIndex((candidate) => candidate.id === note.id);
+    const chordIndex = chordNotes.findIndex((candidate) => candidate.id === note.id);
+    const chordCenter = (chordNotes.length - 1) / 2;
+    const stringClusterCenter = (sameStringNotes.length - 1) / 2;
+
+    return {
+      x: (sameStringIndex - stringClusterCenter) * 26 + (chordIndex - chordCenter) * 2,
+      y: sameStringNotes.length > 1 ? (sameStringIndex - stringClusterCenter) * 10 : 0,
+      isChord: chordNotes.length > 1,
+      sameStringCount: sameStringNotes.length,
+    };
+  };
+
   useEffect(() => {
     const canvas = highwayCanvasRef.current;
     if (!canvas) return;
@@ -993,16 +1012,24 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       }
 
 
-      for (const note of scrollingNotes) {
+      const visibleNotes = scrollingNotes.filter((note) => {
         const diffMs = note.timestampMs - now;
         const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
-        if (x < -80 || x > rect.width + 120) continue;
+        return x >= -80 && x <= rect.width + 120;
+      });
+
+      for (const note of visibleNotes) {
+        const diffMs = note.timestampMs - now;
+        const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
 
         const stringIdx = note.string - 1;
-        const y = laneHeight * (stringIdx + 0.5);
+        const layoutOffset = getVisualNoteOffset(note, visibleNotes);
+        const y = laneHeight * (stringIdx + 0.5) + layoutOffset.y;
+        const visualX = x + layoutOffset.x;
         const color = note.hitState === 'hit' ? '#10B981' : note.hitState === 'miss' ? '#EF4444' : STRING_COLORS[stringIdx];
         const isOpen = note.fret === 0;
-        const radius = isOpen ? 18 : 22;
+        const isHarmonic = Boolean(note.isHarmonic);
+        const radius = isOpen ? 18 : isHarmonic ? 24 : 22;
         const sustain = Math.max(0, (note.durationMs / visibleWindowMs) * 300);
 
         if (sustain > 24) {
@@ -1010,31 +1037,62 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           ctx.strokeStyle = `${color}88`;
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.roundRect(x + radius - 2, y - 7, sustain, 14, 7);
+          ctx.roundRect(visualX + radius - 2, y - 7, sustain, 14, 7);
           ctx.fill();
           ctx.stroke();
         }
 
+        if (layoutOffset.isChord) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x, laneHeight * (stringIdx + 0.5));
+          ctx.lineTo(visualX, y);
+          ctx.stroke();
+        }
+
         ctx.shadowColor = color;
-        ctx.shadowBlur = note.hitState ? 18 : 14;
+        ctx.shadowBlur = note.hitState ? 18 : isHarmonic ? 20 : 14;
         ctx.fillStyle = isOpen ? '#071018' : color;
-        ctx.strokeStyle = note.hitState === 'miss' ? '#FFD1D1' : 'rgba(255,255,255,0.85)';
+        ctx.strokeStyle = note.hitState === 'miss' ? '#FFD1D1' : isHarmonic ? '#FFF7A8' : 'rgba(255,255,255,0.85)';
         ctx.lineWidth = isOpen ? 3 : 2.5;
-        ctx.beginPath();
-        ctx.roundRect(x - radius, y - 20, radius * 2, 40, 12);
-        ctx.fill();
-        ctx.stroke();
+        if (isHarmonic && !note.hitState) {
+          ctx.save();
+          ctx.translate(visualX, y);
+          ctx.rotate(Math.PI / 4);
+          ctx.beginPath();
+          ctx.roundRect(-21, -21, 42, 42, 9);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          ctx.beginPath();
+          ctx.roundRect(visualX - radius, y - 20, radius * 2, 40, 12);
+          ctx.fill();
+          ctx.stroke();
+        }
         ctx.shadowBlur = 0;
+
+        if (isHarmonic && !note.hitState) {
+          ctx.fillStyle = '#FFF7A8';
+          ctx.strokeStyle = 'rgba(0,0,0,0.82)';
+          ctx.lineWidth = 3;
+          ctx.font = '900 10px JetBrains Mono, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.strokeText('H', visualX + 18, y - 19);
+          ctx.fillText('H', visualX + 18, y - 19);
+        }
 
         ctx.fillStyle = '#FFFFFF';
         ctx.strokeStyle = 'rgba(0,0,0,0.72)';
         ctx.lineWidth = 4;
-        ctx.font = '900 20px JetBrains Mono, monospace';
+        ctx.font = '900 18px JetBrains Mono, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const noteLabel = note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : String(note.fret);
-        ctx.strokeText(noteLabel, x, y + 0.5);
-        ctx.fillText(noteLabel, x, y + 0.5);
+        ctx.strokeText(noteLabel, visualX, y + 0.5);
+        ctx.fillText(noteLabel, visualX, y + 0.5);
       }
 
       if (activeTargetNoteRef.current) {
@@ -1680,6 +1738,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               const yPercent = stringIdx * laneHeightPercent + laneHeightPercent * 0.16;
               const noteHeightPercent = laneHeightPercent * 0.68;
               const isOpenString = note.fret === 0;
+              const layoutOffset = getVisualNoteOffset(note, scrollingNotes);
 
               const isPast = diffMs < 0;
               const hasSustain = note.durationMs > 400;
@@ -1701,9 +1760,10 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                   }`}
                   style={{
                     left: `${xPercent}%`,
-                    top: `${yPercent}%`,
+                    top: `calc(${yPercent}% + ${layoutOffset.y}px)`,
+                    transform: `translateX(${layoutOffset.x}px)`,
                     height: `${noteHeightPercent}%`,
-                    willChange: 'left',
+                    willChange: 'left, transform',
                   }}
                 >
                   {/* Translucent Sustain Trail Ribbon */}
@@ -1755,6 +1815,11 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                         : `0 4px 12px rgba(0,0,0,0.5), 0 0 8px ${color}44`,
                     }}
                   >
+                    {note.isHarmonic && !isHit && !isMiss && (
+                      <span className="absolute -right-2 -top-2 rounded-full border border-[#FFF7A8]/80 bg-[#0A0F19] px-1 text-[8px] font-black text-[#FFF7A8]">
+                        H
+                      </span>
+                    )}
                     {/* Fret Number Label, Checkmark, or Red Cross */}
                     <span className="font-mono font-black text-sm text-white drop-shadow-sm">
                       {isHit ? '✓' : isMiss ? '✕' : note.fret}
