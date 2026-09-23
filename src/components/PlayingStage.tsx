@@ -896,16 +896,16 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   return (
     <div
       id="playing-stage-container"
-      className="flex flex-col h-full bg-[radial-gradient(circle_at_20%_0%,rgba(0,229,190,0.12),transparent_30%),#0B0F17] text-[#E2E8F0] select-none overflow-hidden font-sans"
+      className="flex flex-col h-full bg-[#05070B] text-[#E2E8F0] select-none overflow-hidden font-sans"
     >
       {/* Top HUD Bar */}
       <header
         id="playing-stage-header"
-        className="h-[74px] bg-[#090E17]/95 backdrop-blur-md border-b border-[#182436] px-6 flex items-center justify-between z-20 shrink-0"
+        className="h-16 bg-[#05070B]/95 backdrop-blur-md border-b border-white/5 px-6 flex items-center justify-between z-20 shrink-0"
       >
         {/* Left: Song details & Rating Stars */}
         <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00E5BE]/20 to-[#0A1626] border border-[#00E5BE]/30 flex items-center justify-center text-[#00E5BE] shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-[#00E5BE] shrink-0">
             <Music className="w-5 h-5" />
           </div>
 
@@ -919,27 +919,15 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               <span>{activeSong.artist}</span>
               <span aria-hidden="true">·</span>
               {/* 3 Gold Stars Rating Meter */}
-              <div className="flex items-center gap-0.5">
-                {[1, 2, 3].map((starIdx) => (
-                  <Star
-                    key={starIdx}
-                    className={`w-3.5 h-3.5 transition-colors ${
-                      starIdx <= stars
-                        ? 'text-[#F59E0B] fill-[#F59E0B]'
-                        : 'text-[#243346] fill-[#151F2E]'
-                    }`}
-                  />
-                ))}
-                <span className="text-xs font-bold text-white font-mono tabular-nums ml-1">
-                  {score.toLocaleString()} PTS
-                </span>
-              </div>
+              <span className="text-[11px] font-mono text-[#6F7D8C] tabular-nums">
+                {score.toLocaleString()}
+              </span>
             </div>
           </div>
         </div>
 
         {/* Center: Tuner Widget & Streak Flame Multiplier */}
-        <div className="flex items-center gap-3">
+        <div className="hidden lg:flex items-center gap-3">
           <GuitarTuner
             currentPitch={pitchData.pitch}
             frequencyHz={pitchData.frequency}
@@ -956,7 +944,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             key={streak}
             animate={{ scale: streak > 0 ? [1, 1.08, 1] : 1 }}
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2.5 bg-[#0F1624] border border-[#202E42] rounded-xl px-3 py-1.5 shadow-sm"
+            className="hidden xl:flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-full px-3 py-1.5"
           >
             <div className="w-6 h-6 rounded-lg bg-[#FF6B35]/15 flex items-center justify-center text-[#FF6B35]">
               <Flame className="w-3.5 h-3.5 animate-pulse fill-[#FF6B35]" />
@@ -974,11 +962,11 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
         {/* Right: Accuracy card & Action triggers */}
         <div className="flex items-center gap-2.5">
-          <div className="bg-[#0B101A] border border-[#1C283A] rounded-xl px-3 py-1.5 text-right font-mono">
+          <div className="bg-transparent border-0 px-1 py-1 text-right font-mono">
             <div className="text-xs font-bold tracking-tight text-[#00E5BE] tabular-nums">
               ТОЧНОСТ {accuracyPct}%
             </div>
-            <div className="text-[10px] text-[#63768D] tabular-nums mt-0.5">
+            <div className="hidden">
               Hits <span className="text-white font-semibold">{stats.hits}</span> · Close{' '}
               <span className="text-[#F59E0B] font-semibold">{stats.close}</span> · Miss{' '}
               <span className="text-[#EF4444] font-semibold">{stats.misses}</span>
@@ -990,7 +978,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.96 }}
             onClick={() => setShowAudioSettings(true)}
-            className="bg-[#101724] hover:bg-[#162132] text-[#DDE4EE] border border-[#1E2C40] hover:border-[#00E5BE]/50 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="bg-white/[0.03] hover:bg-white/[0.07] text-[#DDE4EE] border border-white/10 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
             title="Калибрация на латентността и чувствителността на китарата"
           >
             <Sliders className="w-3.5 h-3.5 text-[#00E5BE]" />
@@ -1020,7 +1008,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             exit={{ opacity: 0, height: 0 }}
             id="mic-enable-banner"
             onClick={handleToggleMic}
-            className="bg-[#0D1420] border-b border-[#1E2B3E] px-6 py-2 flex items-center justify-between text-xs text-[#8293A7] cursor-pointer hover:bg-[#101928] transition-colors shrink-0"
+            className="bg-[#05070B] border-b border-white/5 px-6 py-1.5 flex items-center justify-between text-[11px] text-[#6F7D8C] cursor-pointer hover:bg-white/[0.02] transition-colors shrink-0"
           >
             <div className="flex items-center gap-2.5">
               <span className="w-2 h-2 rounded-full bg-[#EF4444] animate-pulse" />
@@ -1034,7 +1022,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 e.stopPropagation();
                 handleToggleMic();
               }}
-              className="px-3 py-1 bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070A10] font-bold rounded-lg text-xs shadow-sm shadow-[#00E5BE]/30 transition-colors cursor-pointer"
+              className="px-3 py-1 bg-white/[0.05] hover:bg-white/[0.09] text-[#E2E8F0] font-semibold rounded-full text-[11px] border border-white/10 transition-colors cursor-pointer"
             >
               Включи микрофона
             </motion.button>
@@ -1420,7 +1408,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 {/* String Studio Channel Badge */}
                 <div
                   id={`string-pill-${stringNum}`}
-                  className="z-30 ml-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0E1522] border border-[#1E2B3E] shadow-sm transition-transform hover:scale-105 active:scale-95"
+                  className="z-30 ml-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#05070B]/80 border border-white/10 transition-transform hover:scale-105 active:scale-95"
                   style={{
                     borderColor: isFlashed ? color : undefined,
                     boxShadow: isFlashed ? `0 0 14px ${color}` : undefined,
@@ -1560,9 +1548,9 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       {songSections.length > 0 && (
         <div
           id="song-section-map"
-          className="px-5 py-3 bg-[#060A10]/98 border-t border-[#172235] shrink-0 shadow-[0_-12px_35px_rgba(0,0,0,0.28)]"
+          className="px-6 py-2 bg-[#05070B] border-t border-white/5 shrink-0"
         >
-          <div className="flex items-center justify-between mb-2">
+          <div className="hidden">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#00E5BE] shadow-[0_0_12px_#00E5BE]" />
@@ -1589,7 +1577,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               </div>
             )}
           </div>
-          <div className="flex h-11 rounded-2xl overflow-hidden border border-[#21324A] bg-[#0B111C] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="flex h-2 rounded-full overflow-hidden bg-white/10">
             {songSections.map((section, index) => {
               const width = Math.max(
                 7,
@@ -1616,12 +1604,12 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                   key={section.id}
                   type="button"
                   onClick={() => seekTo(section.startMs)}
-                  className={`relative h-full px-2 text-[10px] font-black uppercase tracking-wide border-r border-[#070A10] transition-all cursor-pointer overflow-hidden group ${
+                  className={`relative h-full min-w-0 border-r border-[#05070B] transition-opacity cursor-pointer overflow-hidden group ${
                     isActive
-                      ? 'text-[#061014] shadow-[0_0_22px_rgba(0,229,190,0.32)] scale-[1.01] z-10'
+                      ? 'opacity-100 z-10'
                       : isPast
-                      ? 'text-[#C9FFF0]'
-                      : 'text-[#D5E2F2] hover:text-white'
+                      ? 'opacity-70'
+                      : 'opacity-45 hover:opacity-80'
                   }`}
                   style={{
                     flexBasis: `${width}%`,
@@ -1645,13 +1633,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                       style={{ width: `${activeProgress}%` }}
                     />
                   )}
-                  <span className="relative z-10 truncate block">
-                    {section.name}
-                  </span>
-                  <span className={`relative z-10 mt-0.5 block text-[8px] font-mono ${
-                    isActive ? 'text-[#061014]/70' : 'text-[#8EA4BC]'
-                  }`}>
-                    M{section.startMeasure}-{section.endMeasure}
+                  <span className="sr-only">
+                    {section.name} M{section.startMeasure}-{section.endMeasure}
                   </span>
                   {section.confidence === 'marker' && (
                     <span className="absolute right-1 top-1 w-1.5 h-1.5 rounded-full bg-white/80" />
@@ -1666,7 +1649,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       {/* Song Timeline & Scrub Bar */}
       <div
         id="song-timeline-scrub-bar"
-        className="px-5 py-1.5 bg-[#070A10] border-t border-[#151D2A] flex items-center space-x-3 shrink-0"
+        className="px-6 py-2 bg-[#05070B] border-t border-white/5 flex items-center space-x-3 shrink-0"
       >
         <span className="text-[11px] font-mono font-bold text-[#8FA5BF] w-9 text-right">
           {formatTime(playbackMs)}
@@ -1681,7 +1664,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           className="flex-1 h-2 bg-[#121926] hover:h-2.5 rounded-full relative cursor-pointer group transition-all"
         >
           <div
-            className="h-full bg-gradient-to-r from-[#00A389] via-[#00E5BE] to-[#2ED573] rounded-full relative shadow-[0_0_10px_#00E5BE]"
+            className="h-full bg-[#00E5BE] rounded-full relative"
             style={{
               width: `${Math.min(100, (playbackMs / noteSequenceDurationMs) * 100)}%`,
             }}
@@ -1698,7 +1681,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       {/* Bottom Practice Toolbar & Controls */}
       <footer
         id="guitar-footer-controls"
-        className="h-14 bg-[#080D15] border-t border-[#182436] px-6 flex items-center justify-between shrink-0 z-20"
+        className="h-14 bg-[#05070B] border-t border-white/5 px-6 flex items-center justify-between shrink-0 z-20"
       >
         {/* Play / Pause / Restart */}
         <div className="flex items-center gap-2.5">
@@ -1707,7 +1690,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.94 }}
             onClick={togglePlayback}
-            className="w-10 h-10 rounded-xl bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] flex items-center justify-center font-black shadow-md shadow-[#00E5BE]/25 transition-colors cursor-pointer"
+            className="w-10 h-10 rounded-full bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] flex items-center justify-center font-black transition-colors cursor-pointer"
             title="Space: Play / Pause"
           >
             {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
@@ -1733,7 +1716,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               setStars(0);
               setStats({ hits: 0, close: 0, misses: 0 });
             }}
-            className="w-9 h-9 rounded-xl bg-[#101724] hover:bg-[#162132] text-[#9FB0C4] hover:text-white flex items-center justify-center border border-[#1E2B3E] transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white/[0.03] hover:bg-white/[0.07] text-[#9FB0C4] hover:text-white flex items-center justify-center border border-white/10 transition-colors cursor-pointer"
             title="Рестартирай песента от началото"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -1751,10 +1734,10 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 setActiveTargetNote(null);
               }
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border hidden md:flex items-center gap-2 transition-colors cursor-pointer ${
               waitForMeMode
-                ? 'bg-[#F59E0B] text-[#080C12] border-[#F59E0B] shadow-sm shadow-[#F59E0B]/25'
-                : 'bg-[#101724] text-[#8EA1B8] border-[#1E2B3E] hover:text-white'
+                ? 'bg-[#F59E0B] text-[#080C12] border-[#F59E0B]'
+                : 'bg-white/[0.03] text-[#8EA1B8] border-white/10 hover:text-white'
             }`}
             title="Wait for me: автоматично спира на всяка нота, докато не я изсвирите правилно"
           >
@@ -1778,10 +1761,10 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 if (!isPlaying) setIsPlaying(true);
               }
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border hidden md:flex items-center gap-1.5 transition-colors cursor-pointer ${
               isAutoDemo
-                ? 'bg-[#8B5CF6] text-white border-[#8B5CF6] shadow-sm shadow-[#8B5CF6]/30'
-                : 'bg-[#101724] text-[#8EA1B8] border-[#1E2B3E] hover:text-white'
+                ? 'bg-[#8B5CF6] text-white border-[#8B5CF6]'
+                : 'bg-white/[0.03] text-[#8EA1B8] border-white/10 hover:text-white'
             }`}
             title="Демо режим: симулаторът автоматично показва правилното свирене"
           >
@@ -1794,10 +1777,10 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             id="btn-speaker-sound-toggle"
             whileTap={{ scale: 0.95 }}
             onClick={() => setSynthSoundWithMic(!synthSoundWithMic)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border hidden lg:flex items-center gap-1.5 transition-colors cursor-pointer ${
               synthSoundWithMic
-                ? 'bg-[#131E2E] text-[#00E5BE] border-[#00E5BE]/40'
-                : 'bg-[#101724] text-[#8EA1B8] border-[#1E2B3E] hover:text-white'
+                ? 'bg-white/[0.03] text-[#00E5BE] border-[#00E5BE]/30'
+                : 'bg-white/[0.03] text-[#8EA1B8] border-white/10 hover:text-white'
             }`}
             title={
               synthSoundWithMic
@@ -1820,14 +1803,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         </div>
 
         {/* Dynamic Continuous Tempo Controller (0% - 200% in 1% increments) & AI Coach Controls */}
-        <div className="flex items-center gap-2 bg-[#0C121D] border border-[#1C283A] p-1.5 rounded-xl relative">
+        <div className="flex items-center gap-2 bg-white/[0.03] border border-white/10 p-1.5 rounded-full relative">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-[#63768D] font-mono font-medium pl-1 hidden sm:inline">Скорост:</span>
             
             {/* Step Down 1% */}
             <button
               onClick={() => changeTempoPercent(currentTempoPercent - 1)}
-              className="w-6 h-6 rounded-lg bg-[#141C2B] hover:bg-[#1D293E] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
+              className="w-6 h-6 rounded-full bg-transparent hover:bg-white/[0.06] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
               title="Намали темпото с 1%"
               aria-label="Намали темпото с 1%"
             >
@@ -1853,7 +1836,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             {/* Step Up 1% */}
             <button
               onClick={() => changeTempoPercent(currentTempoPercent + 1)}
-              className="w-6 h-6 rounded-lg bg-[#141C2B] hover:bg-[#1D293E] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
+              className="w-6 h-6 rounded-full bg-transparent hover:bg-white/[0.06] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
               title="Увеличи темпото с 1%"
               aria-label="Увеличи темпото с 1%"
             >
@@ -1863,10 +1846,10 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             {/* Clickable Current Tempo & BPM Badge */}
             <button
               onClick={() => setIsCustomTempoOpen(!isCustomTempoOpen)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
                 isCustomTempoOpen
-                  ? 'bg-[#00E5BE] text-[#070A10] shadow-md shadow-[#00E5BE]/30'
-                  : 'bg-[#141E2F] hover:bg-[#1A273D] text-[#00E5BE] border border-[#00E5BE]/30'
+                  ? 'bg-[#00E5BE] text-[#070A10]'
+                  : 'bg-transparent hover:bg-white/[0.06] text-[#00E5BE] border border-white/10'
               }`}
               title="Отвори меню за бързи пресети и прецизен контрол"
             >
@@ -1881,7 +1864,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           </div>
 
           {/* Quick Preset Buttons */}
-          <div className="hidden xl:flex items-center gap-1 pl-1 border-l border-[#1A2638]">
+          <div className="hidden 2xl:flex items-center gap-1 pl-1 border-l border-white/10">
             {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => {
               const targetPct = Math.round(rate * 100);
               const isActive = currentTempoPercent === targetPct;
