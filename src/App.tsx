@@ -3,7 +3,7 @@ import { PlayingStage } from './components/PlayingStage';
 import { SongMenu } from './components/SongMenu';
 import { StudioTuner } from './components/StudioTuner';
 import { AICoachChat } from './components/AICoachChat';
-import { ImportedSong, SongMetadata, SongSection, TabNote } from './types';
+import { ImportedSong, SongAnalysis, SongMetadata, SongSection, TabNote } from './types';
 import { Play, Music, SlidersHorizontal, Bot, Mic, MicOff, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { micDetector } from './utils/pitchDetector';
@@ -15,6 +15,7 @@ export default function App() {
   const [selectedSong, setSelectedSong] = useState<SongMetadata | null>(null);
   const [selectedNotes, setSelectedNotes] = useState<TabNote[] | null>(null);
   const [selectedSections, setSelectedSections] = useState<SongSection[] | null>(null);
+  const [selectedAnalysis, setSelectedAnalysis] = useState<SongAnalysis | null>(null);
 
   const activeSong = selectedSong || SONG_CATALOG[0];
 
@@ -71,6 +72,7 @@ export default function App() {
     const imported = importedSongs.find((candidate) => candidate.id === song.id);
     setSelectedNotes(imported?.notes || null);
     setSelectedSections(imported?.sections || null);
+    setSelectedAnalysis(imported?.analysis || null);
     setCurrentView('stage');
   };
 
@@ -83,6 +85,7 @@ export default function App() {
     setSelectedSong(song);
     setSelectedNotes(song.notes);
     setSelectedSections(song.sections);
+    setSelectedAnalysis(song.analysis || null);
     setCurrentView('stage');
   };
 
@@ -211,6 +214,7 @@ export default function App() {
                 selectedSong={selectedSong}
                 selectedNotes={selectedNotes}
                 selectedSections={selectedSections}
+                selectedAnalysis={selectedAnalysis}
                 tempoPercent={tempoPercent}
                 onTempoPercentChange={setTempoPercent}
                 onOpenLibrary={() => setCurrentView('menu')}
