@@ -1064,7 +1064,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       const denseGroups: TabNote[][] = [];
       for (let stringNum = 1; stringNum <= 6; stringNum += 1) {
         const stringNotes = visibleNotes
-          .filter((note) => note.string === stringNum && !note.hitState && !note.isHarmonic)
+          .filter((note) => note.string === stringNum && !note.hitState)
           .sort((a, b) => a.timestampMs - b.timestampMs || a.fret - b.fret || a.id.localeCompare(b.id));
 
         let cluster: TabNote[] = [];
@@ -1151,8 +1151,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         const isOpen = note.fret === 0;
         const isHarmonic = Boolean(note.isHarmonic);
         const isDense = layoutOffset.sameStringCount > 1;
-        const harmonicColor = '#FFE66D';
-        const radius = isOpen ? 17 : isDense ? 19 : isHarmonic ? 27 : 22;
+        const radius = isOpen ? 17 : isDense ? 19 : isHarmonic ? 24 : 22;
         const sustain = Math.max(0, (note.durationMs / visibleWindowMs) * 300);
 
         if (sustain > 24) {
@@ -1174,24 +1173,18 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           ctx.stroke();
         }
 
-        ctx.shadowColor = isHarmonic && !note.hitState ? harmonicColor : color;
-        ctx.shadowBlur = note.hitState ? 18 : isHarmonic ? 28 : 14;
-        ctx.fillStyle = isHarmonic && !note.hitState ? '#16120A' : isOpen ? '#071018' : color;
-        ctx.strokeStyle = note.hitState === 'miss' ? '#FFD1D1' : isHarmonic ? harmonicColor : 'rgba(255,255,255,0.85)';
+        ctx.shadowColor = color;
+        ctx.shadowBlur = note.hitState ? 18 : isHarmonic ? 20 : 14;
+        ctx.fillStyle = isOpen ? '#071018' : color;
+        ctx.strokeStyle = note.hitState === 'miss' ? '#FFD1D1' : isHarmonic ? '#FFF7A8' : 'rgba(255,255,255,0.85)';
         ctx.lineWidth = isOpen ? 3 : 2.5;
         if (isHarmonic && !note.hitState) {
           ctx.save();
           ctx.translate(visualX, y);
           ctx.rotate(Math.PI / 4);
           ctx.beginPath();
-          ctx.roundRect(-23, -23, 46, 46, 8);
+          ctx.roundRect(-21, -21, 42, 42, 9);
           ctx.fill();
-          ctx.stroke();
-
-          ctx.strokeStyle = 'rgba(255,230,109,0.45)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.roundRect(-15, -15, 30, 30, 5);
           ctx.stroke();
           ctx.restore();
         } else {
@@ -1203,23 +1196,23 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         ctx.shadowBlur = 0;
 
         if (isHarmonic && !note.hitState) {
-          ctx.fillStyle = harmonicColor;
+          ctx.fillStyle = '#FFF7A8';
           ctx.strokeStyle = 'rgba(0,0,0,0.82)';
           ctx.lineWidth = 3;
-          ctx.font = '900 11px JetBrains Mono, monospace';
+          ctx.font = '900 10px JetBrains Mono, monospace';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.strokeText('H', visualX + 23, y - 24);
-          ctx.fillText('H', visualX + 23, y - 24);
+          ctx.strokeText('H', visualX + 18, y - 19);
+          ctx.fillText('H', visualX + 18, y - 19);
         }
 
         ctx.fillStyle = '#FFFFFF';
         ctx.strokeStyle = 'rgba(0,0,0,0.72)';
         ctx.lineWidth = 4;
-        ctx.font = `900 ${isHarmonic && !note.hitState ? 14 : isDense ? 16 : 18}px JetBrains Mono, monospace`;
+        ctx.font = `900 ${isDense ? 16 : 18}px JetBrains Mono, monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const noteLabel = note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : isHarmonic ? `H${note.fret}` : String(note.fret);
+        const noteLabel = note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : String(note.fret);
         ctx.strokeText(noteLabel, visualX, y + 0.5);
         ctx.fillText(noteLabel, visualX, y + 0.5);
       }
@@ -1913,9 +1906,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                   {/* Note Head Capsule */}
                   <div
                     id={`note-head-${note.id}`}
-                    className={`relative w-10 h-full flex items-center justify-center z-10 transition-all ${
-                      note.isHarmonic && !isHit && !isMiss ? 'rounded-lg rotate-45' : 'rounded-xl'
-                    } ${
+                    className={`relative w-10 h-full rounded-xl flex items-center justify-center z-10 transition-all ${
                       isWaitingThisNote
                         ? 'ring-4 ring-[#00E5BE] scale-110 shadow-[0_0_20px_#00E5BE]'
                         : isMiss
@@ -1927,8 +1918,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                         ? '#10B981'
                         : isMiss
                         ? '#DC2626'
-                        : note.isHarmonic
-                        ? '#16120A'
                         : isOpenString
                         ? '#0A0F19'
                         : color,
@@ -1936,8 +1925,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                         ? '2px solid #FFFFFF'
                         : isMiss
                         ? '2px solid #FFA3A3'
-                        : note.isHarmonic
-                        ? '2px solid #FFE66D'
                         : isOpenString
                         ? `2px solid ${color}`
                         : '1.5px solid rgba(255,255,255,0.75)',
@@ -1945,21 +1932,19 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                         ? '0 0 16px #10B981'
                         : isMiss
                         ? '0 0 16px #EF4444'
-                        : note.isHarmonic
-                        ? '0 0 18px #FFE66D88, 0 0 5px #FFE66D'
                         : isOpenString
                         ? `0 0 10px ${color}66`
                         : `0 4px 12px rgba(0,0,0,0.5), 0 0 8px ${color}44`,
                     }}
                   >
                     {note.isHarmonic && !isHit && !isMiss && (
-                      <span className="absolute -right-2 -top-2 -rotate-45 rounded-full border border-[#FFE66D]/80 bg-[#0A0F19] px-1 text-[8px] font-black text-[#FFE66D]">
+                      <span className="absolute -right-2 -top-2 rounded-full border border-[#FFF7A8]/80 bg-[#0A0F19] px-1 text-[8px] font-black text-[#FFF7A8]">
                         H
                       </span>
                     )}
                     {/* Fret Number Label, Checkmark, or Red Cross */}
-                    <span className={`font-mono font-black text-sm text-white drop-shadow-sm ${note.isHarmonic && !isHit && !isMiss ? '-rotate-45 text-[11px]' : ''}`}>
-                      {isHit ? '✓' : isMiss ? '✕' : note.isHarmonic ? `H${note.fret}` : note.fret}
+                    <span className="font-mono font-black text-sm text-white drop-shadow-sm">
+                      {isHit ? '✓' : isMiss ? '✕' : note.fret}
                     </span>
                   </div>
                 </div>
