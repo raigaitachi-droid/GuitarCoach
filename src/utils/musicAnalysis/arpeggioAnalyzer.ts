@@ -249,6 +249,171 @@ function detectPositionShifts(notes: TabNote[]): TechniqueAnalysis[] {
   return mergeOverlapping(candidates).slice(0, 16);
 }
 
+
+function getNotesPerMinute(notes: TabNote[]): number {
+  if (notes.length < 2) return 0;
+  const { startMs, endMs } = getTimeRange(notes);
+  const minutes = Math.max(1 / 60, (endMs - startMs) / 60000);
+  return notes.length / minutes;
+}
+
+function getNotesPerBeat(notes: TabNote[], tempoBpm: number): number {
+  if (notes.length < 2 || tempoBpm <= 0) return 0;
+  const { startMs, endMs } = getTimeRange(notes);
+  const beats = Math.max(0.25, ((endMs - startMs) / 60000) * tempoBpm);
+  return notes.length / beats;
+}
+
+function detectHighNpmPassages(notes: TabNote[], tempoBpm: number): TechniqueAnalysis[] {
+  const ordered = orderedNotes(notes);
+  const candidates: TechniqueAnalysis[] = [];
+  const sixteenthNpm = tempoBpm * 4;
+
+  for (let start = 0; start < ordered.length - 5; start += 1) {
+    const window = ordered.slice(start, start + 8);
+    const { startMs, endMs } = getTimeRange(window);
+    const spanMs = endMs - startMs;
+    if (spanMs < 500 || spanMs > 4500) continue;
+
+    const npm = getNotesPerMinute(window);
+    const notesPerBeat = getNotesPerBeat(window, tempoBpm);
+    const isSixteenthThreshold = sixteenthNpm >= 480 && notesPerBeat >= 3.6;
+    const isHardSixteenthThreshold = sixteenthNpm >= 576 && notesPerBeat >= 3.6;
+    const isObjectivelyFast = npm >= 480;
+
+    if (!isSixteenthThreshold && !isObjectivelyFast) continue;
+
+    const severity = isHardSixteenthThreshold || npm >= 576 ? 'high' : 'medium';
+    const startPlan =
+      severity === 'high'
+        ? 'Първо мини пасажа без темпо 2-3 пъти, после започни на 25%. Когато движението стане спокойно, мини към 50%.'
+        : 'Започни на 50%. Качи до 80% през 2%, после от 80% до 100% през 1% само ако няма натрупване на грешки.';
+
+    candidates.push(
+      makeTechnique(
+        'high-npm',
+        `${Math.round(npm)} НВМ`,
+        window,
+        severity === 'high' ? 0.92 : 0.82,
+        severity,
+        'Висока НВМ: реалната скорост е трудна',
+        'BPM сам по себе си лъже. Тук важната величина е НВМ - колко ноти реално трябва да изсвириш за минута.',
+        `Пасажът е около ${Math.round(npm)} ноти в минута при ${tempoBpm} BPM. Това е приблизително ${notesPerBeat.toFixed(1)} ноти за удар.`,
+        `${startPlan} Ако грешките се появят около даден процент, не качвай повече - върни се към последното стабилно темпо.`
+      )
+    );
+  }
+
+  return mergeOverlapping(candidates).slice(0, 16);
+}
+
+function detectDenseBeatGroups(notes: TabNote[], tempoBpm: number): TechniqueAnalysis[] {
+  const ordered = orderedNotes(notes);
+  const candidates: TechniqueAnalysis[] = [];
+
+  for (let start = 0; start < ordered.length - 3; start += 1) {
+    const first = ordered[start];
+    const beatMs = 60000 / Math.max(1, tempoBpm);
+    const window = ordered.filter((note) => note.timestampMs >= first.timestampMs && note.timestampMs < first.timestampMs + beatMs);
+    if (window.length < 5) continue;
+
+    const notesPerBeat = window.length;
+    const severity = notesPerBeat >= 7 ? 'high' : notesPerBeat >= 6 ? 'medium' : 'low';
+
+    candidates.push(
+      makeTechnique(
+        'dense-beat',
+        `${notesPerBeat} notes / beat`,
+        window,
+        notesPerBeat >= 7 ? 0.9 : 0.78,
+        severity,
+        'Много ноти за един удар',
+        'Това е точно случаят от бележката: темпото може да изглежда лесно, но секстоли, септоли или гъсти групи правят пасажа труден.',
+        `В един удар има около ${notesPerBeat} ноти. Това е по-важно от голото BPM число.`,
+        'Първо преброй групата на глас без китара. После свири само ритъма на една струна. Добави височините чак когато групата стои равномерно.'
+      )
+    );
+  }
+
+  return mergeOverlapping(candidates).slice(0, 12);
+}
+
+function detectPolyphonyStretch(notes: TabNote[]): TechniqueAnalysis[] {
+  const ordered = orderedNotes(notes);
+  const groups = new Map<number, TabNote[]>();
+
+  for (const note of ordered) {
+    const bucket = Math.round(note.timestampMs / 35) * 35;
+    groups.set(bucket, [...(groups.get(bucket) || []), note]);
+  }
+
+  const candidates: TechniqueAnalysis[] = [];
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+
+    const fretted = group.filter((note) => note.fret > 0);
+    const fretStretch =
+      fretted.length >= 2
+        ? Math.max(...fretted.map((note) => note.fret)) - Math.min(...fretted.map((note) => note.fret))
+        : 0;
+
+    if (group.length < 3 && fretStretch <= 2) continue;
+
+    const severity = group.length >= 3 || fretStretch > 4 ? 'high' : 'medium';
+
+    candidates.push(
+      makeTechnique(
+        'polyphony-stretch',
+        `${group.length} voices${fretStretch > 0 ? ` / ${fretStretch} fret stretch` : ''}`,
+        group,
+        severity === 'high' ? 0.9 : 0.78,
+        severity,
+        'Многогласие с разтягане',
+        'При двуглас, триглас или четириглас трудността не е само “кои ноти”, а дали ръката може да държи форма без напрежение.',
+        `Има ${group.length} едновременни ноти${fretStretch > 0 ? ` и разтягане около ${fretStretch} прагчета` : ''}.`,
+        'Първо хвани формата без темпо и провери дали палецът и китката са спокойни. Ако разтягането е над 2 прагчета, упражнявай като акордна форма, не като отделни ноти.'
+      )
+    );
+  }
+
+  return mergeOverlapping(candidates).slice(0, 14);
+}
+
+function createPracticeStrategy(notes: TabNote[], tempoBpm: number, detectedProblems: TechniqueAnalysis[]): TechniqueAnalysis[] {
+  if (notes.length === 0) return [];
+
+  const npm = getNotesPerMinute(notes);
+  const highCount = detectedProblems.filter((item) => item.severity === 'high').length;
+  const mediumCount = detectedProblems.filter((item) => item.severity === 'medium').length;
+  const localHotspots = detectedProblems.length > 0 && detectedProblems.length <= 8;
+  const objectivelyHard = npm >= 520 || highCount >= 3;
+
+  const first = orderedNotes(notes)[0];
+  const last = orderedNotes(notes)[orderedNotes(notes.length - 1 ? notes : [])];
+  const allNotes = orderedNotes(notes);
+
+  const strategy = objectivelyHard
+    ? 'Първо мини цялото произведение без темпо, за да знаеш формите. После започни на 25%. Когато движението стане спокойно, премини към 50%.'
+    : localHotspots
+    ? 'Не тренирай цялото парче еднакво. Работи по hotspot-ите от картата, после върни целия контекст.'
+    : 'Започни от 50%. Качи до 80% през 2%, после 80-100% през 1%. Ако грешките се натрупат, спри качването и се върни към стабилното темпо.';
+
+  return [
+    makeTechnique(
+      'practice-strategy',
+      objectivelyHard ? 'Start without tempo' : localHotspots ? 'Hotspot practice' : '50-80-100 ramp',
+      allNotes.slice(0, Math.min(12, allNotes.length)),
+      0.86,
+      objectivelyHard ? 'high' : 'medium',
+      'Стратегия за започване на произведението',
+      'Бележката е права: първо трябва да решим как да започнем ученето, а не просто да пуснем песента на 100%.',
+      `Обща плътност: около ${Math.round(npm)} НВМ при ${tempoBpm} BPM. Открити са ${highCount} тежки и ${mediumCount} средни проблема.`,
+      strategy
+    ),
+  ];
+}
+
 function detectSpeedBursts(notes: TabNote[]): TechniqueAnalysis[] {
   const ordered = orderedNotes(notes);
   const candidates: TechniqueAnalysis[] = [];
@@ -311,17 +476,25 @@ function sortTechniqueMap(items: TechniqueAnalysis[]): TechniqueAnalysis[] {
     .slice(0, 36);
 }
 
-export function analyzeTechniqueMap(notes: TabNote[]): TechniqueAnalysis[] {
-  return sortTechniqueMap([
+export function analyzeTechniqueMap(notes: TabNote[], tempoBpm = 120): TechniqueAnalysis[] {
+  const problemMap = sortTechniqueMap([
     ...detectArpeggios(notes),
     ...detectStringSkips(notes),
     ...detectPositionShifts(notes),
+    ...detectHighNpmPassages(notes, tempoBpm),
+    ...detectDenseBeatGroups(notes, tempoBpm),
+    ...detectPolyphonyStretch(notes),
     ...detectSpeedBursts(notes),
+  ]);
+
+  return sortTechniqueMap([
+    ...createPracticeStrategy(notes, tempoBpm, problemMap),
+    ...problemMap,
   ]);
 }
 
-export function detectArpeggioPassages(notes: TabNote[]): TechniqueAnalysis[] {
-  return analyzeTechniqueMap(notes);
+export function detectArpeggioPassages(notes: TabNote[], tempoBpm = 120): TechniqueAnalysis[] {
+  return analyzeTechniqueMap(notes, tempoBpm);
 }
 
 export async function loadMusic21TheoryEngine(): Promise<unknown | null> {
