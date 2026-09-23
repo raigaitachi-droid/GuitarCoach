@@ -165,7 +165,27 @@ export const SongMenu: React.FC<SongMenuProps> = ({
   };
 
   return (
-    <div id="guitar-trainer-menu" className="flex flex-col h-full bg-[#070A10] text-[#E2E8F0] select-none font-sans overflow-hidden">
+    <div
+      id="guitar-trainer-menu"
+      className={`flex flex-col h-full bg-[#070A10] text-[#E2E8F0] select-none font-sans overflow-hidden ${
+        isDragging ? 'ring-2 ring-inset ring-[#00E5BE]' : ''
+      }`}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget === event.target) {
+          setIsDragging(false);
+        }
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setIsDragging(false);
+        const file = event.dataTransfer.files?.[0];
+        if (file) void handleFile(file);
+      }}
+    >
       {/* Menu Header */}
       <header id="menu-header" className="h-20 bg-[#090E17]/95 backdrop-blur-md border-b border-[#182436] px-8 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
@@ -313,12 +333,30 @@ export const SongMenu: React.FC<SongMenuProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111A27] hover:bg-[#162234] border border-[#202E42] text-xs font-semibold text-white transition-colors cursor-pointer"
+            disabled={isImporting}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111A27] hover:bg-[#162234] disabled:opacity-60 disabled:cursor-wait border border-[#202E42] text-xs font-semibold text-white transition-colors cursor-pointer"
           >
-            <UploadCloud className="w-3.5 h-3.5 text-[#00E5BE]" />
-            <span>Импорт на GP таблатура</span>
+            {isImporting ? (
+              <LoaderCircle className="w-3.5 h-3.5 text-[#00E5BE] animate-spin" />
+            ) : (
+              <UploadCloud className="w-3.5 h-3.5 text-[#00E5BE]" />
+            )}
+            <span>{isImporting ? 'Импортира...' : 'Импорт на GP таблатура'}</span>
           </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".gp,.gpx,.gp3,.gp4,.gp5"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void handleFile(file);
+              event.target.value = '';
+            }}
+          />
         </div>
 
         {importError && (
@@ -330,6 +368,20 @@ export const SongMenu: React.FC<SongMenuProps> = ({
             {importError}
           </motion.div>
         )}
+
+        <AnimatePresence>
+          {isDragging && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="px-4 py-3 rounded-xl bg-[#00E5BE]/10 border border-[#00E5BE]/35 text-[#BFFEF2] text-xs font-semibold flex items-center gap-2"
+            >
+              <UploadCloud className="w-4 h-4 text-[#00E5BE]" />
+              <span>Пусни Guitar Pro файла тук, за да го анализирам.</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {importedSongs.length > 0 && (
           <div className="flex items-center gap-2 pt-2 text-xs font-bold text-[#00E5BE]">
