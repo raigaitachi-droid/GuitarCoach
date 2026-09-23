@@ -62,9 +62,27 @@ export interface TechniqueAnalysis {
   practiceTip: string;
 }
 
+export interface PracticeFlowAssignment {
+  method: string;
+  stage: string;
+  firstAssignment: string;
+  reason: string;
+  startTempoPercent: number;
+  chunk: string;
+  successCriteria: string[];
+  failureAction: string;
+  nextStep: string;
+  recommendedMethods: Array<{
+    id: string;
+    label: string;
+    instruction: string;
+  }>;
+}
+
 export interface SongAnalysis {
   techniques: TechniqueAnalysis[];
   primaryFocus?: TechniqueAnalysis;
+  practiceFlow?: PracticeFlowAssignment;
 }
 
 export interface ImportedSong extends SongMetadata {
