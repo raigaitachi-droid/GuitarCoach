@@ -97,9 +97,9 @@ export default function App() {
   ];
 
   return (
-    <div id="guitar-trainer-app" className="flex flex-col h-screen w-screen bg-[#06090F] text-[#E2E8F0] overflow-hidden select-none font-sans">
+    <div id="guitar-trainer-app" className="flex flex-col h-screen w-screen bg-[#030508] text-[#E2E8F0] overflow-hidden select-none font-sans">
       {/* Unified Single Studio Top Bar */}
-      <header id="app-top-nav" className="h-14 bg-[#080D16] border-b border-[#141F30] px-4 sm:px-6 flex items-center justify-between z-30 shrink-0">
+      <header id="app-top-nav" className="h-12 bg-[#030508]/95 border-b border-white/5 px-4 sm:px-5 flex items-center justify-between z-30 shrink-0 backdrop-blur-md">
         {/* Left: Brand & Active Song Badge */}
         <div className="flex items-center gap-3">
           <div
@@ -107,7 +107,7 @@ export default function App() {
             onClick={() => setCurrentView('stage')}
             title="Към сцената"
           >
-            <div className="w-7 h-7 rounded-lg bg-[#00E5BE] flex items-center justify-center font-black text-[#070B12] text-xs shadow-sm shadow-[#00E5BE]/30 group-hover:scale-105 transition-transform">
+            <div className="w-7 h-7 rounded-full bg-[#00E5BE] flex items-center justify-center font-black text-[#070B12] text-xs group-hover:scale-105 transition-transform">
               P
             </div>
             <span className="font-extrabold text-sm tracking-tight text-white hidden md:inline">
@@ -120,7 +120,7 @@ export default function App() {
           {/* Quick Active Song Indicator & Switcher */}
           <button
             onClick={() => setCurrentView('menu')}
-            className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#0E1524] hover:bg-[#162136] border border-[#1E2E44] text-xs transition-colors cursor-pointer group"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 text-xs transition-colors cursor-pointer group"
             title="Кликни за избор на друга песен от библиотеката"
           >
             <Music className="w-3.5 h-3.5 text-[#00E5BE]" />
@@ -135,7 +135,7 @@ export default function App() {
         </div>
 
         {/* Center: Clean Primary Navigation Tabs */}
-        <nav id="view-tabs" className="flex items-center bg-[#0C121E] p-1 rounded-xl border border-[#1C293D]">
+        <nav id="view-tabs" className="flex items-center bg-white/[0.03] p-0.5 rounded-full border border-white/10">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
@@ -152,7 +152,7 @@ export default function App() {
                 {isActive && (
                   <motion.div
                     layoutId="active-nav-indicator"
-                    className="absolute inset-0 bg-[#00E5BE] rounded-lg shadow-sm shadow-[#00E5BE]/30"
+                    className="absolute inset-0 bg-[#00E5BE] rounded-full"
                     transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                   />
                 )}
@@ -199,7 +199,7 @@ export default function App() {
       </header>
 
       {/* Main View Area */}
-      <main id="app-view-container" className="flex-1 relative overflow-hidden bg-[#06090F]">
+      <main id="app-view-container" className="flex-1 relative overflow-hidden bg-[#030508]">
         <AnimatePresence mode="wait">
           {currentView === 'stage' && (
             <motion.div
