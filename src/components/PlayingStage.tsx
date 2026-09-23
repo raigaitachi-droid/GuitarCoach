@@ -156,6 +156,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   // Keep playback paused by default on load so it NEVER starts playing by itself unexpectedly!
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackMs, setPlaybackMs] = useState(0);
+  const [isTechniqueMapOpen, setIsTechniqueMapOpen] = useState(false);
   const [tempoFactor, setTempoFactor] = useState(() =>
     typeof tempoPercent === 'number' ? Math.max(0, Math.min(200, tempoPercent)) / 100 : 1.0
   );
@@ -911,7 +912,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   return (
     <div
       id="playing-stage-container"
-      className="flex flex-col h-full bg-[#05070B] text-[#E2E8F0] select-none overflow-hidden font-sans"
+      className="relative flex flex-col h-full bg-[#05070B] text-[#E2E8F0] select-none overflow-hidden font-sans"
     >
       {/* Top HUD Bar */}
       <header
@@ -1560,167 +1561,207 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       </main>
 
 
-      {/* Imported Tab Technique Map */}
+      {/* Imported Tab Technique Map Trigger */}
       {detectedTechniques.length > 0 && (
-        <section
-          id="technique-problem-map"
-          className="bg-[#05070B] border-t border-white/5 px-6 py-3 shrink-0"
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00E5BE]">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Technique Map</span>
-                <span className="text-[#5F7186] normal-case tracking-normal">
-                  {detectedTechniques.length} открити места
-                </span>
+        <div className="bg-[#05070B] border-t border-white/5 px-6 py-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsTechniqueMapOpen(true)}
+            className="w-full flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] px-4 py-2 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <Sparkles className="w-4 h-4 text-[#00E5BE] shrink-0" />
+              <div className="min-w-0 text-left">
+                <div className="text-xs font-bold text-white truncate">
+                  Technique Map
+                  {focusTechnique ? ` · ${focusTechnique.problemTitle || focusTechnique.label}` : ''}
+                </div>
+                <div className="text-[11px] text-[#7D8FA6] truncate">
+                  {detectedTechniques.length} открити места · клик за карта, обяснение и упражнения
+                </div>
               </div>
-              <p className="mt-1 text-xs text-[#8EA1B8]">
-                Картата показва къде таблатурата вероятно ще създаде технически проблем и какво да репетираш.
-              </p>
             </div>
 
-            {focusTechnique && (
-              <div className="hidden lg:flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => seekTo(focusTechnique.startMs)}
-                  className="px-3 py-2 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 text-xs font-semibold text-[#DDE4EE] transition-colors cursor-pointer"
-                >
-                  Покажи активното
-                </button>
-                <button
-                  type="button"
-                  onClick={playTechniqueFocus}
-                  className="px-3 py-2 rounded-full bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#061014] text-xs font-black transition-colors cursor-pointer"
-                >
-                  Изсвири активното
-                </button>
+            <div className="hidden sm:flex items-center gap-1.5">
+              {detectedTechniques.slice(0, 8).map((technique) => {
+                const color =
+                  technique.severity === 'high'
+                    ? '#FF5E7E'
+                    : technique.severity === 'medium'
+                    ? '#F59E0B'
+                    : '#00E5BE';
+
+                return (
+                  <span
+                    key={technique.id}
+                    className="h-1.5 w-6 rounded-full"
+                    style={{ backgroundColor: color }}
+                    title={technique.problemTitle || technique.label}
+                  />
+                );
+              })}
+            </div>
+          </button>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {isTechniqueMapOpen && detectedTechniques.length > 0 && (
+          <motion.div
+            id="technique-problem-map-drawer"
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 28 }}
+            transition={{ duration: 0.18 }}
+            className="absolute inset-x-3 bottom-[116px] z-40 max-h-[58vh] overflow-hidden rounded-xl border border-white/10 bg-[#070A10]/98 shadow-2xl shadow-black/60 backdrop-blur-md"
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-white/10 bg-[#070A10]/95 px-4 py-3">
+              <div>
+                <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00E5BE]">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Technique Map</span>
+                  <span className="text-[#5F7186] normal-case tracking-normal">
+                    {detectedTechniques.length} открити места
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-[#8EA1B8]">
+                  Скролни картата и избери проблем, за да го покажеш или изсвириш.
+                </p>
               </div>
-            )}
-          </div>
 
-          <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden relative">
-            {detectedTechniques.map((technique) => {
-              const left = Math.max(0, Math.min(100, (technique.startMs / noteSequenceDurationMs) * 100));
-              const width = Math.max(
-                1.5,
-                Math.min(18, ((technique.endMs - technique.startMs) / noteSequenceDurationMs) * 100)
-              );
-              const color =
-                technique.severity === 'high'
-                  ? '#FF5E7E'
-                  : technique.severity === 'medium'
-                  ? '#F59E0B'
-                  : '#00E5BE';
+              <button
+                type="button"
+                onClick={() => setIsTechniqueMapOpen(false)}
+                className="h-8 px-3 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-xs font-semibold text-[#DDE4EE] transition-colors cursor-pointer"
+              >
+                Затвори
+              </button>
+            </div>
 
-              return (
-                <button
-                  key={technique.id}
-                  type="button"
-                  onClick={() => seekTo(technique.startMs)}
-                  className="absolute top-0 h-full rounded-full cursor-pointer hover:brightness-125 transition"
-                  style={{ left: `${left}%`, width: `${width}%`, backgroundColor: color }}
-                  title={`${technique.problemTitle || technique.label}: ${formatTime(technique.startMs)}`}
-                  aria-label={`Покажи ${technique.problemTitle || technique.label}`}
-                />
-              );
-            })}
-          </div>
+            <div className="max-h-[calc(58vh-64px)] overflow-y-auto px-4 py-3">
+              <div className="h-2 rounded-full bg-white/10 overflow-hidden relative">
+                {detectedTechniques.map((technique) => {
+                  const left = Math.max(0, Math.min(100, (technique.startMs / noteSequenceDurationMs) * 100));
+                  const width = Math.max(
+                    1.5,
+                    Math.min(18, ((technique.endMs - technique.startMs) / noteSequenceDurationMs) * 100)
+                  );
+                  const color =
+                    technique.severity === 'high'
+                      ? '#FF5E7E'
+                      : technique.severity === 'medium'
+                      ? '#F59E0B'
+                      : '#00E5BE';
 
-          {focusTechnique && (
-            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                        focusTechnique.severity === 'high'
-                          ? 'bg-[#FF5E7E]/15 text-[#FF8EA3] border border-[#FF5E7E]/30'
-                          : focusTechnique.severity === 'medium'
-                          ? 'bg-[#F59E0B]/15 text-[#F8C064] border border-[#F59E0B]/30'
-                          : 'bg-[#00E5BE]/12 text-[#6EF5DA] border border-[#00E5BE]/25'
+                  return (
+                    <button
+                      key={technique.id}
+                      type="button"
+                      onClick={() => seekTo(technique.startMs)}
+                      className="absolute top-0 h-full rounded-full cursor-pointer hover:brightness-125 transition"
+                      style={{ left: `${left}%`, width: `${width}%`, backgroundColor: color }}
+                      title={`${technique.problemTitle || technique.label}: ${formatTime(technique.startMs)}`}
+                      aria-label={`Покажи ${technique.problemTitle || technique.label}`}
+                    />
+                  );
+                })}
+              </div>
+
+              {focusTechnique && (
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                            focusTechnique.severity === 'high'
+                              ? 'bg-[#FF5E7E]/15 text-[#FF8EA3] border border-[#FF5E7E]/30'
+                              : focusTechnique.severity === 'medium'
+                              ? 'bg-[#F59E0B]/15 text-[#F8C064] border border-[#F59E0B]/30'
+                              : 'bg-[#00E5BE]/12 text-[#6EF5DA] border border-[#00E5BE]/25'
+                          }`}
+                        >
+                          {focusTechnique.severity || 'medium'}
+                        </span>
+                        <h2 className="text-sm font-bold text-white">
+                          {focusTechnique.problemTitle || focusTechnique.label}
+                        </h2>
+                        <span className="text-xs text-[#8293A7]">
+                          {formatTime(focusTechnique.startMs)}-{formatTime(focusTechnique.endMs)}
+                          {focusTechnique.startMeasure ? ` · M${focusTechnique.startMeasure}${focusTechnique.endMeasure && focusTechnique.endMeasure !== focusTechnique.startMeasure ? `-${focusTechnique.endMeasure}` : ''}` : ''}
+                          {' · '}
+                          {Math.round(focusTechnique.confidence * 100)}%
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-[#D7DEE8] max-w-4xl">
+                        <strong className="text-white">Открито:</strong> {focusTechnique.summary}
+                      </p>
+                      {focusTechnique.whyItMatters && (
+                        <p className="mt-1 text-xs text-[#9AAABC] max-w-4xl">
+                          <strong className="text-[#CBD5E1]">Защо е проблем:</strong> {focusTechnique.whyItMatters}
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-[#D7DEE8] max-w-4xl">
+                        <strong className="text-[#00E5BE]">Как да го упражняваш:</strong> {focusTechnique.practiceTip}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => seekTo(focusTechnique.startMs)}
+                        className="px-3 py-2 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 text-xs font-semibold text-[#DDE4EE] transition-colors cursor-pointer"
+                      >
+                        Покажи
+                      </button>
+                      <button
+                        type="button"
+                        onClick={playTechniqueFocus}
+                        className="px-3 py-2 rounded-full bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#061014] text-xs font-black transition-colors cursor-pointer"
+                      >
+                        Изсвири
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {detectedTechniques.map((technique, index) => {
+                  const isActive = focusTechnique?.id === technique.id;
+                  return (
+                    <button
+                      key={technique.id}
+                      type="button"
+                      onClick={() => seekTo(technique.startMs)}
+                      className={`rounded-xl border p-3 text-left transition-colors cursor-pointer ${
+                        isActive
+                          ? 'border-[#00E5BE]/50 bg-[#00E5BE]/10'
+                          : 'border-white/10 bg-white/[0.025] hover:bg-white/[0.055]'
                       }`}
                     >
-                      {focusTechnique.severity || 'medium'}
-                    </span>
-                    <h2 className="text-sm font-bold text-white">
-                      {focusTechnique.problemTitle || focusTechnique.label}
-                    </h2>
-                    <span className="text-xs text-[#8293A7]">
-                      {formatTime(focusTechnique.startMs)}-{formatTime(focusTechnique.endMs)}
-                      {focusTechnique.startMeasure ? ` · M${focusTechnique.startMeasure}${focusTechnique.endMeasure && focusTechnique.endMeasure !== focusTechnique.startMeasure ? `-${focusTechnique.endMeasure}` : ''}` : ''}
-                      {' · '}
-                      {Math.round(focusTechnique.confidence * 100)}%
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-[#D7DEE8] max-w-4xl">
-                    <strong className="text-white">Открито:</strong> {focusTechnique.summary}
-                  </p>
-                  {focusTechnique.whyItMatters && (
-                    <p className="mt-1 text-xs text-[#9AAABC] max-w-4xl">
-                      <strong className="text-[#CBD5E1]">Защо е проблем:</strong> {focusTechnique.whyItMatters}
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-[#D7DEE8] max-w-4xl">
-                    <strong className="text-[#00E5BE]">Как да го упражняваш:</strong> {focusTechnique.practiceTip}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => seekTo(focusTechnique.startMs)}
-                    className="px-3 py-2 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 text-xs font-semibold text-[#DDE4EE] transition-colors cursor-pointer"
-                  >
-                    Покажи
-                  </button>
-                  <button
-                    type="button"
-                    onClick={playTechniqueFocus}
-                    className="px-3 py-2 rounded-full bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#061014] text-xs font-black transition-colors cursor-pointer"
-                  >
-                    Изсвири
-                  </button>
-                </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-mono text-[#7D8FA6]">
+                          #{index + 1} · {formatTime(technique.startMs)}
+                        </span>
+                        <span className="text-[10px] uppercase font-black text-[#8293A7]">
+                          {technique.type}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs font-bold text-white">
+                        {technique.problemTitle || technique.label}
+                      </div>
+                      <div className="mt-1 text-[11px] text-[#9AAABC]">
+                        {technique.practiceTip}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          )}
-
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-            {detectedTechniques.slice(0, 12).map((technique, index) => {
-              const isActive = focusTechnique?.id === technique.id;
-              return (
-                <button
-                  key={technique.id}
-                  type="button"
-                  onClick={() => seekTo(technique.startMs)}
-                  className={`min-w-[220px] rounded-xl border p-3 text-left transition-colors cursor-pointer ${
-                    isActive
-                      ? 'border-[#00E5BE]/50 bg-[#00E5BE]/10'
-                      : 'border-white/10 bg-white/[0.025] hover:bg-white/[0.055]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-mono text-[#7D8FA6]">
-                      #{index + 1} · {formatTime(technique.startMs)}
-                    </span>
-                    <span className="text-[10px] uppercase font-black text-[#8293A7]">
-                      {technique.type}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs font-bold text-white truncate">
-                    {technique.problemTitle || technique.label}
-                  </div>
-                  <div className="mt-1 text-[11px] text-[#9AAABC] line-clamp-2">
-                    {technique.practiceTip}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Song Structure Map */}
       {songSections.length > 0 && (
