@@ -28,32 +28,43 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
   };
 
   const effectSource = candidate.effects ?? candidate;
-  const rawType = String(effectSource.harmonicType ?? candidate.harmonicType ?? '').toLowerCase();
-  const hasHarmonicValue = effectSource.harmonicValue !== undefined || candidate.harmonicValue !== undefined;
+  const rawType = String(effectSource.harmonicType ?? candidate.harmonicType ?? '').trim().toLowerCase();
+  const rawValue = effectSource.harmonicValue ?? candidate.harmonicValue;
+  const hasTrueFlag = (...values: unknown[]) => values.some((value) => value === true);
+  const hasMeaningfulType =
+    rawType.length > 0 &&
+    !['0', 'false', 'none', 'normal', 'null', 'undefined', 'noharmonic', 'no-harmonic'].includes(rawType);
+  const hasMeaningfulValue =
+    typeof rawValue === 'number'
+      ? Number.isFinite(rawValue) && rawValue > 0
+      : typeof rawValue === 'string'
+      ? rawValue.trim().length > 0 &&
+        !['0', 'false', 'none', 'normal', 'null', 'undefined'].includes(rawValue.trim().toLowerCase())
+      : rawValue === true;
   const isHarmonic =
-    Boolean(effectSource.isHarmonic ?? candidate.isHarmonic) ||
-    Boolean(effectSource.isNaturalHarmonic ?? candidate.isNaturalHarmonic) ||
-    Boolean(effectSource.isArtificialHarmonic ?? candidate.isArtificialHarmonic) ||
-    Boolean(effectSource.isPinchHarmonic ?? candidate.isPinchHarmonic) ||
-    Boolean(effectSource.isTapHarmonic ?? candidate.isTapHarmonic) ||
-    Boolean(effectSource.isSemiHarmonic ?? candidate.isSemiHarmonic) ||
-    hasHarmonicValue ||
-    rawType.length > 0;
+    hasTrueFlag(effectSource.isHarmonic, candidate.isHarmonic) ||
+    hasTrueFlag(effectSource.isNaturalHarmonic, candidate.isNaturalHarmonic) ||
+    hasTrueFlag(effectSource.isArtificialHarmonic, candidate.isArtificialHarmonic) ||
+    hasTrueFlag(effectSource.isPinchHarmonic, candidate.isPinchHarmonic) ||
+    hasTrueFlag(effectSource.isTapHarmonic, candidate.isTapHarmonic) ||
+    hasTrueFlag(effectSource.isSemiHarmonic, candidate.isSemiHarmonic) ||
+    hasMeaningfulValue ||
+    hasMeaningfulType;
 
   if (!isHarmonic) return { isHarmonic: false };
-  if (rawType.includes('natural') || Boolean(effectSource.isNaturalHarmonic ?? candidate.isNaturalHarmonic)) {
+  if (rawType.includes('natural') || hasTrueFlag(effectSource.isNaturalHarmonic, candidate.isNaturalHarmonic)) {
     return { isHarmonic: true, harmonicType: 'natural' };
   }
-  if (rawType.includes('artificial') || Boolean(effectSource.isArtificialHarmonic ?? candidate.isArtificialHarmonic)) {
+  if (rawType.includes('artificial') || hasTrueFlag(effectSource.isArtificialHarmonic, candidate.isArtificialHarmonic)) {
     return { isHarmonic: true, harmonicType: 'artificial' };
   }
-  if (rawType.includes('pinch') || Boolean(effectSource.isPinchHarmonic ?? candidate.isPinchHarmonic)) {
+  if (rawType.includes('pinch') || hasTrueFlag(effectSource.isPinchHarmonic, candidate.isPinchHarmonic)) {
     return { isHarmonic: true, harmonicType: 'pinch' };
   }
-  if (rawType.includes('tap') || Boolean(effectSource.isTapHarmonic ?? candidate.isTapHarmonic)) {
+  if (rawType.includes('tap') || hasTrueFlag(effectSource.isTapHarmonic, candidate.isTapHarmonic)) {
     return { isHarmonic: true, harmonicType: 'tap' };
   }
-  if (rawType.includes('semi') || Boolean(effectSource.isSemiHarmonic ?? candidate.isSemiHarmonic)) {
+  if (rawType.includes('semi') || hasTrueFlag(effectSource.isSemiHarmonic, candidate.isSemiHarmonic)) {
     return { isHarmonic: true, harmonicType: 'semi' };
   }
   return { isHarmonic: true, harmonicType: 'unknown' };
