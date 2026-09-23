@@ -1,4 +1,5 @@
 import { TabNote, TechniqueAnalysis, TechniqueType } from '../../types';
+import { buildDifficultyMap, DifficultyHotspot } from './difficultyMap';
 
 const STANDARD_TUNING_MIDI_BY_STRING: Record<number, number> = {
   1: 64,
@@ -467,6 +468,43 @@ function mergeOverlapping(items: TechniqueAnalysis[]): TechniqueAnalysis[] {
   return merged;
 }
 
+
+function notesFromHotspot(allNotes: TabNote[], hotspot: DifficultyHotspot): TabNote[] {
+  const ids = new Set(hotspot.noteIds);
+  return orderedNotes(allNotes.filter((note) => ids.has(note.id)));
+}
+
+function describeHotspotType(hotspot: DifficultyHotspot): TechniqueType {
+  if (hotspot.maxPolyphony >= 2 && hotspot.fretSpan > 2) return 'polyphony-stretch';
+  if (hotspot.notesPerBeat >= 5) return 'dense-beat';
+  if (hotspot.notesPerMinute >= 480) return 'high-npm';
+  if (hotspot.maxFretJump >= 5) return 'position-shift';
+  if (hotspot.maxStringJump >= 2) return 'string-skip';
+  return 'speed-burst';
+}
+
+function createDifficultyTechnique(allNotes: TabNote[], hotspot: DifficultyHotspot): TechniqueAnalysis | null {
+  const hotspotNotes = notesFromHotspot(allNotes, hotspot);
+  if (hotspotNotes.length === 0) return null;
+
+  const type = describeHotspotType(hotspot);
+  const reasonText = hotspot.reasons.join('; ');
+
+  return makeTechnique(
+    type,
+    `Difficulty ${hotspot.score}/100`,
+    hotspotNotes,
+    hotspot.severity === 'high' ? 0.93 : hotspot.severity === 'medium' ? 0.82 : 0.7,
+    hotspot.severity,
+    `Реална трудност: ${hotspot.score}/100`,
+    'Това място е избрано след обща оценка, а не само защото има един симптом. Комбинацията от скорост, плътност, скокове, разтягане и контекст го прави важно.',
+    reasonText || `Оценка ${hotspot.score}/100 според плътност и движение.`,
+    hotspot.severity === 'high'
+      ? 'Започни без темпо, после 25%. Не качвай, докато няма 3 чисти повторения без напрежение.'
+      : 'Започни на 50%. Качи към 80% през 2%, после към 100% през 1% само при стабилни повторения.'
+  );
+}
+
 function sortTechniqueMap(items: TechniqueAnalysis[]): TechniqueAnalysis[] {
   const severityScore: Record<string, number> = { high: 3, medium: 2, low: 1 };
   return [...items]
@@ -475,7 +513,12 @@ function sortTechniqueMap(items: TechniqueAnalysis[]): TechniqueAnalysis[] {
 }
 
 export function analyzeTechniqueMap(notes: TabNote[], tempoBpm = 120): TechniqueAnalysis[] {
-  const problemMap = sortTechniqueMap([
+  const difficultyHotspots = buildDifficultyMap(notes, tempoBpm);
+  const difficultyTechniques = difficultyHotspots
+    .map((hotspot) => createDifficultyTechnique(notes, hotspot))
+    .filter((item): item is TechniqueAnalysis => Boolean(item));
+
+  const supportingTechniques = sortTechniqueMap([
     ...detectArpeggios(notes),
     ...detectStringSkips(notes),
     ...detectPositionShifts(notes),
@@ -483,7 +526,14 @@ export function analyzeTechniqueMap(notes: TabNote[], tempoBpm = 120): Technique
     ...detectDenseBeatGroups(notes, tempoBpm),
     ...detectPolyphonyStretch(notes),
     ...detectSpeedBursts(notes),
-  ]);
+  ]).filter((technique) =>
+    difficultyHotspots.some((hotspot) => technique.startMs <= hotspot.endMs && technique.endMs >= hotspot.startMs)
+  );
+
+  const problemMap = sortTechniqueMap([
+    ...difficultyTechniques,
+    ...supportingTechniques,
+  ]).slice(0, 8);
 
   return sortTechniqueMap([
     ...createPracticeStrategy(notes, tempoBpm, problemMap),
