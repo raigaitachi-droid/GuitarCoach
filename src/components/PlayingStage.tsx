@@ -29,7 +29,7 @@ import {
   Gauge,
   Check,
 } from 'lucide-react';
-import { TabNote, SongMetadata, FeedbackData, SongSection, CoachEvaluation } from '../types';
+import { TabNote, SongMetadata, FeedbackData, SongSection, CoachEvaluation, SongAnalysis } from '../types';
 import { GuitarTuner } from './GuitarTuner';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector } from '../utils/pitchDetector';
@@ -41,6 +41,7 @@ interface PlayingStageProps {
   selectedSong?: SongMetadata | null;
   selectedNotes?: TabNote[] | null;
   selectedSections?: SongSection[] | null;
+  selectedAnalysis?: SongAnalysis | null;
   tempoPercent?: number;
   onTempoPercentChange?: (newTempoPercent: number) => void;
   onOpenLibrary: () => void;
@@ -127,6 +128,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   selectedSong,
   selectedNotes,
   selectedSections,
+  selectedAnalysis,
   tempoPercent = 100,
   onTempoPercentChange,
   onOpenLibrary,
@@ -135,6 +137,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   const activeSong = selectedSong || SONG_CATALOG[0];
   const currentSongDurationMs = activeSong.durationMs || TOTAL_SONG_DURATION_MS;
   const songSections = selectedSections && selectedSections.length > 0 ? selectedSections : [];
+  const detectedTechniques = selectedAnalysis?.techniques || [];
   const activeTabList =
     selectedNotes && selectedNotes.length > 0
       ? selectedNotes
@@ -797,13 +800,20 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     setIsPlaying((playing) => !playing);
   };
 
-  const seekTo = (nextPlaybackMs: number) => {
+  const seekTo = (nextPlaybackMs: number, shouldPlay = false) => {
     const clampedPlaybackMs = Math.max(0, Math.min(noteSequenceDurationMs, nextPlaybackMs));
-    setIsPlaying(false);
+    setIsPlaying(shouldPlay);
     setIsFrozenWaiting(false);
     setActiveTargetNote(null);
     playbackMsRef.current = clampedPlaybackMs;
     setPlaybackMs(clampedPlaybackMs);
+  };
+
+  const playTechniqueFocus = () => {
+    if (!focusTechnique) return;
+    setIsAutoDemo(true);
+    setWaitForMeMode(false);
+    seekTo(Math.max(0, focusTechnique.startMs - 450), true);
   };
 
   // Keyboard shortcut listener
@@ -892,6 +902,11 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         )
       : 0;
   const completedSectionCount = songSections.filter((section) => playbackMs > section.endMs).length;
+  const activeTechnique =
+    detectedTechniques.find(
+      (technique) => playbackMs >= technique.startMs - 120 && playbackMs <= technique.endMs + 120
+    ) || null;
+  const focusTechnique = activeTechnique || selectedAnalysis?.primaryFocus || detectedTechniques[0] || null;
 
   return (
     <div
@@ -1543,6 +1558,57 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           </div>
         </div>
       </main>
+
+
+      {/* Imported Tab Theory & Pedagogy Focus */}
+      {focusTechnique && (
+        <section
+          id="practice-focus-panel"
+          className="bg-[#05070B] border-t border-white/5 px-6 py-3 shrink-0"
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#00E5BE]">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Practice Focus</span>
+                <span className="text-[#5F7186] normal-case tracking-normal">
+                  {Math.round(focusTechnique.confidence * 100)}% confidence
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2 className="text-sm font-bold text-white">{focusTechnique.label}</h2>
+                <span className="text-xs text-[#8293A7]">
+                  {formatTime(focusTechnique.startMs)}-{formatTime(focusTechnique.endMs)}
+                  {focusTechnique.startMeasure ? ` · M${focusTechnique.startMeasure}${focusTechnique.endMeasure && focusTechnique.endMeasure !== focusTechnique.startMeasure ? `-${focusTechnique.endMeasure}` : ''}` : ''}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[#9AAABC] max-w-3xl">
+                {focusTechnique.summary}
+              </p>
+              <p className="mt-1 text-xs text-[#D7DEE8] max-w-3xl">
+                {focusTechnique.practiceTip}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => seekTo(focusTechnique.startMs)}
+                className="px-3 py-2 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 text-xs font-semibold text-[#DDE4EE] transition-colors cursor-pointer"
+              >
+                Покажи
+              </button>
+              <button
+                type="button"
+                onClick={playTechniqueFocus}
+                className="px-3 py-2 rounded-full bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#061014] text-xs font-black transition-colors cursor-pointer"
+              >
+                Изсвири пасажа
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Song Structure Map */}
       {songSections.length > 0 && (
