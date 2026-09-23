@@ -5,6 +5,34 @@ import { buildPracticeFlowAssignment } from './musicAnalysis/practiceFlowRules';
 
 const SUPPORTED_EXTENSIONS = ['.gp', '.gpx', '.gp3', '.gp4', '.gp5'];
 
+function hasMeaningfulHarmonicProperty(value: unknown, depth = 0): boolean {
+  if (!value || typeof value !== 'object' || depth > 2) return false;
+
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.includes('harmonic')) {
+      if (raw === true) return true;
+      if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return true;
+      if (typeof raw === 'string') {
+        const normalized = raw.trim().toLowerCase();
+        if (
+          normalized.length > 0 &&
+          !['0', 'false', 'none', 'normal', 'null', 'undefined', 'noharmonic', 'no-harmonic'].includes(normalized)
+        ) {
+          return true;
+        }
+      }
+      if (raw && typeof raw === 'object' && Object.keys(raw).length > 0) return true;
+    }
+
+    if (raw && typeof raw === 'object' && hasMeaningfulHarmonicProperty(raw, depth + 1)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: 'natural' | 'artificial' | 'pinch' | 'tap' | 'semi' | 'unknown' } {
   const candidate = note as {
     harmonicType?: unknown;
@@ -55,7 +83,8 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
     hasExplicitHarmonicFlag ||
     hasMeaningfulType ||
     hasMeaningfulValue ||
-    knownNumericHarmonicType;
+    knownNumericHarmonicType ||
+    hasMeaningfulHarmonicProperty(candidate);
 
   if (!isHarmonic) return { isHarmonic: false };
   if (rawType.includes('natural') || hasTrueFlag(effectSource.isNaturalHarmonic, candidate.isNaturalHarmonic)) {
