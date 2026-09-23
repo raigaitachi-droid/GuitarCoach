@@ -33,7 +33,13 @@ export interface SongMetadata {
   measures: number;
 }
 
-export type TechniqueType = 'arpeggio' | 'scale-run' | 'chord-change' | 'string-skip';
+export type TechniqueType =
+  | 'arpeggio'
+  | 'scale-run'
+  | 'chord-change'
+  | 'string-skip'
+  | 'position-shift'
+  | 'speed-burst';
 
 export interface TechniqueAnalysis {
   id: string;
@@ -45,6 +51,9 @@ export interface TechniqueAnalysis {
   endMeasure?: number;
   noteIds: string[];
   confidence: number;
+  severity?: 'low' | 'medium' | 'high';
+  problemTitle?: string;
+  whyItMatters?: string;
   summary: string;
   practiceTip: string;
 }
