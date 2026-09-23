@@ -269,6 +269,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   const latencyOffsetRef = useRef(latencyOffsetMs);
   const hitToleranceRef = useRef(hitTolerance);
   const timingDriftSamplesRef = useRef<number[]>([]);
+  const highwayCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Current active note near hit zone
   const [activeTargetNote, setActiveTargetNote] = useState<TabNote | null>(null);
@@ -875,6 +876,144 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       hitState: undefined,
     })),
   ];
+  useEffect(() => {
+    const canvas = highwayCanvasRef.current;
+    if (!canvas) return;
+
+    let frameId = 0;
+
+    const draw = () => {
+      const parent = canvas.parentElement;
+      const rect = parent?.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        frameId = requestAnimationFrame(draw);
+        return;
+      }
+
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.floor(rect.width * dpr);
+      const height = Math.floor(rect.height * dpr);
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      const stageGradient = ctx.createLinearGradient(0, 0, rect.width, rect.height);
+      stageGradient.addColorStop(0, '#05070B');
+      stageGradient.addColorStop(0.48, '#07111C');
+      stageGradient.addColorStop(1, '#05070B');
+      ctx.fillStyle = stageGradient;
+      ctx.fillRect(0, 0, rect.width, rect.height);
+
+      const vanishingX = rect.width * 0.92;
+      const hitX = rect.width * hitZoneFraction;
+      const laneHeight = rect.height / 6;
+
+      for (let i = 0; i < 6; i += 1) {
+        const y = laneHeight * (i + 0.5);
+        const laneTop = laneHeight * i;
+
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.018)' : 'rgba(255,255,255,0.035)';
+        ctx.fillRect(0, laneTop, rect.width, laneHeight);
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, laneTop);
+        ctx.lineTo(rect.width, laneTop);
+        ctx.stroke();
+
+        const wireGradient = ctx.createLinearGradient(40, y, vanishingX, y);
+        wireGradient.addColorStop(0, `${STRING_COLORS[i]}44`);
+        wireGradient.addColorStop(0.5, 'rgba(255,255,255,0.72)');
+        wireGradient.addColorStop(1, `${STRING_COLORS[i]}22`);
+
+        ctx.strokeStyle = wireGradient;
+        ctx.lineWidth = STRING_GAUGES[i];
+        ctx.beginPath();
+        ctx.moveTo(76, y);
+        ctx.quadraticCurveTo(rect.width * 0.55, y - laneHeight * 0.05, vanishingX, y);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.58)';
+        ctx.font = '700 11px JetBrains Mono, monospace';
+        ctx.fillText(STRING_NAMES[i], 16, y + 4);
+      }
+
+      const glow = ctx.createLinearGradient(hitX - 12, 0, hitX + 12, 0);
+      glow.addColorStop(0, 'rgba(0,229,190,0)');
+      glow.addColorStop(0.5, 'rgba(0,229,190,0.32)');
+      glow.addColorStop(1, 'rgba(0,229,190,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(hitX - 14, 0, 28, rect.height);
+
+      ctx.strokeStyle = '#00E5BE';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hitX, 0);
+      ctx.lineTo(hitX, rect.height);
+      ctx.stroke();
+
+      const now = playbackMsRef.current;
+      for (const note of scrollingNotes) {
+        const diffMs = note.timestampMs - now;
+        const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
+        if (x < -80 || x > rect.width + 120) continue;
+
+        const stringIdx = note.string - 1;
+        const y = laneHeight * (stringIdx + 0.5);
+        const color = note.hitState === 'hit' ? '#10B981' : note.hitState === 'miss' ? '#EF4444' : STRING_COLORS[stringIdx];
+        const isOpen = note.fret === 0;
+        const radius = isOpen ? 15 : 18;
+        const sustain = Math.max(0, (note.durationMs / visibleWindowMs) * 300);
+
+        if (sustain > 24) {
+          ctx.fillStyle = `${color}24`;
+          ctx.strokeStyle = `${color}88`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(x + radius - 2, y - 7, sustain, 14, 7);
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        ctx.shadowColor = color;
+        ctx.shadowBlur = note.hitState ? 18 : 10;
+        ctx.fillStyle = isOpen ? '#05070B' : color;
+        ctx.strokeStyle = note.hitState === 'miss' ? '#FFD1D1' : 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = isOpen ? 2 : 1.5;
+        ctx.beginPath();
+        ctx.roundRect(x - radius, y - 16, radius * 2, 32, 10);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 14px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : String(note.fret), x, y + 0.5);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+
+      frameId = requestAnimationFrame(draw);
+    };
+
+    frameId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frameId);
+  }, [scrollingNotes, visibleWindowMs, hitZoneFraction]);
+
   const timingCueNote = notes.find(
     (note) =>
       !note.hitState &&
@@ -1400,6 +1539,13 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           )}
         </AnimatePresence>
 
+          <canvas
+            ref={highwayCanvasRef}
+            id="canvas-guitar-highway"
+            className="absolute inset-0 z-0 pointer-events-none"
+            aria-hidden="true"
+          />
+
           {/* Floating particle bursts */}
           <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
             {particles.map((p) => (
@@ -1429,9 +1575,9 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 key={name}
                 id={`lane-row-${stringNum}`}
                 onClick={() => handleManualFretClick(stringNum, activeTargetNote?.fret || 0)}
-                className={`relative flex-1 flex items-center transition-colors cursor-pointer border-b border-[#131C2A]/60 ${
-                  index % 2 === 0 ? 'bg-[#080C14]' : 'bg-[#0A0F19]'
-                } ${isFlashed ? 'bg-[#00E5BE]/15' : 'hover:bg-[#0F1626]'}`}
+                className={`relative flex-1 flex items-center transition-colors cursor-pointer border-b border-white/[0.03] bg-transparent ${
+                  index % 2 === 0 ? 'bg-transparent' : 'bg-transparent'
+                } ${isFlashed ? 'bg-[#00E5BE]/10' : 'hover:bg-white/[0.02]'}`}
               >
                 {/* String Studio Channel Badge */}
                 <div
@@ -1471,7 +1617,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           })}
 
           {/* Animated Scrolling Notes with Sustain Trails */}
-          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden opacity-35">
             {scrollingNotes.map((note) => {
               const diffMs = note.timestampMs - playbackMs;
               const xPercent =
