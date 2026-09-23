@@ -878,20 +878,24 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   ];
 
   const getVisualNoteOffset = (note: TabNote, visibleNotes: TabNote[]) => {
-    const chordNotes = visibleNotes
-      .filter((candidate) => Math.abs(candidate.timestampMs - note.timestampMs) <= 35)
-      .sort((a, b) => a.string - b.string || a.fret - b.fret || a.id.localeCompare(b.id));
-    const sameStringNotes = chordNotes.filter((candidate) => candidate.string === note.string);
-    const sameStringIndex = sameStringNotes.findIndex((candidate) => candidate.id === note.id);
-    const chordIndex = chordNotes.findIndex((candidate) => candidate.id === note.id);
-    const chordCenter = (chordNotes.length - 1) / 2;
-    const stringClusterCenter = (sameStringNotes.length - 1) / 2;
+    const chordNotes = visibleNotes.filter((candidate) => Math.abs(candidate.timestampMs - note.timestampMs) <= 35);
+    const denseStringNotes = visibleNotes
+      .filter(
+        (candidate) =>
+          candidate.string === note.string &&
+          Math.abs(candidate.timestampMs - note.timestampMs) <= 185
+      )
+      .sort((a, b) => a.timestampMs - b.timestampMs || a.fret - b.fret || a.id.localeCompare(b.id));
+    const denseIndex = denseStringNotes.findIndex((candidate) => candidate.id === note.id);
+    const visualRows = [0, -22, 22, -38, 38];
+    const visualRow = denseIndex >= 0 ? visualRows[denseIndex % visualRows.length] : 0;
+    const stringClusterCenter = (denseStringNotes.length - 1) / 2;
 
     return {
-      x: (sameStringIndex - stringClusterCenter) * 26 + (chordIndex - chordCenter) * 2,
-      y: sameStringNotes.length > 1 ? (sameStringIndex - stringClusterCenter) * 10 : 0,
+      x: denseStringNotes.length > 1 ? (denseIndex - stringClusterCenter) * 7 : 0,
+      y: denseStringNotes.length > 1 ? visualRow : 0,
       isChord: chordNotes.length > 1,
-      sameStringCount: sameStringNotes.length,
+      sameStringCount: denseStringNotes.length,
     };
   };
 
@@ -1029,7 +1033,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         const color = note.hitState === 'hit' ? '#10B981' : note.hitState === 'miss' ? '#EF4444' : STRING_COLORS[stringIdx];
         const isOpen = note.fret === 0;
         const isHarmonic = Boolean(note.isHarmonic);
-        const radius = isOpen ? 18 : isHarmonic ? 24 : 22;
+        const isDense = layoutOffset.sameStringCount > 1;
+        const radius = isOpen ? 17 : isDense ? 19 : isHarmonic ? 24 : 22;
         const sustain = Math.max(0, (note.durationMs / visibleWindowMs) * 300);
 
         if (sustain > 24) {
@@ -1067,7 +1072,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           ctx.restore();
         } else {
           ctx.beginPath();
-          ctx.roundRect(visualX - radius, y - 20, radius * 2, 40, 12);
+          ctx.roundRect(visualX - radius, y - 19, radius * 2, 38, 11);
           ctx.fill();
           ctx.stroke();
         }
@@ -1087,7 +1092,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         ctx.fillStyle = '#FFFFFF';
         ctx.strokeStyle = 'rgba(0,0,0,0.72)';
         ctx.lineWidth = 4;
-        ctx.font = '900 18px JetBrains Mono, monospace';
+        ctx.font = `900 ${isDense ? 16 : 18}px JetBrains Mono, monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const noteLabel = note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : String(note.fret);
@@ -1724,7 +1729,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           })}
 
           {/* Animated Scrolling Notes with Sustain Trails */}
-          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden opacity-20">
+          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden opacity-0" aria-hidden="true">
             {scrollingNotes.map((note) => {
               const diffMs = note.timestampMs - playbackMs;
               const xPercent =
