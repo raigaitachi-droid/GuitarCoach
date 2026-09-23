@@ -902,10 +902,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       hitState: undefined,
     })),
   ];
-  const harmonicNoteRatio =
-    notes.length > 0 ? notes.filter((note) => note.isHarmonic).length / notes.length : 0;
-  const disableHarmonicDisplay = harmonicNoteRatio > 0.2;
-  const shouldShowHarmonic = (note: TabNote) => Boolean(note.isHarmonic) && !disableHarmonicDisplay;
+  const shouldShowHarmonic = (note: TabNote) => Boolean(note.isHarmonic);
 
   const getChordEventNotes = (anchor: TabNote, sourceNotes: TabNote[]) =>
     sourceNotes.filter(
