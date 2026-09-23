@@ -5,6 +5,60 @@ import { buildPracticeFlowAssignment } from './musicAnalysis/practiceFlowRules';
 
 const SUPPORTED_EXTENSIONS = ['.gp', '.gpx', '.gp3', '.gp4', '.gp5'];
 
+function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: 'natural' | 'artificial' | 'pinch' | 'tap' | 'semi' | 'unknown' } {
+  const candidate = note as {
+    harmonicType?: unknown;
+    harmonicValue?: unknown;
+    isHarmonic?: unknown;
+    isNaturalHarmonic?: unknown;
+    isArtificialHarmonic?: unknown;
+    isPinchHarmonic?: unknown;
+    isTapHarmonic?: unknown;
+    isSemiHarmonic?: unknown;
+    effects?: {
+      harmonicType?: unknown;
+      harmonicValue?: unknown;
+      isHarmonic?: unknown;
+      isNaturalHarmonic?: unknown;
+      isArtificialHarmonic?: unknown;
+      isPinchHarmonic?: unknown;
+      isTapHarmonic?: unknown;
+      isSemiHarmonic?: unknown;
+    };
+  };
+
+  const effectSource = candidate.effects ?? candidate;
+  const rawType = String(effectSource.harmonicType ?? candidate.harmonicType ?? '').toLowerCase();
+  const hasHarmonicValue = effectSource.harmonicValue !== undefined || candidate.harmonicValue !== undefined;
+  const isHarmonic =
+    Boolean(effectSource.isHarmonic ?? candidate.isHarmonic) ||
+    Boolean(effectSource.isNaturalHarmonic ?? candidate.isNaturalHarmonic) ||
+    Boolean(effectSource.isArtificialHarmonic ?? candidate.isArtificialHarmonic) ||
+    Boolean(effectSource.isPinchHarmonic ?? candidate.isPinchHarmonic) ||
+    Boolean(effectSource.isTapHarmonic ?? candidate.isTapHarmonic) ||
+    Boolean(effectSource.isSemiHarmonic ?? candidate.isSemiHarmonic) ||
+    hasHarmonicValue ||
+    rawType.length > 0;
+
+  if (!isHarmonic) return { isHarmonic: false };
+  if (rawType.includes('natural') || Boolean(effectSource.isNaturalHarmonic ?? candidate.isNaturalHarmonic)) {
+    return { isHarmonic: true, harmonicType: 'natural' };
+  }
+  if (rawType.includes('artificial') || Boolean(effectSource.isArtificialHarmonic ?? candidate.isArtificialHarmonic)) {
+    return { isHarmonic: true, harmonicType: 'artificial' };
+  }
+  if (rawType.includes('pinch') || Boolean(effectSource.isPinchHarmonic ?? candidate.isPinchHarmonic)) {
+    return { isHarmonic: true, harmonicType: 'pinch' };
+  }
+  if (rawType.includes('tap') || Boolean(effectSource.isTapHarmonic ?? candidate.isTapHarmonic)) {
+    return { isHarmonic: true, harmonicType: 'tap' };
+  }
+  if (rawType.includes('semi') || Boolean(effectSource.isSemiHarmonic ?? candidate.isSemiHarmonic)) {
+    return { isHarmonic: true, harmonicType: 'semi' };
+  }
+  return { isHarmonic: true, harmonicType: 'unknown' };
+}
+
 export function isSupportedGuitarProFile(file: File): boolean {
   const name = file.name.toLowerCase();
   return SUPPORTED_EXTENSIONS.some((extension) => name.endsWith(extension));
@@ -238,6 +292,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
 
           for (const note of beat.notes) {
             if (note.fret < 0 || note.string < 1) continue;
+            const harmonicInfo = getHarmonicInfo(note);
 
             // alphaTab numbers string 1 from the lowest string; GuitarCoach
             // numbers string 1 from the highest string.
@@ -250,6 +305,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
               fret: Math.round(note.fret),
               timestampMs: Math.round(timestampMs),
               durationMs,
+              ...harmonicInfo,
               measureIndex,
             });
           }
