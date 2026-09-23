@@ -4,6 +4,8 @@ export interface TabNote {
   fret: number;
   timestampMs: number;
   durationMs: number;
+  isHarmonic?: boolean;
+  harmonicType?: 'natural' | 'artificial' | 'pinch' | 'tap' | 'semi' | 'unknown';
   measureIndex?: number;
   hitState?: 'unhit' | 'hit' | 'close' | 'miss' | 'wrong';
   timingOffsetMs?: number;
@@ -131,4 +133,3 @@ export interface PerformanceRound {
   timestamp: number;
   recommendedTempo?: number;
 }
-
