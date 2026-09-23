@@ -1022,7 +1022,86 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         return x >= -80 && x <= rect.width + 120;
       });
 
+      const groupedNoteIds = new Set<string>();
+      const denseGroups: TabNote[][] = [];
+      for (let stringNum = 1; stringNum <= 6; stringNum += 1) {
+        const stringNotes = visibleNotes
+          .filter((note) => note.string === stringNum && !note.hitState)
+          .sort((a, b) => a.timestampMs - b.timestampMs || a.fret - b.fret || a.id.localeCompare(b.id));
+
+        let cluster: TabNote[] = [];
+        for (const note of stringNotes) {
+          const previous = cluster[cluster.length - 1];
+          if (!previous || note.timestampMs - previous.timestampMs <= 150) {
+            cluster.push(note);
+          } else {
+            if (cluster.length >= 3) denseGroups.push(cluster);
+            cluster = [note];
+          }
+        }
+        if (cluster.length >= 3) denseGroups.push(cluster);
+      }
+
+      for (const group of denseGroups) {
+        const stringIdx = group[0].string - 1;
+        const laneY = laneHeight * (stringIdx + 0.5);
+        const startMs = group[0].timestampMs;
+        const endMs = group[group.length - 1].timestampMs;
+        const centerMs = (startMs + endMs) / 2;
+        const centerX = hitX + ((centerMs - now) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
+        const color = STRING_COLORS[stringIdx];
+        const uniqueFrets = Array.from(new Set(group.map((note) => note.fret)));
+        const label =
+          uniqueFrets.length === 1
+            ? `${uniqueFrets[0]}×${group.length}`
+            : group.length <= 4
+            ? group.map((note) => note.fret).join(' ')
+            : `${group[0].fret}…${group[group.length - 1].fret}`;
+        const groupWidth = Math.min(128, Math.max(58, 30 + label.length * 12));
+
+        group.forEach((note) => groupedNoteIds.add(note.id));
+
+        const spanWidth = Math.max(12, ((endMs - startMs) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width));
+        ctx.strokeStyle = `${color}55`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(centerX - spanWidth / 2, laneY - 5, spanWidth, 10, 5);
+        ctx.stroke();
+
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = color;
+        ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.roundRect(centerX - groupWidth / 2, laneY - 20, groupWidth, 40, 13);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = 'rgba(0,0,0,0.78)';
+        ctx.lineWidth = 4;
+        ctx.font = '900 16px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeText(label, centerX, laneY + 0.5);
+        ctx.fillText(label, centerX, laneY + 0.5);
+
+        ctx.fillStyle = 'rgba(2,4,9,0.92)';
+        ctx.strokeStyle = `${color}CC`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(centerX + groupWidth / 2 - 13, laneY - 29, 25, 17, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 9px JetBrains Mono, monospace';
+        ctx.fillText(String(group.length), centerX + groupWidth / 2 - 0.5, laneY - 20.5);
+      }
+
       for (const note of visibleNotes) {
+        if (groupedNoteIds.has(note.id)) continue;
         const diffMs = note.timestampMs - now;
         const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
 
