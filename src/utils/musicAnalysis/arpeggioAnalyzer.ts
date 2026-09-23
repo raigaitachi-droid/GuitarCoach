@@ -389,8 +389,6 @@ function createPracticeStrategy(notes: TabNote[], tempoBpm: number, detectedProb
   const localHotspots = detectedProblems.length > 0 && detectedProblems.length <= 8;
   const objectivelyHard = npm >= 520 || highCount >= 3;
 
-  const first = orderedNotes(notes)[0];
-  const last = orderedNotes(notes)[orderedNotes(notes.length - 1 ? notes : [])];
   const allNotes = orderedNotes(notes);
 
   const strategy = objectivelyHard
