@@ -31,8 +31,10 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
   const rawType = String(effectSource.harmonicType ?? candidate.harmonicType ?? '').trim().toLowerCase();
   const rawValue = effectSource.harmonicValue ?? candidate.harmonicValue;
   const hasTrueFlag = (...values: unknown[]) => values.some((value) => value === true);
+  const rawTypeIsNumeric = rawType.length > 0 && /^-?\d+(\.\d+)?$/.test(rawType);
   const hasMeaningfulType =
     rawType.length > 0 &&
+    !rawTypeIsNumeric &&
     !['0', 'false', 'none', 'normal', 'null', 'undefined', 'noharmonic', 'no-harmonic'].includes(rawType);
   const hasMeaningfulValue =
     typeof rawValue === 'number'
