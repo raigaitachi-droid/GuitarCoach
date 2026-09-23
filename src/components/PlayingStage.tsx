@@ -44,8 +44,6 @@ interface PlayingStageProps {
   tempoPercent?: number;
   onTempoPercentChange?: (newTempoPercent: number) => void;
   onOpenLibrary: () => void;
-  isPro?: boolean;
-  onOpenPro?: () => void;
   onOpenCoachChat?: () => void;
 }
 
@@ -132,8 +130,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   tempoPercent = 100,
   onTempoPercentChange,
   onOpenLibrary,
-  isPro = false,
-  onOpenPro,
   onOpenCoachChat,
 }) => {
   const activeSong = selectedSong || SONG_CATALOG[0];
@@ -1011,23 +1007,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             <Music className="w-3.5 h-3.5 text-[#00E5BE]" />
             <span>Песни</span>
           </motion.button>
-
-          {onOpenPro && (
-            <motion.button
-              id="btn-stage-pro-status"
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={onOpenPro}
-              className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                isPro
-                  ? 'bg-[#00E5BE]/10 border border-[#00E5BE]/30 text-[#00E5BE]'
-                  : 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-[#070B12] shadow-sm shadow-[#F59E0B]/30'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 fill-current" />
-              <span>{isPro ? 'PRO Активен' : 'Вземи PRO'}</span>
-            </motion.button>
-          )}
         </div>
       </header>
 

@@ -73,8 +73,9 @@ export const AICoachChat: React.FC<AICoachChatProps> = ({
 
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<'gemini-3.5-flash' | 'gemini-3.1-flash-lite'>('gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState<'gemini-3.8-flash' | 'gemini-3.1-flash-lite'>('gemini-3.8-flash');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -157,11 +158,10 @@ export const AICoachChat: React.FC<AICoachChatProps> = ({
   };
 
   const handleClearHistory = () => {
-    if (window.confirm('Искате ли да изчистите историята на чата с треньора?')) {
-      const reset = [INITIAL_WELCOME_MESSAGE];
-      setMessages(reset);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reset));
-    }
+    const reset = [INITIAL_WELCOME_MESSAGE];
+    setMessages(reset);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(reset));
+    setShowClearConfirm(false);
   };
 
   const handleCopyMessage = (id: string, text: string) => {
@@ -214,15 +214,15 @@ export const AICoachChat: React.FC<AICoachChatProps> = ({
         <div className="flex items-center gap-2">
           <div className="hidden sm:flex items-center bg-[#070D17] border border-[#1B293F] rounded-lg p-0.5 text-[11px] font-mono">
             <button
-              onClick={() => setSelectedModel('gemini-3.5-flash')}
+              onClick={() => setSelectedModel('gemini-3.8-flash')}
               className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${
-                selectedModel === 'gemini-3.5-flash'
+                selectedModel === 'gemini-3.8-flash'
                   ? 'bg-[#152338] text-[#00E5BE] font-bold shadow-sm'
                   : 'text-[#6A7F97] hover:text-white'
               }`}
               title="Стандартен модел за задълбочени обяснения"
             >
-              3.5 Flash
+              3.8 Flash
             </button>
             <button
               onClick={() => setSelectedModel('gemini-3.1-flash-lite')}
@@ -238,13 +238,30 @@ export const AICoachChat: React.FC<AICoachChatProps> = ({
             </button>
           </div>
 
-          <button
-            onClick={handleClearHistory}
-            className="w-8 h-8 rounded-lg bg-[#0F1626] hover:bg-[#162136] text-[#71859D] hover:text-white border border-[#1A263A] flex items-center justify-center transition-colors cursor-pointer"
-            title="Изчисти чата"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
+          {showClearConfirm ? (
+            <div className="flex items-center gap-1 text-[11px]">
+              <button
+                onClick={handleClearHistory}
+                className="px-2 py-1 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 hover:bg-rose-500/30 transition-colors font-semibold"
+              >
+                Изчисти
+              </button>
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-2 py-1 rounded bg-[#162136] text-[#71859D] hover:text-white transition-colors"
+              >
+                Отказ
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="w-8 h-8 rounded-lg bg-[#0F1626] hover:bg-[#162136] text-[#71859D] hover:text-white border border-[#1A263A] flex items-center justify-center transition-colors cursor-pointer"
+              title="Изчисти чата"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {isCompact && onCloseCompact && (
             <button

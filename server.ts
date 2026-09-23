@@ -37,7 +37,7 @@ const DEFAULT_COACH_SYSTEM_INSTRUCTION = `Ти си PickHero AI Guitar Coach —
 // API: Multi-turn Chat
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { messages, model = 'gemini-3.5-flash', context } = req.body;
+    const { messages, model = 'gemini-3.8-flash', context } = req.body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'Messages array is required' });
@@ -62,8 +62,8 @@ app.post('/api/chat', async (req: Request, res: Response) => {
       parts: [{ text: m.content }],
     }));
 
-    // Choose appropriate model: gemini-3.5-flash for general chat, or gemini-3.1-flash-lite for fast mode
-    const selectedModel = model === 'gemini-3.1-flash-lite' ? 'gemini-3.1-flash-lite' : 'gemini-3.5-flash';
+    // Choose appropriate model: gemini-3.8-flash for general chat, or gemini-3.1-flash-lite for fast mode
+    const selectedModel = model === 'gemini-3.1-flash-lite' ? 'gemini-3.1-flash-lite' : 'gemini-3.8-flash';
 
     if (!process.env.GEMINI_API_KEY) {
       // Graceful fallback with expert advice if API key is not yet configured in local environment
