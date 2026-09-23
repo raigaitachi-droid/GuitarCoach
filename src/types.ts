@@ -48,3 +48,34 @@ export interface FeedbackData {
   timingLabel: 'early' | 'on-time' | 'late';
   timestamp: number;
 }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  content: string;
+  timestamp: number;
+  isStreaming?: boolean;
+}
+
+export interface CoachEvaluation {
+  recommendedTempo: number;
+  previousTempo: number;
+  tempoChange: number;
+  evaluation: string;
+  techniqueTip: string;
+  encouragement: string;
+}
+
+export interface PerformanceRound {
+  id: string;
+  songTitle: string;
+  accuracy: number;
+  hits: number;
+  close: number;
+  misses: number;
+  streak: number;
+  tempoFactor: number;
+  timestamp: number;
+  recommendedTempo?: number;
+}
+

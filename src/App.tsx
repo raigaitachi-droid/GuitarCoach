@@ -4,13 +4,15 @@ import { SongMenu } from './components/SongMenu';
 import { StudioTuner } from './components/StudioTuner';
 import { ProSubscription } from './components/ProSubscription';
 import { DesktopGuide } from './components/DesktopGuide';
+import { AICoachChat } from './components/AICoachChat';
 import { ImportedSong, SongMetadata, SongSection, TabNote } from './types';
-import { Play, Music, Sparkles, Radio, HelpCircle, X, SlidersHorizontal, ShieldCheck } from 'lucide-react';
+import { Play, Music, Sparkles, Radio, HelpCircle, X, SlidersHorizontal, ShieldCheck, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { micDetector } from './utils/pitchDetector';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'stage' | 'menu' | 'tuner' | 'pro'>('stage');
+  const [currentView, setCurrentView] = useState<'stage' | 'coach' | 'menu' | 'tuner' | 'pro'>('stage');
+  const [tempoPercent, setTempoPercent] = useState(100);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [selectedSong, setSelectedSong] = useState<SongMetadata | null>(null);
   const [selectedNotes, setSelectedNotes] = useState<TabNote[] | null>(null);
@@ -103,6 +105,7 @@ export default function App() {
 
   const navItems = [
     { id: 'stage' as const, label: 'Сцена', icon: Play },
+    { id: 'coach' as const, label: 'AI Треньор', icon: Bot },
     { id: 'menu' as const, label: 'Библиотека', icon: Music },
     { id: 'tuner' as const, label: 'Студиен Тунер', icon: SlidersHorizontal },
     { id: 'pro' as const, label: 'PRO План', icon: Sparkles },
@@ -199,9 +202,32 @@ export default function App() {
                 selectedSong={selectedSong}
                 selectedNotes={selectedNotes}
                 selectedSections={selectedSections}
+                tempoPercent={tempoPercent}
+                onTempoPercentChange={setTempoPercent}
                 onOpenLibrary={() => setCurrentView('menu')}
                 isPro={isPro}
                 onOpenPro={() => setCurrentView('pro')}
+                onOpenCoachChat={() => setCurrentView('coach')}
+              />
+            </motion.div>
+          )}
+
+          {currentView === 'coach' && (
+            <motion.div
+              key="coach"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.15 }}
+              className="h-full w-full max-w-4xl mx-auto p-3 sm:p-5"
+            >
+              <AICoachChat
+                currentSong={selectedSong}
+                currentTempoPercent={tempoPercent}
+                onApplyRecommendedTempo={(newTempo) => {
+                  setTempoPercent(newTempo);
+                  setCurrentView('stage');
+                }}
               />
             </motion.div>
           )}

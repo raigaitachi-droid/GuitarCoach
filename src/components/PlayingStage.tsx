@@ -19,20 +19,34 @@ import {
   Minimize2,
   ShieldCheck,
   Info,
+  Bot,
+  Zap,
+  TrendingUp,
+  TrendingDown,
+  MessageSquare,
+  Minus,
+  Plus,
+  Gauge,
+  Check,
 } from 'lucide-react';
-import { TabNote, SongMetadata, FeedbackData, SongSection } from '../types';
+import { TabNote, SongMetadata, FeedbackData, SongSection, CoachEvaluation } from '../types';
 import { GuitarTuner } from './GuitarTuner';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector } from '../utils/pitchDetector';
 import { SONG_CATALOG, SONG_TABS } from '../data/songTabs';
+import { AICoachChat } from './AICoachChat';
+import { AdaptiveTempoDebrief } from './AdaptiveTempoDebrief';
 
 interface PlayingStageProps {
   selectedSong?: SongMetadata | null;
   selectedNotes?: TabNote[] | null;
   selectedSections?: SongSection[] | null;
+  tempoPercent?: number;
+  onTempoPercentChange?: (newTempoPercent: number) => void;
   onOpenLibrary: () => void;
   isPro?: boolean;
   onOpenPro?: () => void;
+  onOpenCoachChat?: () => void;
 }
 
 const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
@@ -115,9 +129,12 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   selectedSong,
   selectedNotes,
   selectedSections,
+  tempoPercent = 100,
+  onTempoPercentChange,
   onOpenLibrary,
   isPro = false,
   onOpenPro,
+  onOpenCoachChat,
 }) => {
   const activeSong = selectedSong || SONG_CATALOG[0];
   const currentSongDurationMs = activeSong.durationMs || TOTAL_SONG_DURATION_MS;
@@ -140,7 +157,36 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   // Keep playback paused by default on load so it NEVER starts playing by itself unexpectedly!
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackMs, setPlaybackMs] = useState(0);
-  const [tempoFactor, setTempoFactor] = useState(1.0);
+  const [tempoFactor, setTempoFactor] = useState(() =>
+    typeof tempoPercent === 'number' ? Math.max(0, Math.min(200, tempoPercent)) / 100 : 1.0
+  );
+
+  // Synchronize when parent tempoPercent state changes (e.g. from AI Coach logic or external controls)
+  useEffect(() => {
+    if (typeof tempoPercent === 'number' && tempoPercent >= 0) {
+      setTempoFactor(Math.max(0, Math.min(200, tempoPercent)) / 100);
+    }
+  }, [tempoPercent]);
+
+  // Current integer tempo percentage (0 to 200)
+  const currentTempoPercent = Math.max(0, Math.min(200, Math.round(tempoFactor * 100)));
+
+  // Fine-grained setter for tempoPercent (0% to 200% in 1% increments)
+  const changeTempoPercent = (newPercent: number) => {
+    const clamped = Math.max(0, Math.min(200, Math.round(newPercent)));
+    setTempoFactor(clamped / 100);
+    onTempoPercentChange?.(clamped);
+  };
+
+  // Central helper to update tempo factor and notify parent callback
+  const changeTempoFactor = (updaterOrValue: number | ((prev: number) => number)) => {
+    setTempoFactor((prev) => {
+      const next = typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue;
+      const clamped = Math.max(0, Math.min(2.0, Number(next.toFixed(2))));
+      onTempoPercentChange?.(Math.round(clamped * 100));
+      return clamped;
+    });
+  };
   // Auto-scroll continuously by default; Wait For Me can still be enabled manually.
   const [waitForMeMode, setWaitForMeMode] = useState(false);
   const [isFrozenWaiting, setIsFrozenWaiting] = useState(false);
@@ -269,6 +315,114 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     hitToleranceRef.current = hitTolerance;
   }, [hitTolerance]);
 
+  // Adaptive Tempo & AI Coach State
+  const [isAdaptiveCoachOn, setIsAdaptiveCoachOn] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('pickhero_auto_adapt_tempo');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [coachEvaluation, setCoachEvaluation] = useState<CoachEvaluation | null>(null);
+  const [showDebriefModal, setShowDebriefModal] = useState(false);
+  const [showCoachChatDrawer, setShowCoachChatDrawer] = useState(false);
+  const [isEvaluatingCoach, setIsEvaluatingCoach] = useState(false);
+  const [lastEvaluatedAccuracy, setLastEvaluatedAccuracy] = useState<number | null>(null);
+  const [coachToast, setCoachToast] = useState<{
+    message: string;
+    sub: string;
+    tempo: number;
+    change: number;
+  } | null>(null);
+  const [isCustomTempoOpen, setIsCustomTempoOpen] = useState(false);
+  const lastRunEvaluatedAtRef = useRef<number>(0);
+  const tempoFactorRef = useRef<number>(tempoFactor);
+  const statsRef = useRef(stats);
+  const streakRef = useRef(streak);
+
+  useEffect(() => {
+    statsRef.current = stats;
+  }, [stats]);
+
+  useEffect(() => {
+    streakRef.current = streak;
+  }, [streak]);
+
+  useEffect(() => {
+    tempoFactorRef.current = tempoFactor;
+  }, [tempoFactor]);
+
+  const toggleAutoAdapt = (enabled: boolean) => {
+    setIsAdaptiveCoachOn(enabled);
+    try {
+      localStorage.setItem('pickhero_auto_adapt_tempo', String(enabled));
+    } catch {}
+  };
+
+  const evaluatePerformanceAndAdaptTempo = async (
+    runStats: { hits: number; close: number; misses: number; streak: number },
+    currentFactor: number,
+    source: 'loop_completion' | 'manual' = 'loop_completion'
+  ) => {
+    const totalAttempted = runStats.hits + runStats.close + runStats.misses;
+    if (totalAttempted < 2 && source === 'loop_completion') return;
+
+    const currentTempoPct = Math.round(currentFactor * 100);
+    const accuracy = totalAttempted > 0
+      ? Math.round(((runStats.hits + runStats.close * 0.6) / totalAttempted) * 100)
+      : 0;
+
+    setLastEvaluatedAccuracy(accuracy);
+    setIsEvaluatingCoach(true);
+
+    try {
+      const response = await fetch('/api/coach/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          songTitle: activeSong.title,
+          difficulty: activeSong.difficulty,
+          currentTempo: currentTempoPct,
+          accuracy,
+          hits: runStats.hits,
+          close: runStats.close,
+          misses: runStats.misses,
+          streak: runStats.streak,
+          notesTotal: totalAttempted,
+        }),
+      });
+
+      const data: CoachEvaluation = await response.json();
+      setCoachEvaluation(data);
+
+      if (isAdaptiveCoachOn && data.recommendedTempo) {
+        const nextFactor = data.recommendedTempo / 100;
+        changeTempoFactor(nextFactor);
+
+        const change = data.tempoChange;
+        const changeStr = change > 0 ? `+${change}%` : `${change}%`;
+        setCoachToast({
+          message: change > 0 ? 'AI Coach: Увеличаване на темпото!' : change < 0 ? 'AI Coach: Намаляване на темпото!' : 'AI Coach: Темпото е потвърдено!',
+          sub: `${currentTempoPct}% ➔ ${data.recommendedTempo}% (${changeStr}) • ${data.encouragement}`,
+          tempo: data.recommendedTempo,
+          change,
+        });
+        setTimeout(() => setCoachToast(null), 5500);
+      }
+
+      setShowDebriefModal(true);
+    } catch (err) {
+      console.error('Coach evaluation error:', err);
+    } finally {
+      setIsEvaluatingCoach(false);
+    }
+  };
+
+  const handleManualCoachEvaluation = () => {
+    evaluatePerformanceAndAdaptTempo({ ...statsRef.current, streak: streakRef.current }, tempoFactor, 'manual');
+  };
+
   // Event-driven microphone processing. Audio capture runs in AudioWorklet;
   // React receives only completed pitch events instead of polling every frame.
   useEffect(() => {
@@ -393,6 +547,13 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         setPlaybackMs((prev) => {
           const next = prev + delta * tempoFactor;
           if (next >= noteSequenceDurationMs) {
+            // Trigger AI Coach adaptive tempo evaluation after playing!
+            const now = Date.now();
+            if (now - lastRunEvaluatedAtRef.current > 4000) {
+              lastRunEvaluatedAtRef.current = now;
+              evaluatePerformanceAndAdaptTempo({ ...statsRef.current, streak: streakRef.current }, tempoFactorRef.current, 'loop_completion');
+            }
+
             // Keep playback running so the note highway auto-scrolls from the beginning.
             playbackMsRef.current = 0;
             setNotes(activeTabList.map((n) => ({ ...n })));
@@ -1679,30 +1840,203 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           </motion.button>
         </div>
 
-        {/* Speed Stepper with Framer Motion Layout Pill */}
-        <div className="flex items-center gap-2 bg-[#0C121D] border border-[#1C283A] p-1 rounded-xl">
-          <span className="text-xs text-[#63768D] font-mono font-medium pl-1.5">Темпо:</span>
-          {[0.25, 0.5, 0.75, 1.0].map((rate) => {
-            const isActive = tempoFactor === rate;
-            return (
-              <button
-                key={rate}
-                onClick={() => setTempoFactor(rate)}
-                className={`relative text-xs px-2.5 py-0.5 rounded-lg font-mono font-semibold transition-colors cursor-pointer ${
-                  isActive ? 'text-[#070A10]' : 'text-[#7A8EA8] hover:text-white'
-                }`}
+        {/* Dynamic Continuous Tempo Controller (0% - 200% in 1% increments) & AI Coach Controls */}
+        <div className="flex items-center gap-2 bg-[#0C121D] border border-[#1C283A] p-1.5 rounded-xl relative">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-[#63768D] font-mono font-medium pl-1 hidden sm:inline">Скорост:</span>
+            
+            {/* Step Down 1% */}
+            <button
+              onClick={() => changeTempoPercent(currentTempoPercent - 1)}
+              className="w-6 h-6 rounded-lg bg-[#141C2B] hover:bg-[#1D293E] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
+              title="Намали темпото с 1%"
+              aria-label="Намали темпото с 1%"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+
+            {/* Fine-grained slider control for tempoPercent (0% to 200% in 1% increments) */}
+            <div className="flex items-center gap-2 px-1">
+              <input
+                id="tempo-percent-slider"
+                type="range"
+                min="0"
+                max="200"
+                step="1"
+                value={currentTempoPercent}
+                onChange={(e) => changeTempoPercent(parseInt(e.target.value, 10))}
+                className="w-24 sm:w-32 md:w-36 lg:w-44 h-1.5 bg-[#1B293E] rounded-lg appearance-none cursor-pointer accent-[#00E5BE] hover:accent-[#00FAD0] transition-all"
+                title={`Скорост: ${currentTempoPercent}% (0% - 200%, стъпка 1%)`}
+                aria-label="Фино регулиране на темпото от 0% до 200%"
+              />
+            </div>
+
+            {/* Step Up 1% */}
+            <button
+              onClick={() => changeTempoPercent(currentTempoPercent + 1)}
+              className="w-6 h-6 rounded-lg bg-[#141C2B] hover:bg-[#1D293E] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
+              title="Увеличи темпото с 1%"
+              aria-label="Увеличи темпото с 1%"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+
+            {/* Clickable Current Tempo & BPM Badge */}
+            <button
+              onClick={() => setIsCustomTempoOpen(!isCustomTempoOpen)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                isCustomTempoOpen
+                  ? 'bg-[#00E5BE] text-[#070A10] shadow-md shadow-[#00E5BE]/30'
+                  : 'bg-[#141E2F] hover:bg-[#1A273D] text-[#00E5BE] border border-[#00E5BE]/30'
+              }`}
+              title="Отвори меню за бързи пресети и прецизен контрол"
+            >
+              <Gauge className="w-3.5 h-3.5" />
+              <span>{currentTempoPercent}%</span>
+              {activeSong.tempo && (
+                <span className="text-[10px] opacity-75 font-normal hidden lg:inline">
+                  ({Math.round((activeSong.tempo || 120) * (currentTempoPercent / 100))} BPM)
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Quick Preset Buttons */}
+          <div className="hidden xl:flex items-center gap-1 pl-1 border-l border-[#1A2638]">
+            {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => {
+              const targetPct = Math.round(rate * 100);
+              const isActive = currentTempoPercent === targetPct;
+              return (
+                <button
+                  key={rate}
+                  onClick={() => changeTempoPercent(targetPct)}
+                  className={`text-[11px] px-2 py-0.5 rounded-md font-mono font-semibold transition-colors cursor-pointer ${
+                    isActive
+                      ? 'bg-[#00E5BE] text-[#070A10] shadow-sm'
+                      : 'text-[#6D839E] hover:text-white hover:bg-[#152132]'
+                  }`}
+                >
+                  {targetPct}%
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Precision Slider Popover */}
+          <AnimatePresence>
+            {isCustomTempoOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                className="absolute bottom-14 left-0 z-50 bg-[#0C1322] border border-[#1E2E46] p-4 rounded-2xl shadow-2xl w-80 text-white space-y-3.5 backdrop-blur-xl"
               >
-                {isActive && (
-                  <motion.div
-                    layoutId="active-tempo-pill"
-                    className="absolute inset-0 bg-[#00E5BE] rounded-lg shadow-sm"
-                    transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                    <Sliders className="w-3.5 h-3.5 text-[#00E5BE]" />
+                    <span>Прецизен контрол (0% - 200%, стъпка 1%)</span>
+                  </div>
+                  <button
+                    onClick={() => setIsCustomTempoOpen(false)}
+                    className="text-[#647890] hover:text-white text-xs cursor-pointer p-0.5"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-xs font-mono bg-[#070B12] p-2 rounded-xl border border-[#182335]">
+                  <span className="text-[#71859D]">Скорост:</span>
+                  <span className="text-[#00E5BE] font-bold text-base">
+                    {currentTempoPercent}%
+                  </span>
+                  <span className="text-[#71859D]">
+                    {Math.round((activeSong.tempo || 120) * (currentTempoPercent / 100))} BPM
+                  </span>
+                </div>
+
+                {/* Fine-grained Range Slider */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] font-mono text-[#61748D]">
+                    <span>0% (Пауза/Анализ)</span>
+                    <span>100% (Нормално)</span>
+                    <span>200% (Двойно)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    step="1"
+                    value={currentTempoPercent}
+                    onChange={(e) => changeTempoPercent(parseInt(e.target.value, 10))}
+                    className="w-full h-2 bg-[#1B293E] rounded-lg appearance-none cursor-pointer accent-[#00E5BE]"
                   />
-                )}
-                <span className="relative z-10">{Math.round(rate * 100)}%</span>
-              </button>
-            );
-          })}
+                </div>
+
+                {/* Quick Presets Grid */}
+                <div className="grid grid-cols-4 gap-1.5 pt-1">
+                  {[0, 25, 50, 75, 100, 125, 150, 200].map((pct) => (
+                    <button
+                      key={pct}
+                      onClick={() => changeTempoPercent(pct)}
+                      className={`text-[10px] py-1 rounded-md font-mono transition-colors cursor-pointer border ${
+                        currentTempoPercent === pct
+                          ? 'bg-[#00E5BE] text-[#070A10] font-bold border-[#00E5BE]'
+                          : 'bg-[#121A28] text-[#869AB1] hover:text-white border-[#1F2C41]'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* AI Coach Adaptive Tempo Trigger & Actions */}
+        <div className="flex items-center gap-1.5">
+          {/* Adaptive Auto-Coach Toggle Button */}
+          <button
+            onClick={() => toggleAutoAdapt(!isAdaptiveCoachOn)}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+              isAdaptiveCoachOn
+                ? 'bg-[#00E5BE]/15 text-[#00E5BE] border-[#00E5BE]/40 shadow-sm shadow-[#00E5BE]/10'
+                : 'bg-[#101724] text-[#697D96] border-[#1C283B] hover:text-[#91A5BD]'
+            }`}
+            title="Автоматично адаптиране на темпото след всяко изсвирване"
+          >
+            <Bot className={`w-3.5 h-3.5 ${isAdaptiveCoachOn ? 'text-[#00E5BE] animate-pulse' : ''}`} />
+            <span className="hidden sm:inline">
+              {isAdaptiveCoachOn ? 'AI Адаптивно' : 'Ръчно'}
+            </span>
+          </button>
+
+          {/* Manual Coach Evaluation Button */}
+          <button
+            onClick={handleManualCoachEvaluation}
+            disabled={isEvaluatingCoach}
+            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-[#101724] hover:bg-[#162132] text-white border border-[#1E2B3E] hover:border-[#00E5BE]/40 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Оцени текущото свирене и получи препоръчано темпо"
+          >
+            <Zap className={`w-3.5 h-3.5 text-[#F59E0B] ${isEvaluatingCoach ? 'animate-spin' : ''}`} />
+            <span className="hidden md:inline">Оцени дубъл</span>
+          </button>
+
+          {/* Open AI Coach Chat Drawer */}
+          <button
+            onClick={() => {
+              if (onOpenCoachChat) {
+                onOpenCoachChat();
+              } else {
+                setShowCoachChatDrawer(!showCoachChatDrawer);
+              }
+            }}
+            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-[#101724] hover:bg-[#162132] text-white border border-[#1E2B3E] hover:border-[#00E5BE]/40 flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Отвори чат с AI треньора"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-[#00E5BE]" />
+            <span className="hidden md:inline">AI Чат</span>
+          </button>
         </div>
 
         {/* Fullscreen & Keyboard Hints */}
@@ -1884,6 +2218,113 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               </motion.button>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating AI Coach Adaptive Notification Toast */}
+      <AnimatePresence>
+        {coachToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -24, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -24, scale: 0.95 }}
+            className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-[#0A101C]/95 border border-[#00E5BE]/60 text-white rounded-2xl px-5 py-3 shadow-2xl backdrop-blur-xl flex items-center gap-3 max-w-md w-[92%] sm:w-auto"
+          >
+            <div className="w-8 h-8 rounded-xl bg-[#00E5BE] text-[#070B12] flex items-center justify-center shrink-0 shadow-md shadow-[#00E5BE]/30">
+              <Bot className="w-4 h-4 stroke-[2.4]" />
+            </div>
+            <div className="flex-1 min-w-0 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-[#00E5BE] truncate">{coachToast.message}</span>
+                <span className="font-mono text-[11px] font-bold text-white bg-[#142033] px-2 py-0.5 rounded border border-[#213452]">
+                  {coachToast.tempo}%
+                </span>
+              </div>
+              <p className="text-[#9DB0C6] text-[11px] truncate mt-0.5">{coachToast.sub}</p>
+            </div>
+            <button
+              onClick={() => {
+                setShowDebriefModal(true);
+                setCoachToast(null);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-[#00E5BE]/15 hover:bg-[#00E5BE]/25 text-[#00E5BE] font-bold text-[11px] border border-[#00E5BE]/40 shrink-0 cursor-pointer transition-colors"
+            >
+              Анализ
+            </button>
+            <button
+              onClick={() => setCoachToast(null)}
+              className="text-[#647890] hover:text-white text-xs cursor-pointer p-1"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* AI Coach Post-Run Adaptive Tempo Debrief Modal */}
+      <AdaptiveTempoDebrief
+        isOpen={showDebriefModal}
+        evaluation={coachEvaluation}
+        accuracy={
+          lastEvaluatedAccuracy !== null
+            ? lastEvaluatedAccuracy
+            : stats.hits + stats.close + stats.misses > 0
+            ? Math.round(((stats.hits + stats.close * 0.6) / (stats.hits + stats.close + stats.misses)) * 100)
+            : 0
+        }
+        stats={{
+          hits: stats.hits,
+          close: stats.close,
+          misses: stats.misses,
+          streak,
+        }}
+        songTitle={activeSong.title}
+        onApplyTempo={(newTempo) => {
+          changeTempoPercent(newTempo);
+          setShowDebriefModal(false);
+        }}
+        onKeepCurrentTempo={() => setShowDebriefModal(false)}
+        onOpenCoachChat={() => {
+          setShowDebriefModal(false);
+          if (onOpenCoachChat) {
+            onOpenCoachChat();
+          } else {
+            setShowCoachChatDrawer(true);
+          }
+        }}
+        autoAdaptEnabled={isAdaptiveCoachOn}
+        onToggleAutoAdapt={toggleAutoAdapt}
+      />
+
+      {/* Slide-out AI Coach Chat Drawer on Stage */}
+      <AnimatePresence>
+        {showCoachChatDrawer && (
+          <motion.div
+            initial={{ x: '100%', opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '100%', opacity: 0 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+            className="fixed top-0 right-0 bottom-0 w-full sm:w-[420px] z-50 shadow-2xl"
+          >
+            <AICoachChat
+              currentSong={activeSong}
+              currentTempoPercent={currentTempoPercent}
+              lastAccuracy={lastEvaluatedAccuracy}
+              lastStats={{ ...stats, streak }}
+              onApplyRecommendedTempo={(newTempo) => {
+                changeTempoPercent(newTempo);
+                setCoachToast({
+                  message: 'Темпото е приложено от чата!',
+                  sub: `Ново темпо: ${newTempo}%`,
+                  tempo: newTempo,
+                  change: newTempo - currentTempoPercent,
+                });
+                setTimeout(() => setCoachToast(null), 4000);
+              }}
+              isCompact={true}
+              onCloseCompact={() => setShowCoachChatDrawer(false)}
+            />
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
