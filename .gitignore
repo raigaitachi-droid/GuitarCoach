@@ -1,8 +1,31 @@
+# Dependencies & Build
 node_modules/
 build/
 dist/
 coverage/
-.DS_Store
+
+# Logs & Environment
 *.log
 .env*
 !.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+.eggs/
+.pytest_cache/
+venv/
+.venv/
+env/
+PickHero.exe
+*.spec
+!guitar-trainer/pickhero.spec
+!pickhero.spec

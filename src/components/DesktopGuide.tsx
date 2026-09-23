@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Terminal, Copy, Check, FileCode, Monitor, Laptop, Play, Info } from 'lucide-react';
+import { Terminal, Copy, Check, FileCode, ChevronRight } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export const DesktopGuide: React.FC = () => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -12,98 +13,110 @@ export const DesktopGuide: React.FC = () => {
 
   const steps = [
     {
-      title: '1. Синхронизиране или изтегляне на промените от Git',
-      desc: 'Всички нови файлове и промени по дизайна се намират в директорията на клона v7-arpeggio.',
-      cmd: 'git checkout v7-arpeggio && git status',
+      title: '1. Изтегляне на промените от хранилището',
+      desc: 'Всички файлове за десктоп симулатора се намират в клона на проекта.',
+      cmd: 'git checkout main && git status',
     },
     {
-      title: '2. Инсталиране на зависимости (Pygame, PyAudio и др.)',
-      desc: 'Ако все още нямате инсталирани библиотеките за аудио и графичния интерфейс:',
+      title: '2. Инсталиране на аудио зависимости (PyAudio, Pygame)',
+      desc: 'Ако пускате модула локално на Python, уверете се че библиотеките са налични:',
       cmd: 'pip install -r requirements.txt',
     },
     {
-      title: '3. Стартиране на Guitar Trainer локално на компютъра',
-      desc: 'Стартирайте модула директно от главната директория с Python:',
+      title: '3. Стартиране на Guitar Trainer локално',
+      desc: 'Стартирайте аудио модула директно от главната директория:',
       cmd: 'python -m pickhero',
     },
     {
-      title: '4. (Опционално) Компилиране на самостоятелен Windows .exe',
-      desc: 'Ако искате да направите готова десктоп програма (.exe) за Windows:',
+      title: '4. Компилиране на самостоятелен Windows .exe',
+      desc: 'За създаване на самостоятелна програма без инсталиран Python:',
       cmd: 'build.bat',
     },
   ];
 
   return (
-    <div id="desktop-guide-view" className="flex flex-col h-full bg-[#0D1017] text-[#E2E8F0] p-8 overflow-y-auto font-sans">
+    <div id="desktop-guide-view" className="flex flex-col h-full bg-[#070A10] text-[#E2E8F0] p-8 overflow-y-auto font-sans">
       <div className="max-w-3xl mx-auto w-full space-y-6">
         <div>
-          <span className="text-[10px] tracking-wider font-semibold text-[#00E5BE] uppercase bg-[#00E5BE]/10 px-2.5 py-1 rounded-full border border-[#00E5BE]/30">
-            DESKTOP PYTHON INSTRUCTIONS
-          </span>
-          <h2 className="text-2xl font-bold tracking-tight text-white mt-2">
-            Как да пуснете обновения дизайн локално на вашия компютър
+          <div className="flex items-center gap-2 text-xs text-[#00E5BE] font-semibold">
+            <Terminal className="w-3.5 h-3.5" />
+            <span>Локално изпълнение на Python</span>
+          </div>
+          <h2 className="text-xl font-bold tracking-tight text-white mt-1">
+            Инструкции за стартиране на десктоп версията
           </h2>
-          <p className="text-sm text-[#94A3B8] mt-1">
-            Кодът е написан на Python + Pygame и се намира в папката <code className="text-[#00E5BE]">guitar-trainer/</code>. Ето лесните стъпки да го стартирате в пълен екран на вашия компютър:
+          <p className="text-sm text-[#8293A7] mt-1">
+            Освен уеб сцената, можете да пуснете и оригиналния локален графичен двигател на Python + Pygame от папката <code className="text-[#00E5BE] font-mono text-xs">guitar-trainer/</code>:
           </p>
         </div>
 
-        {/* Steps Cards */}
-        <div className="space-y-4">
+        {/* Steps Cards with Framer Motion */}
+        <div className="space-y-3">
           {steps.map((step, idx) => (
-            <div key={idx} className="bg-[#10151E] border border-[#222E3E] rounded-xl p-5 shadow-md">
-              <h3 className="text-sm font-bold text-white flex items-center space-x-2">
-                <span className="w-5 h-5 rounded-full bg-[#00E5BE]/20 text-[#00E5BE] text-xs flex items-center justify-center font-bold">
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="bg-[#0B101A] border border-[#1A2536] rounded-xl p-4 shadow-sm"
+            >
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span className="w-5 h-5 rounded-md bg-[#00E5BE]/10 text-[#00E5BE] text-xs flex items-center justify-center font-mono font-bold">
                   {idx + 1}
                 </span>
                 <span>{step.title}</span>
               </h3>
-              <p className="text-xs text-[#8292A6] mt-1 ml-7">{step.desc}</p>
+              <p className="text-xs text-[#7A8EA8] mt-1 ml-7">{step.desc}</p>
 
-              <div className="mt-3 ml-7 bg-[#0A0D13] border border-[#1C2634] rounded-lg p-3 flex items-center justify-between font-mono text-xs">
+              <div className="mt-2.5 ml-7 bg-[#070A10] border border-[#182335] rounded-lg p-2.5 flex items-center justify-between font-mono text-xs">
                 <span className="text-[#00E5BE] select-all">{step.cmd}</span>
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
                   onClick={() => copyToClipboard(step.cmd, idx)}
-                  className="text-[#7F90A6] hover:text-white flex items-center space-x-1 transition ml-3"
+                  className="text-[#64748B] hover:text-white flex items-center gap-1.5 transition-colors ml-3 cursor-pointer"
                   title="Копирай командата"
                 >
                   {copiedIndex === idx ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-[#2ED573]" />
-                      <span className="text-[11px] text-[#2ED573]">Копирано</span>
+                      <Check className="w-3.5 h-3.5 text-[#10B981]" />
+                      <span className="text-[11px] text-[#10B981] font-sans">Копирано</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      <span className="text-[11px]">Копирай</span>
+                      <span className="text-[11px] font-sans">Копирай</span>
                     </>
                   )}
-                </button>
+                </motion.button>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
 
-        {/* Modified Files Overview */}
-        <div className="bg-[#121824] border border-[#233144] rounded-xl p-5">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-[#A0B0C4] flex items-center space-x-2 mb-3">
+        {/* System Architecture Card */}
+        <div className="bg-[#0B101A] border border-[#1A2536] rounded-xl p-4">
+          <h4 className="text-xs font-semibold text-white flex items-center gap-2 mb-2">
             <FileCode className="w-4 h-4 text-[#00E5BE]" />
-            <span>Променени файлове в хранилището (Готови и валидирани с python -m py_compile):</span>
+            <span>Архитектура на аудио и визуалните модули:</span>
           </h4>
-          <ul className="text-xs text-[#CBD5E1] space-y-1.5 list-disc list-inside">
-            <li>
-              <code className="text-[#00E5BE] font-mono">pickhero/ui/colors.py</code> – нова Studio Dark цветова схема, струнни оттенъци и контрасти
-            </li>
-            <li>
-              <code className="text-[#00E5BE] font-mono">pickhero/ui/scrolling.py</code> – реалистични дебелини на струните, лазерна линия, заоблени ноти с прагче 0 като пръстен
-            </li>
-            <li>
-              <code className="text-[#00E5BE] font-mono">pickhero/ui/feedback.py</code> – плаващ бадж с микро-метър за тайминг (+/- ms) и индикаторна игла
-            </li>
-            <li>
-              <code className="text-[#00E5BE] font-mono">pickhero/ui/menu.py</code> – студийни карти за песните, статус за активен микрофон и клавишни команди
-            </li>
-          </ul>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-[#8293A7]">
+            <div className="bg-[#070A10] p-2.5 rounded-lg border border-[#141C2A]">
+              <div className="font-mono text-[#00E5BE] font-bold">audio/detector.py</div>
+              <div className="text-[11px] mt-0.5">YIN pitch detection алгоритъм за извличане на основна честота</div>
+            </div>
+            <div className="bg-[#070A10] p-2.5 rounded-lg border border-[#141C2A]">
+              <div className="font-mono text-[#00E5BE] font-bold">ui/scrolling.py</div>
+              <div className="text-[11px] mt-0.5">Рендиране на 6 струни с реалистични дебелини и времева линия</div>
+            </div>
+            <div className="bg-[#070A10] p-2.5 rounded-lg border border-[#141C2A]">
+              <div className="font-mono text-[#00E5BE] font-bold">ui/feedback.py</div>
+              <div className="text-[11px] mt-0.5">Оценка на тайминга с микросекундна прецизност и визуални ефекти</div>
+            </div>
+            <div className="bg-[#070A10] p-2.5 rounded-lg border border-[#141C2A]">
+              <div className="font-mono text-[#00E5BE] font-bold">tabs/loader.py</div>
+              <div className="text-[11px] mt-0.5">Парсване на таблатури и синхронизация по темпо</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

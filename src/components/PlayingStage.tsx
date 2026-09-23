@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
   Pause,
@@ -30,6 +31,8 @@ interface PlayingStageProps {
   selectedNotes?: TabNote[] | null;
   selectedSections?: SongSection[] | null;
   onOpenLibrary: () => void;
+  isPro?: boolean;
+  onOpenPro?: () => void;
 }
 
 const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
@@ -113,6 +116,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   selectedNotes,
   selectedSections,
   onOpenLibrary,
+  isPro = false,
+  onOpenPro,
 }) => {
   const activeSong = selectedSong || SONG_CATALOG[0];
   const currentSongDurationMs = activeSong.durationMs || TOTAL_SONG_DURATION_MS;
@@ -739,37 +744,36 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       {/* Top HUD Bar */}
       <header
         id="playing-stage-header"
-        className="h-[82px] bg-[#070B12]/92 backdrop-blur-xl border-b border-[#1C2B3E] px-5 flex items-center justify-between z-20 shrink-0 shadow-[0_18px_45px_rgba(0,0,0,0.35)]"
+        className="h-[74px] bg-[#090E17]/95 backdrop-blur-md border-b border-[#182436] px-6 flex items-center justify-between z-20 shrink-0"
       >
         {/* Left: Song details & Rating Stars */}
-        <div className="flex items-center space-x-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#00E5BE] via-[#0F766E] to-[#0F172A] border border-[#61FFE6]/40 flex items-center justify-center text-white shadow-[0_0_24px_rgba(0,229,190,0.22)] shrink-0">
-            <Music className="w-5 h-5 drop-shadow-[0_0_6px_rgba(0,229,190,0.5)]" />
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00E5BE]/20 to-[#0A1626] border border-[#00E5BE]/30 flex items-center justify-center text-[#00E5BE] shrink-0">
+            <Music className="w-5 h-5" />
           </div>
 
           <div className="flex flex-col">
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <span className="text-sm font-extrabold text-white tracking-tight">{activeSong.title}</span>
-              <span className="text-[10px] text-[#00E5BE] font-bold bg-[#00E5BE]/10 px-2 py-0.5 rounded-md border border-[#00E5BE]/30">
-                {activeSong.tuning}
-              </span>
+              <span aria-hidden="true" className="text-[#43556B]">·</span>
+              <span className="text-xs font-mono text-[#00E5BE] font-semibold">{activeSong.tuning}</span>
             </div>
-            <div className="flex items-center space-x-2 text-xs text-[#7E91A7] mt-0.5">
+            <div className="flex items-center gap-2 text-xs text-[#71849A] mt-0.5">
               <span>{activeSong.artist}</span>
-              <span>•</span>
+              <span aria-hidden="true">·</span>
               {/* 3 Gold Stars Rating Meter */}
-              <div className="flex items-center space-x-1">
+              <div className="flex items-center gap-0.5">
                 {[1, 2, 3].map((starIdx) => (
                   <Star
                     key={starIdx}
-                    className={`w-3.5 h-3.5 transition-all duration-300 ${
+                    className={`w-3.5 h-3.5 transition-colors ${
                       starIdx <= stars
-                        ? 'text-[#FFD32A] fill-[#FFD32A] drop-shadow-[0_0_6px_rgba(255,211,42,0.8)]'
-                        : 'text-[#2D394C] fill-[#18202E]'
+                        ? 'text-[#F59E0B] fill-[#F59E0B]'
+                        : 'text-[#243346] fill-[#151F2E]'
                     }`}
                   />
                 ))}
-                <span className="text-xs font-black text-white font-mono ml-1">
+                <span className="text-xs font-bold text-white font-mono tabular-nums ml-1">
                   {score.toLocaleString()} PTS
                 </span>
               </div>
@@ -778,7 +782,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         </div>
 
         {/* Center: Tuner Widget & Streak Flame Multiplier */}
-        <div className="flex items-center space-x-3.5">
+        <div className="flex items-center gap-3">
           <GuitarTuner
             currentPitch={pitchData.pitch}
             frequencyHz={pitchData.frequency}
@@ -789,156 +793,180 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             onToggleMic={handleToggleMic}
           />
 
-          {/* Combo Multiplier Flame Pill */}
-          <div
+          {/* Combo Multiplier Flame Pill with Framer Motion Bounce */}
+          <motion.div
             id="streak-multiplier-badge"
-            className="flex items-center space-x-2.5 bg-gradient-to-r from-[#171622] via-[#241B2F] to-[#2A1820] border border-[#FF7F50]/60 rounded-2xl px-3.5 py-2 shadow-[0_0_28px_rgba(255,107,53,0.16)]"
+            key={streak}
+            animate={{ scale: streak > 0 ? [1, 1.08, 1] : 1 }}
+            transition={{ duration: 0.2 }}
+            className="flex items-center gap-2.5 bg-[#0F1624] border border-[#202E42] rounded-xl px-3 py-1.5 shadow-sm"
           >
-            <div className="w-7 h-7 rounded-xl bg-[#FF6B35]/20 flex items-center justify-center border border-[#FF6B35]/40 shadow-[0_0_8px_rgba(255,107,53,0.3)]">
-              <Flame className="w-4 h-4 text-[#FF6B35] animate-pulse fill-[#FF6B35]" />
+            <div className="w-6 h-6 rounded-lg bg-[#FF6B35]/15 flex items-center justify-center text-[#FF6B35]">
+              <Flame className="w-3.5 h-3.5 animate-pulse fill-[#FF6B35]" />
             </div>
             <div className="flex flex-col leading-none">
-              <span className="text-[9px] uppercase font-black text-[#FFA07A] tracking-wider">
+              <span className="text-[9px] uppercase font-mono font-bold text-[#FF8F6B]">
                 {streak}x COMBO
               </span>
-              <span className="text-sm font-black text-white font-mono tracking-tight mt-0.5">
+              <span className="text-xs font-black text-white font-mono tracking-tight mt-0.5 tabular-nums">
                 {multiplier}X MULTIPLIER
               </span>
             </div>
-          </div>
+          </motion.div>
         </div>
 
-        {/* Right: Accuracy card & Song Library toggle */}
-        <div className="flex items-center space-x-3">
-          <div className="bg-[#0D131D]/90 border border-[#243650] rounded-2xl px-3.5 py-1.5 text-right shadow-inner">
-            <div className="text-[11px] font-black tracking-wider text-[#00E5BE] font-mono">
-              ACCURACY {accuracyPct}%
+        {/* Right: Accuracy card & Action triggers */}
+        <div className="flex items-center gap-2.5">
+          <div className="bg-[#0B101A] border border-[#1C283A] rounded-xl px-3 py-1.5 text-right font-mono">
+            <div className="text-xs font-bold tracking-tight text-[#00E5BE] tabular-nums">
+              ТОЧНОСТ {accuracyPct}%
             </div>
-            <div className="text-[10px] text-[#7A8EAA] font-mono mt-0.5">
-              Hits <span className="text-white font-bold">{stats.hits}</span> • Close{' '}
-              <span className="text-[#FFD32A] font-bold">{stats.close}</span> • Miss{' '}
-              <span className="text-[#EF4444] font-bold">{stats.misses}</span>
+            <div className="text-[10px] text-[#63768D] tabular-nums mt-0.5">
+              Hits <span className="text-white font-semibold">{stats.hits}</span> · Close{' '}
+              <span className="text-[#F59E0B] font-semibold">{stats.close}</span> · Miss{' '}
+              <span className="text-[#EF4444] font-semibold">{stats.misses}</span>
             </div>
           </div>
 
-          <button
+          <motion.button
             id="btn-open-audio-settings"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
             onClick={() => setShowAudioSettings(true)}
-            className="bg-[#121A26] hover:bg-[#1C2738] text-white border border-[#2B3C52] hover:border-[#00E5BE]/50 px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center space-x-2 transition shadow-md cursor-pointer active:scale-95"
+            className="bg-[#101724] hover:bg-[#162132] text-[#DDE4EE] border border-[#1E2C40] hover:border-[#00E5BE]/50 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             title="Калибрация на латентността и чувствителността на китарата"
           >
             <Sliders className="w-3.5 h-3.5 text-[#00E5BE]" />
             <span>Калибрация</span>
-          </button>
+          </motion.button>
 
-          <button
+          <motion.button
             id="btn-open-songs-library"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
             onClick={onOpenLibrary}
-            className="bg-[#121A26] hover:bg-[#1C2738] text-white border border-[#2B3C52] hover:border-[#00E5BE]/50 px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center space-x-2 transition shadow-md cursor-pointer active:scale-95"
+            className="bg-[#101724] hover:bg-[#162132] text-[#DDE4EE] border border-[#1E2C40] hover:border-[#00E5BE]/50 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Music className="w-3.5 h-3.5 text-[#00E5BE]" />
             <span>Песни</span>
-          </button>
+          </motion.button>
+
+          {onOpenPro && (
+            <motion.button
+              id="btn-stage-pro-status"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={onOpenPro}
+              className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isPro
+                  ? 'bg-[#00E5BE]/10 border border-[#00E5BE]/30 text-[#00E5BE]'
+                  : 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-[#070B12] shadow-sm shadow-[#F59E0B]/30'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 fill-current" />
+              <span>{isPro ? 'PRO Активен' : 'Вземи PRO'}</span>
+            </motion.button>
+          )}
         </div>
       </header>
 
-      {/* Mic Status Banner */}
-      {!isListeningMic ? (
-        <div
-          id="mic-enable-banner"
-          onClick={handleToggleMic}
-          className="bg-gradient-to-r from-[#141B26] via-[#1A2434] to-[#141B26] border-b border-[#25364D] px-5 py-2 flex items-center justify-between text-xs text-[#8FA5BF] cursor-pointer hover:bg-[#1C2738] transition shrink-0"
-        >
-          <div className="flex items-center space-x-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FF5E7E] animate-pulse shadow-[0_0_8px_#FF5E7E]" />
-            <span>
-              <strong className="text-white">Микрофонът е изключен:</strong> Кликнете тук или на бутона{' '}
-              <strong className="text-[#00E5BE]">"MIC: OFF"</strong>, за да включите микрофона и да свирите с вашата китара в реално време!
-            </span>
-          </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleToggleMic();
-            }}
-            className="px-3.5 py-1 bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] font-black rounded-lg text-xs shadow-md shadow-[#00E5BE]/20 transition active:scale-95 cursor-pointer"
+      {/* Mic Status Banner with Framer Motion AnimatePresence */}
+      <AnimatePresence>
+        {!isListeningMic ? (
+          <motion.div
+            key="banner-off"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            id="mic-enable-banner"
+            onClick={handleToggleMic}
+            className="bg-[#0D1420] border-b border-[#1E2B3E] px-6 py-2 flex items-center justify-between text-xs text-[#8293A7] cursor-pointer hover:bg-[#101928] transition-colors shrink-0"
           >
-            Включи микрофона
-          </button>
-        </div>
-      ) : (
-        <div
-          id="mic-live-banner"
-          className="bg-[#0A1320] border-b border-[#00E5BE]/30 px-5 py-1.5 flex items-center justify-between text-xs shrink-0"
-        >
-          <div className="flex items-center space-x-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#00E5BE] animate-ping shadow-[0_0_6px_#00E5BE]" />
-            <span className="text-white font-bold">
-              Микрофонът слуша на живо (суров инструментален сигнал):
-            </span>
-            <span className="font-mono font-bold bg-[#070B12] border border-[#00E5BE]/40 px-2.5 py-0.5 rounded-md text-[#00E5BE] shadow-sm">
-              {pitchData.frequency > 0 ? `${pitchData.pitch} (${pitchData.frequency.toFixed(1)} Hz)` : 'Чака тон от китарата...'}
-            </span>
-            {activeTargetNote && (
-              <span className="text-[#7D93AA] hidden md:inline">
-                • Очакван тон: <strong className="text-white bg-[#111A28] px-2 py-0.5 rounded border border-[#213146] font-mono">{getExpectedNoteName(activeTargetNote.string, activeTargetNote.fret)}</strong> (струна {activeTargetNote.string}, прагче {activeTargetNote.fret})
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-[#EF4444] animate-pulse" />
+              <span>
+                <strong className="text-white">Микрофонът е изключен:</strong> Кликнете тук за вход от истинска китара или включете режим Демо.
               </span>
-            )}
-          </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setShowAudioSettings(true)}
-              className="text-xs text-[#00E5BE] hover:underline font-bold flex items-center space-x-1.5 bg-[#00E5BE]/10 hover:bg-[#00E5BE]/20 px-2.5 py-1 rounded-lg border border-[#00E5BE]/30 cursor-pointer transition"
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleMic();
+              }}
+              className="px-3 py-1 bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070A10] font-bold rounded-lg text-xs shadow-sm shadow-[#00E5BE]/30 transition-colors cursor-pointer"
             >
-              <Sliders className="w-3 h-3" />
-              <span>Калибрация ({latencyOffsetMs}ms)</span>
-            </button>
-            <button
-              onClick={handleToggleMic}
-              className="text-[11px] text-[#7A98B2] hover:text-white underline font-medium cursor-pointer"
-            >
-              Спри микрофона
-            </button>
-          </div>
-        </div>
-      )}
+              Включи микрофона
+            </motion.button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="banner-on"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            id="mic-live-banner"
+            className="bg-[#09111D] border-b border-[#00E5BE]/20 px-6 py-1.5 flex items-center justify-between text-xs shrink-0"
+          >
+            <div className="flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-[#00E5BE] animate-ping" />
+              <span className="text-[#8FA5BF] font-medium">
+                Аудио сигнал на живо:
+              </span>
+              <span className="font-mono font-bold bg-[#070B12] border border-[#00E5BE]/30 px-2 py-0.5 rounded-md text-[#00E5BE] tabular-nums">
+                {pitchData.frequency > 0 ? `${pitchData.pitch} (${pitchData.frequency.toFixed(1)} Hz)` : 'Свирете за засичане...'}
+              </span>
+              {activeTargetNote && (
+                <span className="text-[#63768D] hidden md:inline">
+                  · Очаква се тон: <strong className="text-white font-mono">{getExpectedNoteName(activeTargetNote.string, activeTargetNote.fret)}</strong> (струна {activeTargetNote.string}, праг {activeTargetNote.fret})
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowAudioSettings(true)}
+                className="text-xs text-[#00E5BE] hover:underline font-semibold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sliders className="w-3 h-3" />
+                <span>Калибрация ({latencyOffsetMs}ms)</span>
+              </button>
+              <button
+                onClick={handleToggleMic}
+                className="text-xs text-[#71849A] hover:text-white transition-colors cursor-pointer"
+              >
+                Спри микрофона
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Track Stage (Scrolling Tabs with Laser Target & Bouncing Ball) */}
       <main className="flex-1 relative flex flex-col px-4 pt-3 pb-2 overflow-hidden">
         {/* The Track Container */}
         <div
           id="guitar-scrolling-stage"
-          className="relative w-full h-full bg-[#0B0F17] border-2 border-[#1E293B] rounded-2xl shadow-2xl overflow-hidden flex flex-col justify-between"
-          style={{
-            backgroundImage:
-              'linear-gradient(to right, rgba(11, 15, 23, 0.98), rgba(15, 22, 34, 0.92)), repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 100px, transparent 100px, transparent 200px)',
-          }}
+          className="relative w-full h-full bg-[#080C14] border border-[#182335] rounded-xl shadow-2xl overflow-hidden flex flex-col justify-between"
         >
-          {/* Subtle Fret Markers (Pearloid Inlays on 3rd, 5th, 7th, 9th, 12th frets) */}
-          <div className="absolute inset-0 pointer-events-none z-0 flex items-center justify-around opacity-30">
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full bg-slate-300 shadow-[0_0_8px_white]" />
-              <span className="text-[9px] text-slate-500 font-mono mt-1 font-bold">III</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full bg-slate-300 shadow-[0_0_8px_white]" />
-              <span className="text-[9px] text-slate-500 font-mono mt-1 font-bold">V</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full bg-slate-300 shadow-[0_0_8px_white]" />
-              <span className="text-[9px] text-slate-500 font-mono mt-1 font-bold">VII</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full bg-slate-300 shadow-[0_0_8px_white]" />
-              <span className="text-[9px] text-slate-500 font-mono mt-1 font-bold">IX</span>
-            </div>
-            <div className="flex flex-col items-center space-y-1">
-              <div className="flex space-x-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-slate-300 shadow-[0_0_8px_white]" />
-                <div className="w-2.5 h-2.5 rounded-full bg-slate-300 shadow-[0_0_8px_white]" />
+          {/* Studio Fret Position Markers */}
+          <div className="absolute inset-0 pointer-events-none z-0 flex items-center justify-around opacity-40">
+            {[
+              { label: '3', name: 'III' },
+              { label: '5', name: 'V' },
+              { label: '7', name: 'VII' },
+              { label: '9', name: 'IX' },
+              { label: '12', name: 'XII', double: true },
+              { label: '15', name: 'XV' },
+            ].map((fret) => (
+              <div key={fret.label} className="flex flex-col items-center gap-1.5">
+                <div className="h-full w-px bg-gradient-to-b from-transparent via-[#1E2D42]/60 to-transparent" />
+                <div className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#3B4E68]" />
+                  {fret.double && <span className="w-1.5 h-1.5 rounded-full bg-[#3B4E68]" />}
+                </div>
+                <span className="text-[9px] text-[#485D75] font-mono font-bold">{fret.label}</span>
               </div>
-              <span className="text-[9px] text-slate-500 font-mono font-bold">XII</span>
-            </div>
+            ))}
           </div>
 
           {/* Laser Target Zone Line */}
@@ -1038,71 +1066,97 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             </div>
 
             {/* Live Feedback Popover Badge */}
-            {feedback && Date.now() - feedback.timestamp < 1000 && (
-              <div
-                className={`absolute -left-10 -top-8 px-2.5 py-0.5 rounded-lg font-mono text-[11px] font-black tracking-wider uppercase shadow-xl z-30 pointer-events-none transition-all transform animate-in fade-in zoom-in-95 duration-100 ${
-                  feedback.matchType === 'MISS'
-                    ? 'bg-[#DC2626] text-white border border-[#FFA3A3] shadow-[0_0_18px_#EF4444]'
-                    : feedback.matchType === 'HIT'
-                    ? 'bg-[#10B981] text-white border border-[#A7F3D0] shadow-[0_0_18px_#10B981]'
-                    : 'bg-[#F59E0B] text-black border border-[#FDE68A] shadow-[0_0_18px_#F59E0B]'
-                }`}
-              >
-                {feedback.headline} {feedback.matchType === 'MISS' ? '✕' : '✓'}
-              </div>
-            )}
+            <AnimatePresence>
+              {feedback && Date.now() - feedback.timestamp < 1000 && (
+                <motion.div
+                  key={feedback.timestamp}
+                  initial={{ scale: 0.7, y: 8, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                  className={`absolute -left-10 -top-8 px-2.5 py-0.5 rounded-lg font-mono text-[11px] font-black tracking-wider uppercase shadow-xl z-30 pointer-events-none transition-colors ${
+                    feedback.matchType === 'MISS'
+                      ? 'bg-[#EF4444] text-white border border-[#FFA3A3] shadow-[0_0_16px_rgba(239,68,68,0.4)]'
+                      : feedback.matchType === 'HIT'
+                      ? 'bg-[#10B981] text-[#071610] font-black border border-[#A7F3D0] shadow-[0_0_16px_rgba(16,185,129,0.4)]'
+                      : 'bg-[#F59E0B] text-black border border-[#FDE68A] shadow-[0_0_16px_rgba(245,158,11,0.4)]'
+                  }`}
+                >
+                  {feedback.headline} {feedback.matchType === 'MISS' ? '✕' : '✓'}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Ready-to-Play start prompt overlay when song is at 0:00 and paused */}
-          {!isPlaying && playbackMs === 0 && (
-            <div
-              id="ready-to-play-overlay"
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-[#090D18]/95 border border-[#202E44] hover:border-[#00E5BE]/50 rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col items-center text-center backdrop-blur-xl max-w-md w-full transition-all"
-            >
-              <div
-                className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#00A389] to-[#00E5BE] text-[#070B12] flex items-center justify-center shadow-lg shadow-[#00E5BE]/30 mb-3 cursor-pointer hover:scale-105 active:scale-95 transition"
-                onClick={() => setIsPlaying(true)}
+          <AnimatePresence>
+            {!isPlaying && playbackMs === 0 && (
+              <motion.div
+                key="ready-overlay"
+                initial={{ opacity: 0, scale: 0.94 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.94 }}
+                transition={{ duration: 0.16 }}
+                id="ready-to-play-overlay"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-[#090E18]/95 border border-[#1E2B3E] hover:border-[#00E5BE]/40 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center backdrop-blur-xl max-w-md w-full"
               >
-                <Play className="w-8 h-8 fill-current ml-1" />
-              </div>
-              <h3 className="text-lg font-black text-white tracking-tight">
-                {activeSong.title}
-              </h3>
-              <p className="text-xs text-[#8BA0B8] mt-1">
-                {activeSong.artist} • {activeSong.tuning} • {activeSong.difficulty}
-              </p>
-              <div className="mt-4 flex items-center space-x-3 w-full justify-center">
-                <button
+                <motion.div
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: 0.94 }}
+                  className="w-14 h-14 rounded-2xl bg-[#00E5BE] text-[#070B12] flex items-center justify-center shadow-lg shadow-[#00E5BE]/30 mb-3 cursor-pointer"
                   onClick={() => setIsPlaying(true)}
-                  className="px-6 py-2.5 rounded-xl bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] font-extrabold text-sm shadow-lg shadow-[#00E5BE]/30 flex items-center space-x-2 transition cursor-pointer active:scale-95"
                 >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Старт на песента</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setIsAutoDemo(true);
-                    setIsPlaying(true);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-[#131B29] hover:bg-[#1A2638] text-[#9FB3C9] hover:text-white border border-[#24344A] text-xs font-bold flex items-center space-x-2 transition cursor-pointer"
-                  title="Компютърът ще изсвири песента за демонстрация"
-                >
-                  <Headphones className="w-4 h-4 text-[#00E5BE]" />
-                  <span>Демо</span>
-                </button>
-              </div>
-              <span className="text-[11px] text-[#556980] font-mono mt-3">
-                Или натиснете клавиш <kbd className="px-1.5 py-0.5 bg-[#121926] border border-[#253549] rounded text-[#8FA5BF] font-mono">Space</kbd>
-              </span>
-            </div>
-          )}
+                  <Play className="w-7 h-7 fill-current ml-0.5" />
+                </motion.div>
+                <h3 className="text-lg font-extrabold text-white tracking-tight">
+                  {activeSong.title}
+                </h3>
+                <p className="text-xs text-[#71849A] mt-1">
+                  {activeSong.artist} · {activeSong.tuning} · {activeSong.difficulty}
+                </p>
+                <div className="mt-4 flex items-center gap-3 w-full justify-center">
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setIsPlaying(true)}
+                    className="px-5 py-2 rounded-xl bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] font-black text-xs shadow-md shadow-[#00E5BE]/30 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Старт на песента</span>
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => {
+                      setIsAutoDemo(true);
+                      setIsPlaying(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-[#111824] hover:bg-[#182335] text-[#9FB3C9] hover:text-white border border-[#202E42] text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                    title="Компютърът ще изсвири песента за демонстрация"
+                  >
+                    <Headphones className="w-3.5 h-3.5 text-[#00E5BE]" />
+                    <span>Демо</span>
+                  </motion.button>
+                </div>
+                <span className="text-[11px] text-[#556980] font-mono mt-3">
+                  Или натиснете клавиш <kbd className="px-1.5 py-0.5 bg-[#121926] border border-[#253549] rounded text-[#8FA5BF] font-mono">Space</kbd>
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Wait-for-Me Live Instruction Card when frozen waiting for player */}
-          {isFrozenWaiting && activeTargetNote && (
-            <div
-              id="wait-for-me-instruction-card"
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-[#090D18]/95 border-2 border-[#00E5BE] rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_40px_rgba(0,229,190,0.25)] flex items-center space-x-6 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 pointer-events-auto max-w-xl w-full"
-            >
+          <AnimatePresence>
+            {isFrozenWaiting && activeTargetNote && (
+              <motion.div
+                key="wait-card"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                id="wait-for-me-instruction-card"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-[#090E18]/95 border border-[#00E5BE]/60 rounded-2xl p-6 shadow-2xl flex items-center gap-6 backdrop-blur-xl pointer-events-auto max-w-xl w-full"
+              >
               {/* String Number Badge */}
               <div
                 className="w-18 h-18 rounded-2xl flex flex-col items-center justify-center text-[#070D16] font-black shadow-xl shrink-0 transition-transform transform hover:scale-105"
@@ -1186,8 +1240,9 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                   Включи микрофон
                 </button>
               )}
-            </div>
+            </motion.div>
           )}
+        </AnimatePresence>
 
           {/* Floating particle bursts */}
           <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
@@ -1218,26 +1273,28 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 key={name}
                 id={`lane-row-${stringNum}`}
                 onClick={() => handleManualFretClick(stringNum, activeTargetNote?.fret || 0)}
-                className={`relative flex-1 flex items-center transition-colors cursor-pointer ${
-                  index % 2 === 0 ? 'bg-[#0E131C]/90' : 'bg-[#121926]/90'
-                } ${isFlashed ? 'bg-[#00E5BE]/20' : 'hover:bg-[#182233]'}`}
+                className={`relative flex-1 flex items-center transition-colors cursor-pointer border-b border-[#131C2A]/60 ${
+                  index % 2 === 0 ? 'bg-[#080C14]' : 'bg-[#0A0F19]'
+                } ${isFlashed ? 'bg-[#00E5BE]/15' : 'hover:bg-[#0F1626]'}`}
               >
-                {/* String Label Tuning Peg Badge */}
+                {/* String Studio Channel Badge */}
                 <div
                   id={`string-pill-${stringNum}`}
-                  className="z-30 ml-4 w-8 h-8 rounded-full bg-gradient-to-b from-[#1E2738] to-[#0D121B] border-2 flex items-center justify-center shadow-lg transition-transform hover:scale-110 active:scale-95"
+                  className="z-30 ml-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0E1522] border border-[#1E2B3E] shadow-sm transition-transform hover:scale-105 active:scale-95"
                   style={{
-                    borderColor: color,
-                    boxShadow: isFlashed ? `0 0 16px ${color}` : `0 2px 8px rgba(0,0,0,0.5)`,
+                    borderColor: isFlashed ? color : undefined,
+                    boxShadow: isFlashed ? `0 0 14px ${color}` : undefined,
                   }}
                   title={`String ${stringNum}: ${name} (Click or press key ${stringNum})`}
                 >
-                  <span className="text-xs font-black text-white leading-none font-mono">{name}</span>
+                  <span className="w-1.5 h-3 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="text-xs font-mono font-bold text-white">{name}</span>
+                  <span className="text-[9px] font-mono text-[#526680]">s{stringNum}</span>
                 </div>
 
                 {/* Authentic Metallic String Wire */}
                 <div
-                  className="absolute left-16 right-4 rounded-full transition-all duration-100"
+                  className="absolute left-20 right-4 rounded-full transition-all duration-100"
                   style={{
                     height: `${gauge}px`,
                     background: STRING_GRADIENTS[index],
@@ -1247,7 +1304,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
                 {/* Hit Zone Target Diamond Indicator */}
                 <div
-                  className="absolute z-20 w-3.5 h-3.5 rotate-45 bg-[#090D14] border-2 -translate-x-1.5 pointer-events-none shadow-md"
+                  className="absolute z-20 w-3 h-3 rotate-45 bg-[#080C14] border-2 -translate-x-1.5 pointer-events-none"
                   style={{
                     left: `${hitZoneFraction * 100}%`,
                     borderColor: color,
@@ -1301,14 +1358,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                   {/* Translucent Sustain Trail Ribbon */}
                   {hasSustain && (
                     <div
-                      className="absolute left-4 rounded-r-xl pointer-events-none transition-all"
+                      className="absolute left-4 rounded-r-lg pointer-events-none transition-all"
                       style={{
                         width: `${sustainWidthPx}px`,
-                        height: '58%',
-                        backgroundColor: isHit ? '#2ED57340' : isMiss ? '#EF444445' : `${color}35`,
-                        border: isHit ? '1.5px solid #2ED57399' : isMiss ? '1.5px solid #EF4444CC' : `1.5px solid ${color}88`,
-                        borderLeft: 'none',
-                        boxShadow: isHit ? '0 0 12px #2ED57333' : isMiss ? '0 0 14px #EF444455' : `0 0 10px ${color}25`,
+                        height: '52%',
+                        backgroundColor: isHit ? '#2ED57335' : isMiss ? '#EF444435' : `${color}25`,
+                        borderTop: isHit ? '1px solid #2ED573' : isMiss ? '1px solid #EF4444' : `1px solid ${color}88`,
+                        borderRight: isHit ? '1px solid #2ED573' : isMiss ? '1px solid #EF4444' : `1px solid ${color}88`,
+                        borderBottom: isHit ? '1px solid #2ED573' : isMiss ? '1px solid #EF4444' : `1px solid ${color}88`,
                       }}
                     />
                   )}
@@ -1316,11 +1373,11 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                   {/* Note Head Capsule */}
                   <div
                     id={`note-head-${note.id}`}
-                    className={`relative w-10 h-full rounded-2xl flex items-center justify-center shadow-2xl z-10 transition-all ${
+                    className={`relative w-10 h-full rounded-xl flex items-center justify-center z-10 transition-all ${
                       isWaitingThisNote
-                        ? 'ring-4 ring-[#00E5BE] scale-115 shadow-[0_0_24px_#00E5BE]'
+                        ? 'ring-4 ring-[#00E5BE] scale-110 shadow-[0_0_20px_#00E5BE]'
                         : isMiss
-                        ? 'scale-105 shadow-[0_0_24px_#EF4444]'
+                        ? 'scale-105 shadow-[0_0_16px_#EF4444]'
                         : ''
                     }`}
                     style={{
@@ -1329,31 +1386,26 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                         : isMiss
                         ? '#DC2626'
                         : isOpenString
-                        ? '#0E1420'
+                        ? '#0A0F19'
                         : color,
                       border: isHit
                         ? '2px solid #FFFFFF'
                         : isMiss
-                        ? '2.5px solid #FFA3A3'
+                        ? '2px solid #FFA3A3'
                         : isOpenString
-                        ? `3px solid ${color}`
-                        : '2px solid rgba(255,255,255,0.85)',
+                        ? `2px solid ${color}`
+                        : '1.5px solid rgba(255,255,255,0.75)',
                       boxShadow: isHit
-                        ? '0 0 20px #10B981'
+                        ? '0 0 16px #10B981'
                         : isMiss
-                        ? '0 0 24px #EF4444, 0 0 12px #FF4D4D'
+                        ? '0 0 16px #EF4444'
                         : isOpenString
-                        ? `0 0 14px ${color}99`
-                        : `0 4px 14px rgba(0,0,0,0.7), 0 0 12px ${color}66`,
+                        ? `0 0 10px ${color}66`
+                        : `0 4px 12px rgba(0,0,0,0.5), 0 0 8px ${color}44`,
                     }}
                   >
-                    {/* Glossy top bevel reflection */}
-                    {!isOpenString && !isHit && !isMiss && (
-                      <div className="absolute top-0.5 left-2 right-2 h-1 bg-white/60 rounded-full" />
-                    )}
-
                     {/* Fret Number Label, Checkmark, or Red Cross */}
-                    <span className="font-black text-sm text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] font-mono">
+                    <span className="font-mono font-black text-sm text-white drop-shadow-sm">
                       {isHit ? '✓' : isMiss ? '✕' : note.fret}
                     </span>
                   </div>
@@ -1506,23 +1558,25 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       {/* Bottom Practice Toolbar & Controls */}
       <footer
         id="guitar-footer-controls"
-        className="h-[64px] bg-[#070A10] border-t border-[#182333] px-5 flex items-center justify-between shrink-0 z-20 shadow-inner"
+        className="h-14 bg-[#080D15] border-t border-[#182436] px-6 flex items-center justify-between shrink-0 z-20"
       >
         {/* Play / Pause / Restart */}
-        <div className="flex items-center space-x-2.5">
-          <button
+        <div className="flex items-center gap-2.5">
+          <motion.button
             id="btn-play-pause-toggle"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.94 }}
             onClick={togglePlayback}
-            className="w-11 h-11 rounded-2xl bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] flex items-center justify-center font-black shadow-lg shadow-[#00E5BE]/30 transition active:scale-95 cursor-pointer"
+            className="w-10 h-10 rounded-xl bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] flex items-center justify-center font-black shadow-md shadow-[#00E5BE]/25 transition-colors cursor-pointer"
             title="Space: Play / Pause"
           >
-            {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
-          </button>
+            {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+          </motion.button>
 
-          <button
+          <motion.button
             id="btn-restart-song"
+            whileTap={{ scale: 0.92 }}
             onClick={() => {
-              // Restart immediately and keep the note highway auto-scrolling.
               setIsPlaying(true);
               setPlaybackMs(0);
               setNotes(activeTabList.map((n) => ({ ...n })));
@@ -1539,15 +1593,16 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               setStars(0);
               setStats({ hits: 0, close: 0, misses: 0 });
             }}
-            className="w-10 h-10 rounded-2xl bg-[#121A26] hover:bg-[#1A2638] text-[#9FB0C4] hover:text-white flex items-center justify-center border border-[#233348] transition active:scale-95 cursor-pointer shadow"
-            title="Restart song"
+            className="w-9 h-9 rounded-xl bg-[#101724] hover:bg-[#162132] text-[#9FB0C4] hover:text-white flex items-center justify-center border border-[#1E2B3E] transition-colors cursor-pointer"
+            title="Рестартирай песента от началото"
           >
-            <RotateCcw className="w-4 h-4" />
-          </button>
+            <RotateCcw className="w-3.5 h-3.5" />
+          </motion.button>
 
           {/* Wait-for-Me Practice Mode Toggle */}
-          <button
+          <motion.button
             id="btn-wait-for-me"
+            whileTap={{ scale: 0.95 }}
             onClick={() => {
               const next = !waitForMeMode;
               setWaitForMeMode(next);
@@ -1556,24 +1611,25 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 setActiveTargetNote(null);
               }
             }}
-            className={`px-3.5 py-2 rounded-2xl text-xs font-extrabold border flex items-center space-x-2 transition cursor-pointer shadow active:scale-95 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-2 transition-colors cursor-pointer ${
               waitForMeMode
-                ? 'bg-[#FFD32A] text-[#080C12] border-[#FFD32A] shadow-md shadow-[#FFD32A]/25'
-                : 'bg-[#101722] text-[#8EA1B8] border-[#223044] hover:text-white'
+                ? 'bg-[#F59E0B] text-[#080C12] border-[#F59E0B] shadow-sm shadow-[#F59E0B]/25'
+                : 'bg-[#101724] text-[#8EA1B8] border-[#1E2B3E] hover:text-white'
             }`}
-            title="Wait for me: automatically pauses until you pluck the correct fret on your guitar"
+            title="Wait for me: автоматично спира на всяка нота, докато не я изсвирите правилно"
           >
             <span
-              className={`w-2 h-2 rounded-full ${
+              className={`w-1.5 h-1.5 rounded-full ${
                 waitForMeMode ? 'bg-[#080C12] animate-ping' : 'bg-[#586A7E]'
               }`}
             />
             <span>Wait For Me {waitForMeMode ? 'ON' : 'OFF'}</span>
-          </button>
+          </motion.button>
 
           {/* Auto-Demo Toggle */}
-          <button
+          <motion.button
             id="btn-auto-demo"
+            whileTap={{ scale: 0.95 }}
             onClick={() => {
               const next = !isAutoDemo;
               setIsAutoDemo(next);
@@ -1582,239 +1638,254 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 if (!isPlaying) setIsPlaying(true);
               }
             }}
-            className={`px-3 py-2 rounded-2xl text-xs font-extrabold border flex items-center space-x-1.5 transition cursor-pointer shadow active:scale-95 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-colors cursor-pointer ${
               isAutoDemo
-                ? 'bg-[#A55EEA] text-white border-[#A55EEA] shadow-md shadow-[#A55EEA]/30'
-                : 'bg-[#101722] text-[#8EA1B8] border-[#223044] hover:text-white'
+                ? 'bg-[#8B5CF6] text-white border-[#8B5CF6] shadow-sm shadow-[#8B5CF6]/30'
+                : 'bg-[#101724] text-[#8EA1B8] border-[#1E2B3E] hover:text-white'
             }`}
-            title="Демо режим: компютърът автоматично показва свиренето на песента"
+            title="Демо режим: симулаторът автоматично показва правилното свирене"
           >
             <Headphones className="w-3.5 h-3.5" />
             <span>Демо {isAutoDemo ? 'ВКЛ' : 'ИЗКЛ'}</span>
-          </button>
+          </motion.button>
 
           {/* Anti-Feedback Speaker Sound Toggle */}
-          <button
+          <motion.button
             id="btn-speaker-sound-toggle"
+            whileTap={{ scale: 0.95 }}
             onClick={() => setSynthSoundWithMic(!synthSoundWithMic)}
-            className={`px-3 py-2 rounded-2xl text-xs font-bold border flex items-center space-x-1.5 transition cursor-pointer shadow active:scale-95 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors cursor-pointer ${
               synthSoundWithMic
-                ? 'bg-[#182536] text-[#00E5BE] border-[#00E5BE]/40 shadow-sm'
-                : 'bg-[#101722] text-[#8EA1B8] border-[#202D3E] hover:text-white'
+                ? 'bg-[#131E2E] text-[#00E5BE] border-[#00E5BE]/40'
+                : 'bg-[#101724] text-[#8EA1B8] border-[#1E2B3E] hover:text-white'
             }`}
             title={
               synthSoundWithMic
-                ? 'Колонки: ВКЛЮЧЕНИ (внимание: синтезаторът може да се чуе от микрофона)'
-                : 'Колонки: ИЗКЛЮЧЕНИ (предпазва микрофона от повторно засичане и самосвирене)'
+                ? 'Колонки: ВКЛЮЧЕНИ'
+                : 'Колонки: ИЗКЛЮЧЕНИ (предпазва от ехо в микрофона)'
             }
           >
             {synthSoundWithMic ? (
               <>
                 <Volume2 className="w-3.5 h-3.5 text-[#00E5BE]" />
-                <span className="hidden xl:inline text-[11px]">Колонки: Вкл</span>
+                <span className="hidden xl:inline text-[11px]">Звук: Вкл</span>
               </>
             ) : (
               <>
-                <VolumeX className="w-3.5 h-3.5 text-[#FF7F50]" />
-                <span className="hidden xl:inline text-[11px] text-[#FF7F50]">Защита от ехо</span>
+                <VolumeX className="w-3.5 h-3.5 text-[#F59E0B]" />
+                <span className="hidden xl:inline text-[11px] text-[#F59E0B]">Без ехо</span>
               </>
             )}
-          </button>
+          </motion.button>
         </div>
 
-        {/* Speed Stepper (Tempo controls: 25%, 50%, 75%, 100%) */}
-        <div className="flex items-center space-x-2 bg-[#0E1420] border border-[#1E2B3E] px-3.5 py-1.5 rounded-2xl shadow-inner">
-          <Sliders className="w-3.5 h-3.5 text-[#00E5BE]" />
-          <span className="text-xs text-[#7A8EA8] font-bold">Speed:</span>
-          {[0.25, 0.5, 0.75, 1.0].map((rate) => (
-            <button
-              key={rate}
-              onClick={() => setTempoFactor(rate)}
-              className={`text-xs px-2.5 py-1 rounded-xl font-black font-mono transition cursor-pointer ${
-                tempoFactor === rate
-                  ? 'bg-[#00E5BE] text-[#070B12] shadow-sm shadow-[#00E5BE]/30'
-                  : 'text-[#7A8EA8] hover:text-white'
-              }`}
-            >
-              {Math.round(rate * 100)}%
-            </button>
-          ))}
+        {/* Speed Stepper with Framer Motion Layout Pill */}
+        <div className="flex items-center gap-2 bg-[#0C121D] border border-[#1C283A] p-1 rounded-xl">
+          <span className="text-xs text-[#63768D] font-mono font-medium pl-1.5">Темпо:</span>
+          {[0.25, 0.5, 0.75, 1.0].map((rate) => {
+            const isActive = tempoFactor === rate;
+            return (
+              <button
+                key={rate}
+                onClick={() => setTempoFactor(rate)}
+                className={`relative text-xs px-2.5 py-0.5 rounded-lg font-mono font-semibold transition-colors cursor-pointer ${
+                  isActive ? 'text-[#070A10]' : 'text-[#7A8EA8] hover:text-white'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="active-tempo-pill"
+                    className="absolute inset-0 bg-[#00E5BE] rounded-lg shadow-sm"
+                    transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">{Math.round(rate * 100)}%</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Fullscreen Big Screen Toggle & Keyboard shortcut hint */}
-        <div className="flex items-center space-x-3">
-          <button
+        {/* Fullscreen & Keyboard Hints */}
+        <div className="flex items-center gap-3">
+          <motion.button
             id="btn-fullscreen-toggle"
+            whileTap={{ scale: 0.95 }}
             onClick={toggleFullscreen}
-            className="px-4 py-2 rounded-2xl text-xs font-bold border bg-[#111824] text-white border-[#243346] hover:border-[#00E5BE]/40 hover:bg-[#182333] flex items-center space-x-2 transition shadow cursor-pointer active:scale-95"
-            title="Toggle Big Screen Fullscreen"
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold border bg-[#101724] text-white border-[#1E2B3E] hover:border-[#00E5BE]/40 hover:bg-[#162132] flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Преглед на цял екран"
           >
             {isFullscreen ? (
               <>
                 <Minimize2 className="w-3.5 h-3.5 text-[#00E5BE]" />
-                <span>Exit Fullscreen</span>
+                <span>Изход</span>
               </>
             ) : (
               <>
                 <Maximize2 className="w-3.5 h-3.5 text-[#00E5BE]" />
-                <span>Big Screen View</span>
+                <span>Цял екран</span>
               </>
             )}
-          </button>
+          </motion.button>
 
-          <span className="text-xs text-[#5D6F83] hidden lg:inline font-mono">
-            Press <kbd className="px-1.5 py-0.5 bg-[#121926] border border-[#253549] rounded text-white font-mono">1-6</kbd> to pluck
+          <span className="text-xs text-[#526377] hidden lg:inline font-mono">
+            Клавиши <kbd className="px-1.5 py-0.5 bg-[#101724] border border-[#1E2B3E] rounded text-[#CBD5E1]">1-6</kbd>
           </span>
         </div>
       </footer>
 
-      {/* Audio Calibration & Guitar Settings Modal */}
-      {showAudioSettings && (
-        <div
-          id="audio-settings-modal-backdrop"
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
-          onClick={() => setShowAudioSettings(false)}
-        >
+      {/* Audio Calibration & Guitar Settings Modal with Framer Motion AnimatePresence */}
+      <AnimatePresence>
+        {showAudioSettings && (
           <div
-            id="audio-settings-modal"
-            className="bg-[#0C121D] border-2 border-[#203046] rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5"
-            onClick={(e) => e.stopPropagation()}
+            id="audio-settings-modal-backdrop"
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setShowAudioSettings(false)}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#1E2B3E] pb-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#00E5BE]/20 flex items-center justify-center text-[#00E5BE] border border-[#00E5BE]/40">
-                  <Sliders className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-white">Аудио калибрация за китара</h3>
-                  <p className="text-xs text-[#7E93AC]">Настройка на латентността и чувствителността за професионална игра</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowAudioSettings(false)}
-                className="w-8 h-8 rounded-lg bg-[#141E2C] hover:bg-[#1E2B3E] text-[#7E93AC] hover:text-white flex items-center justify-center text-sm font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Latency Compensation Slider */}
-            <div className="space-y-2 bg-[#080D15] border border-[#1B2738] p-3.5 rounded-2xl">
-              <div className="flex justify-between items-baseline">
-                <label className="text-xs font-bold text-white flex items-center space-x-1.5">
-                  <span>Компенсация на закъснението (Audio Latency):</span>
-                </label>
-                <span className="font-mono text-sm font-black text-[#00E5BE]">
-                  {latencyOffsetMs} ms
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="160"
-                step="5"
-                value={latencyOffsetMs}
-                onChange={(e) => setLatencyOffsetMs(parseInt(e.target.value, 10))}
-                className="w-full accent-[#00E5BE] cursor-pointer"
-              />
-              <p className="text-[11px] text-[#6E839B]">
-                Компенсира естественото хардуерно забавяне на микрофона и звуковата карта (обикновено 50–90 ms). Когато свирите точно в ритъм, тонът се засича точно на лентата!
-              </p>
-            </div>
-
-            {/* Mic Sensitivity Slider */}
-            <div className="space-y-2 bg-[#080D15] border border-[#1B2738] p-3.5 rounded-2xl">
-              <div className="flex justify-between items-baseline">
-                <label className="text-xs font-bold text-white">
-                  Чувствителност на микрофона:
-                </label>
-                <span className="font-mono text-sm font-black text-[#00E5BE]">
-                  Ниво {micSensitivity} / 10
-                </span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                value={micSensitivity}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setMicSensitivity(val);
-                  // Map 1-10 to noiseThreshold 0.015 down to 0.002
-                  const threshold = 0.015 - ((val - 1) / 9) * 0.013;
-                  micDetector.setNoiseThreshold(threshold);
-                }}
-                className="w-full accent-[#00E5BE] cursor-pointer"
-              />
-              <div className="flex items-center space-x-2 pt-1">
-                <span className="text-[10px] text-[#556980]">Входно ниво:</span>
-                <div className="flex-1 h-2 bg-[#141C2B] rounded-full overflow-hidden border border-[#233348]">
-                  <div
-                    className="h-full bg-gradient-to-r from-[#00E5BE] to-[#2ED573] transition-all duration-75"
-                    style={{ width: `${Math.min(100, (micRms / 0.035) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Hit Window Tolerance */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-white">Времеви толеранс за уцелване:</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'tight', label: 'Професионален', desc: '±160 ms' },
-                  { id: 'normal', label: 'Балансиран', desc: '±240 ms' },
-                  { id: 'relaxed', label: 'Прощаващ', desc: '±320 ms' },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setHitTolerance(item.id as 'tight' | 'normal' | 'relaxed')}
-                    className={`p-2.5 rounded-xl border text-center transition cursor-pointer ${
-                      hitTolerance === item.id
-                        ? 'bg-[#00E5BE]/15 border-[#00E5BE] text-white shadow-sm'
-                        : 'bg-[#121A26] border-[#223146] text-[#7E93AC] hover:text-white'
-                    }`}
-                  >
-                    <div className="text-xs font-black">{item.label}</div>
-                    <div className="text-[10px] font-mono opacity-80 mt-0.5">{item.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Realtime Live Test Meter */}
-            <div className="bg-[#080D15] border border-[#1C2838] rounded-2xl p-3.5 flex items-center justify-between text-xs">
-              <div className="flex items-center space-x-2.5">
-                <span className={`w-2.5 h-2.5 rounded-full ${isListeningMic ? 'bg-[#00E5BE] animate-ping' : 'bg-[#FF5E7E]'}`} />
-                <span className="text-[#8EA2B9]">
-                  {isListeningMic ? 'Тест на живо:' : 'Микрофонът е изключен'}
-                </span>
-              </div>
-              <div className="font-mono font-bold text-white">
-                {isListeningMic && pitchData.frequency > 0 ? (
-                  <span className="text-[#00E5BE]">
-                    {pitchData.pitch} ({pitchData.frequency.toFixed(1)} Hz, {pitchData.cents > 0 ? `+${pitchData.cents}c` : `${pitchData.cents}c`})
-                  </span>
-                ) : (
-                  <span className="text-[#556980]">
-                    {isListeningMic ? 'Дръпнете струна...' : 'Включете микрофона от сцената'}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowAudioSettings(false)}
-              className="w-full py-2.5 bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] font-black rounded-xl text-xs transition active:scale-98 cursor-pointer shadow-lg shadow-[#00E5BE]/20"
+            <motion.div
+              id="audio-settings-modal"
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ duration: 0.16 }}
+              className="bg-[#0B101A] border border-[#1E2B3E] rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4"
+              onClick={(e) => e.stopPropagation()}
             >
-              Запази и продължи
-            </button>
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-[#182335] pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#00E5BE]/10 flex items-center justify-center text-[#00E5BE] border border-[#00E5BE]/30">
+                    <Sliders className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Аудио калибрация за китара</h3>
+                    <p className="text-xs text-[#63768D]">Настройка на латентността и чувствителността</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAudioSettings(false)}
+                  className="w-7 h-7 rounded-lg bg-[#111824] hover:bg-[#182335] text-[#71849A] hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Latency Compensation Slider */}
+              <div className="space-y-2 bg-[#070A10] border border-[#162132] p-3 rounded-xl">
+                <div className="flex justify-between items-baseline">
+                  <label className="text-xs font-semibold text-white">
+                    Компенсация на латентността (Audio Latency):
+                  </label>
+                  <span className="font-mono text-xs font-bold text-[#00E5BE] tabular-nums">
+                    {latencyOffsetMs} ms
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="160"
+                  step="5"
+                  value={latencyOffsetMs}
+                  onChange={(e) => setLatencyOffsetMs(parseInt(e.target.value, 10))}
+                  className="w-full accent-[#00E5BE] cursor-pointer"
+                />
+                <p className="text-[11px] text-[#63768D]">
+                  Компенсира забавянето на звуковата карта (обикновено 50–90 ms), за да се засича тонът точно на лазера.
+                </p>
+              </div>
+
+              {/* Mic Sensitivity Slider */}
+              <div className="space-y-2 bg-[#070A10] border border-[#162132] p-3 rounded-xl">
+                <div className="flex justify-between items-baseline">
+                  <label className="text-xs font-semibold text-white">
+                    Чувствителност на микрофона:
+                  </label>
+                  <span className="font-mono text-xs font-bold text-[#00E5BE] tabular-nums">
+                    Ниво {micSensitivity} / 10
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={micSensitivity}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setMicSensitivity(val);
+                    const threshold = 0.015 - ((val - 1) / 9) * 0.013;
+                    micDetector.setNoiseThreshold(threshold);
+                  }}
+                  className="w-full accent-[#00E5BE] cursor-pointer"
+                />
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[10px] text-[#556980]">Входно ниво:</span>
+                  <div className="flex-1 h-1.5 bg-[#121926] rounded-full overflow-hidden border border-[#1E2B3E]">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#00E5BE] to-[#10B981] transition-all duration-75"
+                      style={{ width: `${Math.min(100, (micRms / 0.035) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Hit Window Tolerance */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-white">Времеви толеранс за уцелване:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'tight', label: 'Професионален', desc: '±160 ms' },
+                    { id: 'normal', label: 'Балансиран', desc: '±240 ms' },
+                    { id: 'relaxed', label: 'Прощаващ', desc: '±320 ms' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setHitTolerance(item.id as 'tight' | 'normal' | 'relaxed')}
+                      className={`p-2.5 rounded-xl border text-center transition-colors cursor-pointer ${
+                        hitTolerance === item.id
+                          ? 'bg-[#00E5BE]/10 border-[#00E5BE] text-white shadow-sm'
+                          : 'bg-[#0E1522] border-[#1C283A] text-[#7E93AC] hover:text-white'
+                      }`}
+                    >
+                      <div className="text-xs font-bold">{item.label}</div>
+                      <div className="text-[10px] font-mono opacity-70 mt-0.5">{item.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Realtime Live Test Meter */}
+              <div className="bg-[#070A10] border border-[#162132] rounded-xl p-3 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${isListeningMic ? 'bg-[#00E5BE] animate-ping' : 'bg-[#EF4444]'}`} />
+                  <span className="text-[#8EA2B9]">
+                    {isListeningMic ? 'Тест на живо:' : 'Микрофонът е изключен'}
+                  </span>
+                </div>
+                <div className="font-mono font-bold text-white tabular-nums">
+                  {isListeningMic && pitchData.frequency > 0 ? (
+                    <span className="text-[#00E5BE]">
+                      {pitchData.pitch} ({pitchData.frequency.toFixed(1)} Hz, {pitchData.cents > 0 ? `+${pitchData.cents}c` : `${pitchData.cents}c`})
+                    </span>
+                  ) : (
+                    <span className="text-[#556980]">
+                      {isListeningMic ? 'Дръпнете струна...' : 'Включете микрофона от сцената'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowAudioSettings(false)}
+                className="w-full py-2 bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] font-extrabold rounded-xl text-xs transition-colors cursor-pointer shadow-sm shadow-[#00E5BE]/25"
+              >
+                Запази и затвори
+              </motion.button>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 };

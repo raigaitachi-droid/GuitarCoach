@@ -121,9 +121,9 @@ export class MicrophonePitchDetector {
       this.silentGain.connect(this.audioContext.destination);
 
       const trackLatency =
-        this.mediaStream.getAudioTracks()[0]?.getSettings().latency || 0;
+        (this.mediaStream.getAudioTracks()[0]?.getSettings() as { latency?: number } | undefined)?.latency || 0;
       this.estimatedInputLatencyMs = Math.round(
-        (trackLatency + this.audioContext.baseLatency) * 1000
+        (trackLatency + (this.audioContext.baseLatency || 0)) * 1000
       );
 
       this.workletNode.port.onmessage = (event) => {

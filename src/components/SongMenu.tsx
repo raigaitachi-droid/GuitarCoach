@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { Search, Play, ArrowLeft, SlidersHorizontal, Award, UploadCloud, FileMusic, LoaderCircle } from 'lucide-react';
+import { Search, Play, ArrowLeft, Award, UploadCloud, FileMusic, LoaderCircle, Music, Clock, Gauge } from 'lucide-react';
 import { ImportedSong, SongMetadata } from '../types';
 import { importGuitarProFile, isSupportedGuitarProFile } from '../utils/guitarProImporter';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface SongMenuProps {
   onSelectSong: (song: SongMetadata) => void;
@@ -108,7 +109,7 @@ export const SongMenu: React.FC<SongMenuProps> = ({
   const handleFile = async (file: File) => {
     setImportError(null);
     if (!isSupportedGuitarProFile(file)) {
-      setImportError('Изберете Guitar Pro файл: .gp, .gpx, .gp3, .gp4 или .gp5');
+      setImportError('Изберете валиден Guitar Pro файл: .gp, .gpx, .gp3, .gp4 или .gp5');
       return;
     }
 
@@ -123,241 +124,314 @@ export const SongMenu: React.FC<SongMenuProps> = ({
     }
   };
 
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'Beginner' | 'Intermediate' | 'Advanced' | 'imported'>('all');
+
   const allSongs: SongMetadata[] = [...importedSongs, ...SAMPLE_SONGS];
 
-  const filteredSongs = allSongs.filter(
-    (s) =>
-      s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.artist.toLowerCase().includes(searchQuery.toLowerCase())
-  ).sort((a, b) => {
-    if (sortMode === 'tempo') return a.tempo - b.tempo;
-    if (sortMode === 'accuracy') return b.bestAccuracy - a.bestAccuracy;
-    return a.title.localeCompare(b.title);
-  });
+  const filteredSongs = allSongs
+    .filter((s) => {
+      const matchesSearch =
+        s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.artist.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!matchesSearch) return false;
+
+      if (categoryFilter === 'imported') {
+        return importedSongs.some((imp) => imp.id === s.id);
+      }
+      if (categoryFilter !== 'all') {
+        return s.difficulty === categoryFilter;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortMode === 'tempo') return a.tempo - b.tempo;
+      if (sortMode === 'accuracy') return b.bestAccuracy - a.bestAccuracy;
+      return a.title.localeCompare(b.title);
+    });
+
+  const featuredSong = allSongs[0];
+
+  const getDifficultyColor = (diff: string) => {
+    switch (diff) {
+      case 'Beginner':
+        return 'text-[#10B981]';
+      case 'Intermediate':
+        return 'text-[#00E5BE]';
+      case 'Advanced':
+        return 'text-[#F59E0B]';
+      default:
+        return 'text-[#94A3B8]';
+    }
+  };
 
   return (
-    <div id="guitar-trainer-menu" className="flex flex-col h-full bg-[#080B11] text-[#E2E8F0] select-none font-sans overflow-hidden">
+    <div id="guitar-trainer-menu" className="flex flex-col h-full bg-[#070A10] text-[#E2E8F0] select-none font-sans overflow-hidden">
       {/* Menu Header */}
-      <header id="menu-header" className="h-[88px] bg-[#07090F]/95 backdrop-blur-md border-b border-[#182333] px-8 flex items-center justify-between shrink-0 shadow-lg shadow-black/20">
-        <div className="flex items-center space-x-4">
-          <button
+      <header id="menu-header" className="h-20 bg-[#090E17]/95 backdrop-blur-md border-b border-[#182436] px-8 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-4">
+          <motion.button
             id="btn-back-to-stage"
+            whileTap={{ scale: 0.94 }}
             onClick={onBackToStage}
-            className="w-10 h-10 rounded-2xl bg-[#121926] hover:bg-[#1A2536] border border-[#233246] hover:border-[#00E5BE]/40 flex items-center justify-center text-[#8EA1B8] hover:text-white transition shadow cursor-pointer active:scale-95"
+            className="w-10 h-10 rounded-xl bg-[#111824] hover:bg-[#182335] border border-[#202E42] flex items-center justify-center text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
             title="Върни се към сцената за свирене"
           >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+            <ArrowLeft className="w-4 h-4" />
+          </motion.button>
           <div>
-            <div className="flex items-center space-x-2">
-              <span className="text-[10px] tracking-wider font-extrabold text-[#00E5BE] uppercase bg-[#00E5BE]/10 px-2.5 py-0.5 rounded-full border border-[#00E5BE]/30">
-                PRACTICE LIBRARY
-              </span>
-              <span className="text-xs text-[#71849A] font-mono">{filteredSongs.length} песни</span>
+            <div className="flex items-center gap-2 text-xs text-[#63768D]">
+              <span className="font-semibold text-white">Каталог с песни</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono tabular-nums">{filteredSongs.length} песни</span>
             </div>
-            <h1 className="text-xl font-extrabold tracking-tight text-white mt-0.5">Изберете песен за упражнение</h1>
+            <h1 className="text-xl font-bold tracking-tight text-white mt-0.5">Изберете таблатура за тренировка</h1>
           </div>
         </div>
 
         {/* Search & Sort Controls */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-4">
           <div className="relative">
-            <Search className="w-4 h-4 text-[#5B6D83] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-[#5B6D83] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               id="song-search-input"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Търсене на песен или изпълнител..."
-              className="w-72 bg-[#0E1522] border border-[#213044] rounded-2xl pl-10 pr-3 py-2 text-xs text-white placeholder-[#5B6D83] focus:outline-none focus:border-[#00E5BE] transition shadow-inner"
+              placeholder="Търсене по заглавие или автор..."
+              className="w-64 bg-[#0F1624] border border-[#202E42] rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-[#5B6D83] focus:outline-none focus:border-[#00E5BE] transition-colors"
             />
           </div>
 
-          <button
-            id="btn-toggle-sort"
-            onClick={() => setSortMode(sortMode === 'name' ? 'tempo' : sortMode === 'tempo' ? 'accuracy' : 'name')}
-            className="bg-[#121926] hover:bg-[#1A2536] border border-[#233246] hover:border-[#00E5BE]/40 px-3.5 py-2 rounded-2xl text-xs font-bold text-[#CBD5E1] flex items-center space-x-2 transition cursor-pointer active:scale-95 shadow"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-[#00E5BE]" />
-            <span>Сортиране: {sortMode === 'name' ? 'Име А-Я' : sortMode === 'tempo' ? 'Темпо (BPM)' : 'Най-висока точност'}</span>
-          </button>
+          {/* Segmented Sort Controls with Framer Motion Layout Animation */}
+          <div className="flex items-center bg-[#0F1624] p-1 rounded-xl border border-[#202E42]">
+            {(
+              [
+                { id: 'name', label: 'Име' },
+                { id: 'tempo', label: 'BPM' },
+                { id: 'accuracy', label: 'Точност' },
+              ] as const
+            ).map((mode) => {
+              const isActive = sortMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => setSortMode(mode.id)}
+                  className={`relative px-3 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                    isActive ? 'text-[#070A10]' : 'text-[#8293A7] hover:text-white'
+                  }`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="active-sort-tab"
+                      className="absolute inset-0 bg-[#00E5BE] rounded-lg"
+                      transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                    />
+                  )}
+                  <span className="relative z-10">{mode.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </header>
 
-      {/* Songs List */}
+      {/* Main Content Area */}
       <main id="menu-song-list" className="flex-1 overflow-y-auto px-8 py-6 space-y-3">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".gp,.gpx,.gp3,.gp4,.gp5"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleFile(file);
-            event.currentTarget.value = '';
-          }}
-        />
+        {/* Featured Masterclass Banner */}
+        {featuredSong && searchQuery === '' && categoryFilter === 'all' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={() => onSelectSong(featuredSong)}
+            className="relative rounded-2xl bg-gradient-to-r from-[#0C1626] via-[#0E1B2E] to-[#0A111C] border border-[#1E2E46] p-6 shadow-2xl overflow-hidden cursor-pointer group hover:border-[#00E5BE]/50 transition-all"
+          >
+            <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-[#00E5BE]/10 to-transparent pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-[#00E5BE]/10 border border-[#00E5BE]/30 text-[#00E5BE] text-[10px] font-mono font-bold uppercase tracking-wider">
+                  ★ Избор на редакцията • Мастърклас
+                </div>
+                <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight group-hover:text-[#00E5BE] transition-colors">
+                  {featuredSong.title}
+                </h2>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-[#8293A7]">
+                  <span className="text-white font-semibold">{featuredSong.artist}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono text-[#00E5BE] font-bold">{featuredSong.tempo} BPM</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{featuredSong.tuning}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{featuredSong.measures} такта</span>
+                </div>
+              </div>
 
-        <button
-          type="button"
-          id="guitar-pro-drop-zone"
-          onClick={() => fileInputRef.current?.click()}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-              setIsDragging(false);
-            }
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setIsDragging(false);
-            const file = event.dataTransfer.files?.[0];
-            if (file) void handleFile(file);
-          }}
-          className={`w-full min-h-28 rounded-2xl border-2 border-dashed flex items-center justify-center gap-4 px-6 transition cursor-pointer ${
-            isDragging
-              ? 'bg-[#00E5BE]/15 border-[#00E5BE] scale-[1.01]'
-              : 'bg-[#0D1520] border-[#2A3D54] hover:border-[#00E5BE]/70 hover:bg-[#101B28]'
-          }`}
-        >
-          <div className="w-12 h-12 rounded-2xl bg-[#00E5BE]/15 border border-[#00E5BE]/30 flex items-center justify-center text-[#00E5BE]">
-            {isImporting ? (
-              <LoaderCircle className="w-6 h-6 animate-spin" />
-            ) : (
-              <UploadCloud className="w-6 h-6" />
-            )}
-          </div>
-          <div className="text-left">
-            <div className="text-sm font-black text-white">
-              {isImporting ? 'Импортиране на таблатурата...' : 'Пуснете Guitar Pro файл тук'}
+              <div className="flex items-center gap-4 shrink-0">
+                <div className="text-right hidden sm:block">
+                  <div className="text-xs font-mono font-bold text-white">{featuredSong.bestAccuracy}% рекордна точност</div>
+                  <div className="text-[11px] font-mono text-[#586A7E]">{featuredSong.attempts} изсвирвания</div>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectSong(featuredSong);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-[#00E5BE] text-[#070A10] font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-[#00E5BE]/25 hover:bg-[#00FAD0] transition-colors cursor-pointer"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Започни урок</span>
+                </button>
+              </div>
             </div>
-            <div className="text-xs text-[#7F94AC] mt-1">
-              или кликнете за избор • .gp, .gpx, .gp3, .gp4, .gp5
-            </div>
+          </motion.div>
+        )}
+
+        {/* Category Filter Pills & Drag Drop */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { id: 'all' as const, label: 'Всички песни' },
+              { id: 'Beginner' as const, label: 'Начинаещи' },
+              { id: 'Intermediate' as const, label: 'Средно ниво' },
+              { id: 'Advanced' as const, label: 'Напреднали' },
+              { id: 'imported' as const, label: `Guitar Pro (${importedSongs.length})` },
+            ].map((cat) => {
+              const active = categoryFilter === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategoryFilter(cat.id)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                    active
+                      ? 'bg-[#00E5BE] text-[#070A10] shadow-sm shadow-[#00E5BE]/20'
+                      : 'bg-[#0E1522] text-[#7E91A6] hover:text-white border border-[#1A2536]'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
           </div>
-        </button>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#111A27] hover:bg-[#162234] border border-[#202E42] text-xs font-semibold text-white transition-colors cursor-pointer"
+          >
+            <UploadCloud className="w-3.5 h-3.5 text-[#00E5BE]" />
+            <span>Импорт на GP таблатура</span>
+          </button>
+        </div>
 
         {importError && (
-          <div className="px-4 py-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/40 text-[#FF9A9A] text-xs font-bold">
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="px-4 py-2.5 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-[#FCA5A5] text-xs font-semibold"
+          >
             {importError}
-          </div>
+          </motion.div>
         )}
 
         {importedSongs.length > 0 && (
-          <div className="flex items-center gap-2 pt-2 text-[11px] font-black uppercase tracking-wider text-[#00E5BE]">
+          <div className="flex items-center gap-2 pt-2 text-xs font-bold text-[#00E5BE]">
             <FileMusic className="w-4 h-4" />
-            <span>Моите таблатури ({importedSongs.length})</span>
+            <span>Импортирани таблатури ({importedSongs.length})</span>
           </div>
         )}
-        {filteredSongs.map((song, idx) => {
-          const isSelected = idx === selectedIndex;
 
-          return (
-            <div
-              key={song.id}
-              id={`song-card-${song.id}`}
-              onClick={() => {
-                setSelectedIndex(idx);
-                onSelectSong(song);
-              }}
-              onMouseEnter={() => setSelectedIndex(idx)}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                isSelected
-                  ? 'bg-gradient-to-r from-[#141E2C] to-[#111925] border-[#00E5BE] shadow-xl shadow-[#00E5BE]/10 translate-x-1.5'
-                  : 'bg-[#0D121B] border-[#1D2838] hover:border-[#2D3F58] hover:bg-[#101722]'
-              }`}
-            >
-              {/* Left: Play marker & Song Details */}
-              <div className="flex items-center space-x-4">
-                <div
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
-                    isSelected
-                      ? 'bg-[#00E5BE] text-[#070A10] shadow-lg shadow-[#00E5BE]/25'
-                      : 'bg-[#151D2A] text-[#7A8EA4]'
-                  }`}
-                >
-                  <Play className="w-5 h-5 fill-current ml-0.5" />
-                </div>
+        {/* Songs List with Framer Motion Stagger */}
+        <div className="space-y-2">
+          {filteredSongs.map((song, idx) => {
+            const isSelected = idx === selectedIndex;
+            const diffColor = getDifficultyColor(song.difficulty);
 
-                <div>
-                  <h3 className={`text-base font-bold tracking-tight ${isSelected ? 'text-white' : 'text-[#E2E8F0]'}`}>
-                    {song.title}
-                  </h3>
-                  <div className="flex items-center space-x-2.5 text-xs text-[#7A8DA3] mt-0.5">
-                    <span className="text-white font-medium">{song.artist}</span>
-                    <span>•</span>
-                    <span className="font-mono text-[#00E5BE] font-bold">{song.tempo} BPM</span>
-                    <span>•</span>
-                    <span>{song.tuning}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Difficulty, Attempts & Best Accuracy */}
-              <div className="flex items-center space-x-4">
-                <span
-                  className={`text-[11px] font-bold px-3 py-1 rounded-xl border font-mono ${
-                    song.difficulty === 'Beginner'
-                      ? 'bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30'
-                      : song.difficulty === 'Intermediate'
-                      ? 'bg-[#00E5BE]/10 text-[#00E5BE] border-[#00E5BE]/30'
-                      : 'bg-[#FF5E7E]/10 text-[#FF5E7E] border-[#FF5E7E]/30'
-                  }`}
-                >
-                  {song.difficulty}
-                </span>
-
-                <div className="text-right">
-                  <div className="text-xs font-bold text-white flex items-center space-x-1 justify-end font-mono">
-                    <Award className="w-3.5 h-3.5 text-[#FFD32A]" />
-                    <span>Best: {song.bestAccuracy}%</span>
-                  </div>
-                  <div className="text-[11px] text-[#63758B] font-mono">{song.attempts} опита</div>
-                </div>
-
-                {isSelected && (
-                  <button
-                    id={`btn-play-song-${song.id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectSong(song);
-                    }}
-                    className="bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070A10] text-xs font-black px-4 py-2 rounded-xl shadow-lg shadow-[#00E5BE]/25 transition active:scale-95 ml-2 cursor-pointer"
+            return (
+              <motion.div
+                key={song.id}
+                id={`song-card-${song.id}`}
+                layout
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15, delay: idx * 0.02 }}
+                onClick={() => {
+                  setSelectedIndex(idx);
+                  onSelectSong(song);
+                }}
+                onMouseEnter={() => setSelectedIndex(idx)}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                  isSelected
+                    ? 'bg-[#101724] border-[#00E5BE]/60 shadow-lg shadow-black/40'
+                    : 'bg-[#0A0F18] border-[#182333] hover:border-[#223146] hover:bg-[#0D1420]'
+                }`}
+              >
+                {/* Left: Play Icon & Song Details */}
+                <div className="flex items-center gap-3.5">
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+                      isSelected
+                        ? 'bg-[#00E5BE] text-[#070A10] shadow-sm shadow-[#00E5BE]/30'
+                        : 'bg-[#131C2A] text-[#71849A]'
+                    }`}
                   >
-                    Свири сега
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                  </div>
+
+                  <div>
+                    <h3 className={`text-sm font-bold tracking-tight ${isSelected ? 'text-white' : 'text-[#DDE4EE]'}`}>
+                      {song.title}
+                    </h3>
+                    <div className="flex items-center gap-2 text-xs text-[#71849A] mt-0.5">
+                      <span className="text-white font-medium">{song.artist}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums text-[#00E5BE] font-semibold">{song.tempo} BPM</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{song.tuning}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className={`font-semibold ${diffColor}`}>{song.difficulty}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Accuracy & Action Button */}
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-xs font-bold text-white flex items-center gap-1 justify-end font-mono tabular-nums">
+                      <Award className="w-3.5 h-3.5 text-[#F59E0B]" />
+                      <span>{song.bestAccuracy}% точност</span>
+                    </div>
+                    <div className="text-[11px] text-[#55677B] font-mono tabular-nums">{song.attempts} изсвирвания</div>
+                  </div>
+
+                  {isSelected && (
+                    <motion.button
+                      id={`btn-play-song-${song.id}`}
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectSong(song);
+                      }}
+                      className="bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070A10] text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-sm shadow-[#00E5BE]/30 transition-colors cursor-pointer"
+                    >
+                      Свири сега
+                    </motion.button>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
       </main>
 
-      {/* Footer Status */}
-      <footer id="menu-footer" className="h-[60px] bg-[#07090F] border-t border-[#182333] px-8 flex items-center justify-between shrink-0 shadow-inner">
-        <div className="flex items-center space-x-2.5 bg-[#0E1420] border border-[#1E2B3E] px-3.5 py-1.5 rounded-xl">
-          <div className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
-          <span className="text-xs text-[#CBD5E1] font-mono">АУДИО СИСТЕМА: Realtime Pitch Engine (Active)</span>
+      {/* Clean Footer Navigation Hints */}
+      <footer id="menu-footer" className="h-11 bg-[#090E17] border-t border-[#182436] px-8 flex items-center justify-between shrink-0 text-xs text-[#63768D] font-mono">
+        <div className="flex items-center gap-2">
+          <span>Сцена за интерактивна китарна таблатура</span>
         </div>
 
-        <div className="text-xs text-[#63758B] flex items-center space-x-3 font-mono">
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-[#121926] border border-[#233246] rounded text-white font-mono">ENTER</kbd> Започни
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-[#121926] border border-[#233246] rounded text-white font-mono">F</kbd> Търси
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 bg-[#121926] border border-[#233246] rounded text-white font-mono">ESC</kbd> Назад
-          </span>
+        <div className="flex items-center gap-4">
+          <span><kbd className="px-1.5 py-0.5 bg-[#111824] border border-[#202E42] rounded text-white">Enter</kbd> Избери</span>
+          <span><kbd className="px-1.5 py-0.5 bg-[#111824] border border-[#202E42] rounded text-white">Esc</kbd> Назад към сцената</span>
         </div>
       </footer>
     </div>
