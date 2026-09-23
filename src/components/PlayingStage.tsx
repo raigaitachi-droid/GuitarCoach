@@ -801,11 +801,23 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     setIsPlaying((playing) => !playing);
   };
 
+  const resetPlaybackJudgement = () => {
+    setNotes(activeTabList.map((note) => ({ ...note })));
+    setFeedback(null);
+    setParticles([]);
+    setMissFlash(false);
+    setActiveFlashes({});
+    setActiveTargetNote(null);
+    setIsFrozenWaiting(false);
+    setStreak(0);
+    setMultiplier(1);
+    setStats({ hits: 0, close: 0, misses: 0 });
+  };
+
   const seekTo = (nextPlaybackMs: number, shouldPlay = false) => {
     const clampedPlaybackMs = Math.max(0, Math.min(noteSequenceDurationMs, nextPlaybackMs));
+    resetPlaybackJudgement();
     setIsPlaying(shouldPlay);
-    setIsFrozenWaiting(false);
-    setActiveTargetNote(null);
     playbackMsRef.current = clampedPlaybackMs;
     setPlaybackMs(clampedPlaybackMs);
   };
