@@ -39,7 +39,11 @@ export type TechniqueType =
   | 'chord-change'
   | 'string-skip'
   | 'position-shift'
-  | 'speed-burst';
+  | 'speed-burst'
+  | 'high-npm'
+  | 'dense-beat'
+  | 'polyphony-stretch'
+  | 'practice-strategy';
 
 export interface TechniqueAnalysis {
   id: string;
