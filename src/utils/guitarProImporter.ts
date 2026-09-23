@@ -272,7 +272,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
   const markerSections = detectMarkerSections(score, measureSummaries);
   const sections =
     markerSections.length > 0 ? markerSections : detectAutoSections(measureSummaries);
-  const detectedTechniques = analyzeTechniqueMap(notes);
+  const detectedTechniques = analyzeTechniqueMap(notes, tempo);
   const fileTitle = file.name.replace(/\.(gp|gpx|gp3|gp4|gp5)$/i, '');
   const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
