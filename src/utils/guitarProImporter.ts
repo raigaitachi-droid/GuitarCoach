@@ -53,8 +53,9 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
     hasTrueFlag(effectSource.isSemiHarmonic, candidate.isSemiHarmonic);
   const isHarmonic =
     hasExplicitHarmonicFlag ||
-    (hasMeaningfulType && hasMeaningfulValue) ||
-    (knownNumericHarmonicType && hasMeaningfulValue);
+    hasMeaningfulType ||
+    hasMeaningfulValue ||
+    knownNumericHarmonicType;
 
   if (!isHarmonic) return { isHarmonic: false };
   if (rawType.includes('natural') || hasTrueFlag(effectSource.isNaturalHarmonic, candidate.isNaturalHarmonic)) {
