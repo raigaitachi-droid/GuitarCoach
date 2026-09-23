@@ -1651,6 +1651,55 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             </div>
 
             <div className="max-h-[calc(58vh-64px)] overflow-y-auto px-4 py-3">
+              {selectedAnalysis?.practiceFlow && (
+                <div className="mb-3 rounded-xl border border-[#00E5BE]/25 bg-[#00E5BE]/[0.06] p-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#00E5BE]">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>First Assignment</span>
+                        <span className="text-[#8EA1B8] normal-case tracking-normal">
+                          {selectedAnalysis.practiceFlow.method}
+                        </span>
+                      </div>
+                      <h2 className="mt-1 text-sm font-bold text-white">
+                        {selectedAnalysis.practiceFlow.firstAssignment}
+                      </h2>
+                      <p className="mt-1 text-xs text-[#D7DEE8]">
+                        <strong className="text-white">Защо:</strong> {selectedAnalysis.practiceFlow.reason}
+                      </p>
+                      <p className="mt-1 text-xs text-[#9AAABC]">
+                        <strong className="text-[#CBD5E1]">Ако стане:</strong> {selectedAnalysis.practiceFlow.nextStep}
+                      </p>
+                      <p className="mt-1 text-xs text-[#9AAABC]">
+                        <strong className="text-[#FFB86B]">Ако не стане:</strong> {selectedAnalysis.practiceFlow.failureAction}
+                      </p>
+                      {selectedAnalysis.practiceFlow.recommendedMethods.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {selectedAnalysis.practiceFlow.recommendedMethods.map((method) => (
+                            <span
+                              key={method.id}
+                              className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold text-[#DDE4EE]"
+                              title={method.instruction}
+                            >
+                              {method.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => changeTempoPercent(selectedAnalysis.practiceFlow?.startTempoPercent || 50)}
+                      className="shrink-0 rounded-full bg-[#00E5BE] px-3 py-2 text-xs font-black text-[#061014] hover:bg-[#00E5BE]/90 transition-colors cursor-pointer"
+                    >
+                      Темпо {selectedAnalysis.practiceFlow.startTempoPercent}%
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="h-2 rounded-full bg-white/10 overflow-hidden relative">
                 {detectedTechniques.map((technique) => {
                   const left = Math.max(0, Math.min(100, (technique.startMs / noteSequenceDurationMs) * 100));
