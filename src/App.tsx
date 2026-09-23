@@ -20,7 +20,7 @@ function sanitizeImportedSong(song: ImportedSong): ImportedSong {
     harmonicNotes.filter((note) => !note.harmonicType || note.harmonicType === 'unknown').length /
     harmonicNotes.length;
 
-  if (harmonicRatio < 0.75 && unknownRatio < 0.8) return song;
+  if (harmonicRatio < 0.95 || unknownRatio < 0.95) return song;
 
   return {
     ...song,
