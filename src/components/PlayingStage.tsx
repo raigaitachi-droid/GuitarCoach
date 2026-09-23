@@ -964,6 +964,35 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       ctx.stroke();
 
       const now = playbackMsRef.current;
+      const beatMs = 60000 / Math.max(1, activeSong.tempo || 120);
+      const gridStart = now - (now % beatMs);
+      for (let t = gridStart; t < now + visibleWindowMs; t += beatMs) {
+        const diffMs = t - now;
+        const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
+        if (x < hitX - 80 || x > rect.width + 80) continue;
+
+        const alpha = Math.max(0.08, 0.32 - Math.abs(x - hitX) / rect.width);
+        ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + (x - hitX) * 0.04, rect.height);
+        ctx.stroke();
+      }
+
+      for (const technique of detectedTechniques.slice(0, 8)) {
+        const startX = hitX + ((technique.startMs - now) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
+        const endX = hitX + ((technique.endMs - now) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
+        if (endX < 0 || startX > rect.width) continue;
+
+        const color = technique.severity === 'high' ? '#FF5E7E' : technique.severity === 'medium' ? '#F59E0B' : '#00E5BE';
+        ctx.fillStyle = `${color}44`;
+        ctx.beginPath();
+        ctx.roundRect(Math.max(0, startX), 8, Math.max(8, endX - startX), 5, 3);
+        ctx.fill();
+      }
+
+
       for (const note of scrollingNotes) {
         const diffMs = note.timestampMs - now;
         const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
@@ -1004,6 +1033,22 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         ctx.fillText(note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : String(note.fret), x, y + 0.5);
       }
 
+      if (activeTargetNoteRef.current) {
+        const target = activeTargetNoteRef.current;
+        const y = laneHeight * (target.string - 0.5);
+        const pulse = 0.5 + Math.sin(performance.now() / 120) * 0.5;
+        ctx.strokeStyle = `rgba(0,229,190,${0.45 + pulse * 0.35})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(hitX, y, 24 + pulse * 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(0,229,190,0.12)';
+        ctx.beginPath();
+        ctx.arc(hitX, y, 34 + pulse * 10, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
 
@@ -1012,7 +1057,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
     frameId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frameId);
-  }, [scrollingNotes, visibleWindowMs, hitZoneFraction]);
+  }, [scrollingNotes, visibleWindowMs, hitZoneFraction, activeSong.tempo, detectedTechniques]);
 
   const timingCueNote = notes.find(
     (note) =>
@@ -1582,7 +1627,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 {/* String Studio Channel Badge */}
                 <div
                   id={`string-pill-${stringNum}`}
-                  className="z-30 ml-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#05070B]/80 border border-white/10 transition-transform hover:scale-105 active:scale-95"
+                  className="z-30 ml-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#05070B]/40 border border-white/5 opacity-35 transition-transform hover:scale-105 active:scale-95"
                   style={{
                     borderColor: isFlashed ? color : undefined,
                     boxShadow: isFlashed ? `0 0 14px ${color}` : undefined,
@@ -1596,7 +1641,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
                 {/* Authentic Metallic String Wire */}
                 <div
-                  className="absolute left-20 right-4 rounded-full transition-all duration-100"
+                  className="absolute left-20 right-4 rounded-full transition-all duration-100 opacity-0"
                   style={{
                     height: `${gauge}px`,
                     background: STRING_GRADIENTS[index],
@@ -1606,7 +1651,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
                 {/* Hit Zone Target Diamond Indicator */}
                 <div
-                  className="absolute z-20 w-3 h-3 rotate-45 bg-[#080C14] border-2 -translate-x-1.5 pointer-events-none"
+                  className="absolute z-20 w-3 h-3 rotate-45 bg-[#080C14] border-2 -translate-x-1.5 pointer-events-none opacity-0"
                   style={{
                     left: `${hitZoneFraction * 100}%`,
                     borderColor: color,
@@ -1617,7 +1662,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           })}
 
           {/* Animated Scrolling Notes with Sustain Trails */}
-          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden opacity-35">
+          <div id="scrolling-notes-container" className="absolute inset-0 pointer-events-none z-10 overflow-hidden opacity-0">
             {scrollingNotes.map((note) => {
               const diffMs = note.timestampMs - playbackMs;
               const xPercent =
