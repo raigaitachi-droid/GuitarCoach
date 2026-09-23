@@ -1,5 +1,6 @@
 import * as alphaTab from '@coderline/alphatab';
 import { ImportedSong, SongSection, TabNote } from '../types';
+import { detectArpeggioPassages } from './musicAnalysis/arpeggioAnalyzer';
 
 const SUPPORTED_EXTENSIONS = ['.gp', '.gpx', '.gp3', '.gp4', '.gp5'];
 
@@ -271,6 +272,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
   const markerSections = detectMarkerSections(score, measureSummaries);
   const sections =
     markerSections.length > 0 ? markerSections : detectAutoSections(measureSummaries);
+  const detectedTechniques = detectArpeggioPassages(notes);
   const fileTitle = file.name.replace(/\.(gp|gpx|gp3|gp4|gp5)$/i, '');
   const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -289,5 +291,9 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
     notes,
     sections,
     sourceFileName: file.name,
+    analysis: {
+      techniques: detectedTechniques,
+      primaryFocus: detectedTechniques[0],
+    },
   };
 }
