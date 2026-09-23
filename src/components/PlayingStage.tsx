@@ -456,7 +456,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       const windowMs = getToleranceWindowMs(hitToleranceRef.current);
       const candidateNotes =
         isFrozenWaitingRef.current && currentTargetNote
-          ? [currentTargetNote]
+          ? getChordEventNotes(currentTargetNote, currentNotes)
           : currentNotes.filter(
               (note) =>
                 !note.hitState &&
@@ -502,7 +502,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           matched.string,
           matched.fret,
           timingOffset,
-          'mic'
+          'mic',
+          getChordEventIds(matched, currentNotes)
         );
       }
     });
@@ -635,7 +636,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     );
 
     if (unhitNoteAtLine) {
-      handleHitExecution(unhitNoteAtLine.id, unhitNoteAtLine.string, unhitNoteAtLine.fret, 0, 'demo');
+      handleHitExecution(
+        unhitNoteAtLine.id,
+        unhitNoteAtLine.string,
+        unhitNoteAtLine.fret,
+        0,
+        'demo',
+        getChordEventIds(unhitNoteAtLine, notes)
+      );
     }
   }, [playbackMs, isPlaying, isAutoDemo, notes]);
 
@@ -694,7 +702,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     stringNum: number,
     fret: number,
     offsetMs: number,
-    source: 'mic' | 'manual' | 'demo' = 'manual'
+    source: 'mic' | 'manual' | 'demo' = 'manual',
+    chordNoteIds?: string[]
   ) => {
     // Determine whether to play synthetic plucked sound from speakers:
     // When plucking a REAL guitar with the microphone: do NOT blast synthetic speaker sound
@@ -709,10 +718,13 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       micDetector.notifySpeakerPlayed(350); // Echo gate refractory window
     }
 
-    // Mark note as hit in state
+    // Mark a single note, or the whole chord event, as hit in state.
+    // Real guitar chord recognition is gesture-based: one clean strum should
+    // satisfy the simultaneous tab notes instead of asking for them one by one.
     if (noteId) {
+      const idsToHit = new Set(chordNoteIds && chordNoteIds.length > 0 ? chordNoteIds : [noteId]);
       setNotes((prev) =>
-        prev.map((n) => (n.id === noteId ? { ...n, hitState: 'hit' as const } : n))
+        prev.map((n) => (idsToHit.has(n.id) ? { ...n, hitState: 'hit' as const } : n))
       );
     }
 
@@ -792,7 +804,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
   const handleManualFretClick = (stringNum: number, fret: number) => {
     if (activeTargetNote && activeTargetNote.string === stringNum) {
-      handleHitExecution(activeTargetNote.id, stringNum, fret, Math.round((Math.random() - 0.5) * 20), 'manual');
+      handleHitExecution(
+        activeTargetNote.id,
+        stringNum,
+        fret,
+        Math.round((Math.random() - 0.5) * 20),
+        'manual',
+        getChordEventIds(activeTargetNote, notes)
+      );
     } else {
       handleHitExecution(undefined, stringNum, fret, 0, 'manual');
     }
@@ -838,7 +857,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         // Play note on target fret or open string
         const fret = activeTargetNote?.string === stringNum ? activeTargetNote.fret : 0;
         const noteId = activeTargetNote?.string === stringNum ? activeTargetNote.id : undefined;
-        handleHitExecution(noteId, stringNum, fret, 0, 'manual');
+        handleHitExecution(
+          noteId,
+          stringNum,
+          fret,
+          0,
+          'manual',
+          activeTargetNote && noteId ? getChordEventIds(activeTargetNote, notes) : undefined
+        );
       } else if (e.code === 'Space') {
         e.preventDefault();
         togglePlayback();
@@ -876,6 +902,18 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       hitState: undefined,
     })),
   ];
+
+  const getChordEventNotes = (anchor: TabNote, sourceNotes: TabNote[]) =>
+    sourceNotes.filter(
+      (note) =>
+        !note.hitState &&
+        Math.abs(note.timestampMs - anchor.timestampMs) <= 45
+    );
+
+  const getChordEventIds = (anchor: TabNote, sourceNotes: TabNote[]) => {
+    const chordNotes = getChordEventNotes(anchor, sourceNotes);
+    return chordNotes.length >= 2 ? chordNotes.map((note) => note.id) : [anchor.id];
+  };
 
   const getVisualNoteOffset = (note: TabNote, visibleNotes: TabNote[]) => {
     const chordNotes = visibleNotes.filter((candidate) => Math.abs(candidate.timestampMs - note.timestampMs) <= 35);
