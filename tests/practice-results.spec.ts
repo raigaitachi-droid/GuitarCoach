@@ -34,9 +34,9 @@ test('pitch judgement applies latency, timing windows, and cents tolerance consi
 test('misses are only assigned after the scaled timing deadline', () => {
   const target: TabNote = { id: 'target', string: 6, fret: 0, timestampMs: 1000, durationMs: 500 };
   const scorableIds = new Set(['target']);
-  expect([...missedNoteIds([target], scorableIds, 1240, 1)]).toEqual([]);
-  expect([...missedNoteIds([target], scorableIds, 1241, 1)]).toEqual(['target']);
-  expect([...missedNoteIds([target], scorableIds, 1121, 0.5)]).toEqual(['target']);
+  expect([...missedNoteIds([target], scorableIds, 1360, 1)]).toEqual([]);
+  expect([...missedNoteIds([target], scorableIds, 1361, 1)]).toEqual(['target']);
+  expect([...missedNoteIds([target], scorableIds, 1181, 0.5)]).toEqual(['target']);
 });
 
 test('wait mode stops on the first unresolved single note and releases only after it is hit', () => {

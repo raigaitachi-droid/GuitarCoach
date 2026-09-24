@@ -31,7 +31,9 @@ export function summarizePractice(notes: TabNote[], tempoPercent: number, hadAud
 }
 
 export const STANDARD_TUNING = [64, 59, 55, 50, 45, 40];
-export const TIMING_WINDOW_MS = 240;
+// Browser capture and USB interfaces can add a meaningful delay. This is the
+// real-time forgiveness window at 100% tempo; it scales with playback speed.
+export const TIMING_WINDOW_MS = 360;
 export const TIMING_FEEDBACK_THRESHOLD_MS = 80;
 export const PITCH_TOLERANCE_CENTS = 46;
 
