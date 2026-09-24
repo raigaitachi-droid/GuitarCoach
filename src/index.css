@@ -57,6 +57,8 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
 .loop-range select { padding: 8px 9px; }
 .bar-position { margin-left: auto; color: #9daa9f; font: 13px var(--font-mono); }
 .practice-status { display: flex; justify-content: space-between; gap: 20px; align-items: center; min-height: 50px; font-size: 14px; color: #aebbb2; }
+.status-detail { display: flex; align-items: center; justify-content: flex-end; gap: 18px; }
+.detector-readout { color: #a9cdb4; font: 12px var(--font-mono); white-space: nowrap; }
 .practice-status .correct { color: #89d9a8; }
 .practice-status .wrong { color: #f29393; }
 .timing-feedback { margin-left: 18px; font-size: 11px; letter-spacing: 1px; color: #b9b2a3; }

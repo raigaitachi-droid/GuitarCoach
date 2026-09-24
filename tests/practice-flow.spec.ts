@@ -170,6 +170,7 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', waitingPosition!);
   await page.evaluate(() => (window as any).testGuitar.pluck(40));
   await expect(page.getByRole('status')).toContainText('Correct note');
+  await expect(page.getByText(/Heard E2 · 82\.4 Hz/)).toBeVisible();
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByRole('heading', { name: '100% accuracy' })).toBeVisible();
   await expect(page.getByText('1 of 1 single notes played correctly.')).toBeVisible();

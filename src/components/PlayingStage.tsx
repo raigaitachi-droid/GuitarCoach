@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
-import { micDetector } from '../utils/pitchDetector';
+import { micDetector, PitchResult } from '../utils/pitchDetector';
 import { advanceLoop, applyWaitGate, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, normalizeLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
@@ -41,6 +41,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const [waiting, setWaiting] = useState<TabNote | null>(null);
   const waitingRef = useRef<TabNote | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; kind: 'correct' | 'wrong'; timing?: string; at: number } | null>(null);
+  const [heardPitch, setHeardPitch] = useState<Pick<PitchResult, 'noteName' | 'frequency' | 'confidence'> | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const [loopEnabled, setLoopEnabled] = useState(Boolean(initialLoopRange));
   const loopEnabledRef = useRef(Boolean(initialLoopRange));
@@ -52,6 +53,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastConsumedPluck = useRef(-1);
   const lastFeedbackPluck = useRef(-1);
   const lastHitNote = useRef<TabNote | null>(null);
+  const lastHeardPitchUpdate = useRef(0);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
   const hasChords = scorableIds.size !== song.notes.length;
   const duration = Math.max(song.durationMs, ...song.notes.map((note) => note.timestampMs + Math.max(note.durationMs, TIMING_WINDOW_MS + 100)));
@@ -120,10 +122,17 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     return micDetector.subscribe((result) => {
       if (!micDetector.getIsListening()) {
         setTransport(false);
+        setHeardPitch(null);
         setInputError(micDetector.getErrorMessage() || 'We can’t hear your guitar. Check your input device and try again.');
         return;
       }
       if (!result || !playingRef.current || completedRef.current) return;
+      // A small live readout makes hardware issues observable without adding a
+      // separate tuner or diagnostic screen. Throttle re-renders to 8 Hz.
+      if (performance.now() - lastHeardPitchUpdate.current >= 125) {
+        lastHeardPitchUpdate.current = performance.now();
+        setHeardPitch({ noteName: result.noteName, frequency: result.frequency, confidence: result.confidence });
+      }
       // Correct notes can be accepted from a quieter pick transient. A wrong
       // note needs a cleaner pitch estimate so background noise cannot produce
       // distracting false-red feedback.
@@ -246,7 +255,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {inputError || (!playing ? 'Paused' : recentFeedback?.text || (waiting ? `Waiting for ${noteName(waiting)}` : withAudio ? 'Listening · play along' : 'Playback only · audio input is off'))}
           {playing && !waiting && recentFeedback?.timing && <span className="timing-feedback">{recentFeedback.timing}</span>}
         </p>
-        {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
+        <div className="status-detail">
+          {withAudio && heardPitch && <span className="detector-readout">Heard {heardPitch.noteName} · {heardPitch.frequency.toFixed(1)} Hz · {Math.round(heardPitch.confidence * 100)}%</span>}
+          {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
+        </div>
       </div>
       <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} />
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
