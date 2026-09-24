@@ -1,175 +1,134 @@
-# Guitar Trainer 🎸
+# GuitarCoach
 
-A Windows desktop guitar practice app with real-time pitch detection, detailed
-early/late feedback, and scrolling Guitar Pro tab playback.
+Practice any Guitar Pro tab with instant feedback.
 
-This project currently builds on the PickHero v1.1.0 codebase. The upstream
-history and attribution are preserved while the matching, feedback, calibration,
-and practice systems are developed into a distinct application. See
-[`DEVELOPMENT.md`](DEVELOPMENT.md) for the current changes and licensing note.
+**Load tab → Play → Get feedback → Find weak section → Practice it again.**
 
-## Why?
+GuitarCoach is a desktop-first browser practice tool for guitarists who already
+use Guitar Pro tabs. Chrome and Edge desktop are the primary targets. No account,
+API key, desktop installation, or audio upload is required.
 
-Yousician is great but expensive for continuous use, and there's no good free alternative that combines Guitar Pro tab playback with live pitch detection. PickHero fills that gap: load any Guitar Pro tab file (GP3/GP4/GP5/GP7/GP8), plug in your guitar via a cheap USB cable, and practice with real-time visual feedback — all without an internet connection or subscription.
+## Current checkpoint: Stage 1
 
-Designed to run on modest hardware (tested on an HP ProBook 650 G5 laptop). No ML models, no GPU required.
+The active app has three screens:
 
-## How It Works
+1. **Start:** drop a Guitar Pro file or try the bundled demo, select an input, and
+   start practicing. `Find inputs` requests browser permission so device names
+   become available. Playback without audio is available if an input cannot be used.
+2. **Practice:** the scrolling tab fills the screen. Play/Pause, tempo presets,
+   and the existing Wait Mode are the only practice controls. `Finish practice`
+   ends the session; a song also ends naturally. Space toggles playback and W
+   toggles Wait Mode when focus is outside a form control.
+3. **Result:** accuracy from assessed single notes, Play again, and Load another
+   tab. Playback without audio never generates an accuracy score. Unplayed notes
+   after an early stop do not count as misses. Audio capture stops on completion.
 
+This is the first implementation stage, **not the finished feedback MVP**. Loop
+selection and the weakest-section recommendation are deliberately absent until
+Stages 6 and 7. There are no placeholder scores or nonfunctional recommendation
+buttons.
+
+## Run locally
+
+Use Node.js 22.12+ (Node 24 also works).
+
+```sh
+npm ci
+npm run dev
 ```
-┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
-│ Audio Input   │────▶│ Pitch Engine  │────▶│ Note Matcher     │
-│ (sounddevice) │     │ (aubio YIN)   │     │ (compare to tab) │
-└──────────────┘     └───────────────┘     └────────┬─────────┘
-                                                     │
-┌──────────────┐     ┌───────────────┐              │
-│ Tab Loader   │────▶│ Tab Timeline  │◀─────────────┘
-│ (PyGuitarPro)│     │ (note events) │
-└──────────────┘     └───────┬───────┘
-                             │
-                     ┌───────▼───────┐
-                     │ Scrolling UI  │
-                     │ (PyGame)      │
-                     │ + feedback    │
-                     └───────────────┘
+
+Open `http://localhost:3000`. Localhost is allowed to access browser audio. Deployed
+instances need HTTPS. For a static production build:
+
+```sh
+npm run build
+npm run preview
 ```
 
-Guitar Pro tabs scroll across the screen while the app listens to your guitar input, detects the notes you play in real-time using the YIN pitch detection algorithm, and shows visual feedback (hit / miss / close) synchronized with the tab timeline.
+The default development command runs Vite only. The retained `server.ts` and
+legacy AI components are outside the active application; no AI service runs or
+receives practice data.
 
-## Hardware Setup
+## Verify
 
-Electric guitar → USB guitar cable (1/4" TS to USB-A, ~€12-15) → PC. The cable appears as a standard "USB Audio Device" in Windows. For hearing yourself while playing, use a regular guitar amp alongside or split the signal — the USB cable is input-only for detection.
+```sh
+npm run lint
+npx playwright install chromium
+npm test
+```
 
-A regular microphone also works for acoustic guitar or as a quick test, though a direct USB connection gives cleaner detection.
+The browser tests build and serve the production app. They cover demo playback,
+file failures and a generated real GP file, pause/replay, natural completion,
+input selection, denied permission, the wait gate, scoring silence, and capture
+cleanup. A synthetic pitched tone passes through the real worklet and detector
+to release Wait Mode and produce a measured result. Tests also check partial-session
+accuracy and exclusion of simultaneous chords. `CHROMIUM_EXECUTABLE_PATH` can point
+to an already-installed Chromium.
 
-## Tab Sources
+Synthetic browser inputs verify the application lifecycle, **not real-guitar
+pitch accuracy**. USB cable/interface/microphone testing on Chrome and Edge is a
+required later checkpoint.
 
-PickHero reads Guitar Pro files (`.gp3`, `.gp4`, `.gp5`, `.gp7`, `.gp8`). You can get tabs from:
+## Repository audit and decisions
 
-- **Songsterr** — 1M+ songs, GP5 download via built-in downloader
-- **GProTab.net** — 70K+ free Guitar Pro files
-- **TuxGuitar** — free editor for creating your own tabs
-- **Ultimate Guitar** — GP files available (some require subscription)
+The repository already contained a React/TypeScript/Vite web app, an alphaTab
+Guitar Pro importer, Web Audio capture with an AudioWorklet, a monophonic pitch
+detector, a custom scrolling tab canvas, note matching, and Wait Mode. Its old
+README described an unrelated Python desktop layout.
 
-## Tech Stack
+Keep the web foundation, importer, audio worklet, pitch detector, synthesizer,
+scrolling note geometry, and useful session data. Simplify their connections
+before replacing working behavior.
 
-| Component | Library | Why |
+Removed from the active flow: AI chat and adaptive coaching, catalog browsing,
+tuner screens, technique-map drawers, manual simulated hits, score multipliers,
+stars, streaks, fullscreen/settings panels, and automatic endless replay. Legacy
+UI components remain unreferenced and are not shipped in the active JavaScript
+entry. The importer's local analysis helpers are retained for the Stage 2 review.
+Dead code can be removed after the core flow's reliability work is complete.
+
+Stage 1 also stops crediting every note in a chord from a single detected pitch.
+Simultaneous notes remain visible but are excluded from scoring and the wait gate.
+
+## Exact MVP implementation plan
+
+Each stage must pass TypeScript, a production build, and the relevant focused
+checks before the next stage starts.
+
+| Stage | Implementation | Acceptance check |
 |---|---|---|
-| Audio capture | `sounddevice` | Works with any USB audio device, low latency |
-| Pitch detection | `aubio` (YIN) | Real-time, pure C, tiny footprint |
-| Onset detection | `aubio` | Detects note strikes for timing |
-| Tab parsing | `pyguitarpro` | Reads GP3/GP4/GP5 structured data |
-| UI | `pygame` | Game-loop oriented, fast rendering |
-| Audio playback | `pygame.midi` | Real-time MIDI backing tracks via system synth |
-| Packaging | `PyInstaller` | Single .exe for Windows |
+| 1 — Flow | Minimal Start → Practice → Result; device selection; real session summary; replay; remove competing surfaces. | Demo and imported tab can complete, stop, and replay; errors recover; no fabricated scores or audio leaks. |
+| 2 — GP loading and playback | Retain alphaTab score/ticks; validate supported GP formats; select a playable track; preserve tuning, tempo changes, rests, durations, repeats, and time signatures; use alphaTab notation/player as appropriate. | Fixture songs agree with their GP source at normal and reduced tempo, including repeats and track changes. |
+| 3 — Audio | Stabilize input switching, capture ownership, disconnect recovery, pitch confidence, onset detection, silence handling, and human error messages. Keep processing local. | Recorded single guitar notes plus real USB cable/interface/microphone checks across the practical guitar range. |
+| 4 — Matching | Compare detected pitch to sounding score pitch on one clock; account for capture latency and tempo; distinguish wrong, missed, early, and late notes without repeat credits. | Deterministic pitch-event replays for correct/wrong notes, silence, repeated plucks, legato, and timing boundaries. |
+| 5 — Wait Mode | Gate the authoritative playback clock at the next supported note; release once per valid note; handle pause, seek, restart, and repeated notes. | Silence and wrong notes hold; the right note advances once; no deadlocks or unintended credits. |
+| 6 — Loop and tempo | Select an inclusive bar range directly from the score; enable loop; preserve exact boundaries and percentage presets. | Repeated loops do not drift, skip first/last notes, or leak scores between passes. |
+| 7 — Weak section | Collect errors by played bar and scan short contiguous windows; require enough attempts, rank by mistake concentration, and break ties consistently. Recommend only observed sections. CTA selects that range, enables loop, reduces tempo when useful, and starts practice. | Sparse/unplayed regions never win; clustered mistakes do; CTA starts the exact recommended range. |
+| 8 — Polish | Remove remaining dead code/dependencies; check focus, readable feedback, loading/error recovery, and desktop layout; verify hosting asset paths and Chrome/Edge. | A guitarist can load, connect, play, understand feedback, and repeat a weak section without instructions. |
 
-## Installation
+## Known limits at this checkpoint
 
-### Option 1: Download (recommended)
+- alphaTab currently parses the file; a simplified canvas displays the notes.
+  The importer still flattens the first suitable track using its initial tempo.
+  Complex repeats, tempo/time-signature changes, ties/dots and track selection are
+  Stage 2 work. Extension recognition does not mean every file variant is verified.
+- Input capture runs in an AudioWorklet; pitch analysis currently runs on the
+  browser's main thread. Detector accuracy, timing calibration, and performance
+  still require the Stage 3/4 validation matrix.
+- Monophonic feedback only. Chords are displayed without scoring. Harmonics and
+  other techniques require validation before their feedback can be relied on.
+- Practice audio is not monitored through the speakers. Playback-only mode uses
+  the existing synth. Backing playback and scoring need a coordinated clock in
+  Stage 2/4.
+- A disconnected input pauses practice. Finish and reconnect from Start; direct
+  in-session recovery is Stage 3 work.
+- The existing GitHub Pages deployment configuration is retained. Verify its base
+  path in Stage 8 before deploying from a repository subdirectory.
 
-Download `GuitarTrainer.exe` from this repository's latest Windows build
-artifact. No Python installation is needed for the packaged application.
+## Attribution
 
-### Option 2: From source
-
-```bash
-# Clone
-git clone https://github.com/Artemarius/PickHero.git
-cd PickHero
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run
-python -m pickhero
-```
-
-### Requirements
-
-- Windows 10/11 (primary target; Linux/macOS may work but untested)
-- A USB audio input device (guitar cable or microphone)
-- Python 3.10+ (only if running from source)
-
-## Project Structure
-
-```
-PickHero/
-├── pickhero/
-│   ├── main.py              # Entry point
-│   ├── audio/
-│   │   ├── input.py         # sounddevice audio capture
-│   │   ├── detector.py      # aubio pitch + onset detection
-│   │   ├── midi_playback.py # MIDI backing track playback
-│   │   └── note_utils.py    # frequency → note/string/fret mapping
-│   ├── tabs/
-│   │   ├── loader.py        # pyguitarpro file reader
-│   │   ├── timeline.py      # song timeline data structure
-│   │   └── downloader.py    # Songsterr tab fetcher
-│   ├── ui/
-│   │   ├── app.py           # main game loop / window
-│   │   ├── scrolling.py     # scrolling note highway renderer
-│   │   ├── colors.py        # color constants, string palette
-│   │   ├── calibration_menu.py # guitar calibration wizard
-│   │   ├── device_menu.py   # audio input device selector
-│   │   ├── feedback.py      # hit/miss visual effects
-│   │   └── menu.py          # song selection, settings
-│   ├── config.py            # user settings, audio device config
-│   ├── matcher.py           # note matching engine (hit/close/miss)
-│   ├── progress.py          # per-song score tracking + section history
-│   └── recommendations.py   # practice suggestion engine
-├── assets/
-│   └── fonts/
-├── songs/                   # local GP5 tab storage
-└── tests/
-```
-
-## Status
-
-**Under active development** — see [Development Phases](#development-phases) below.
-
-### Development Phases
-
-1. ~~**Audio Detection PoC** — `sounddevice` + `aubio` pitch detection, console output~~ **Done**
-2. ~~**Tab Parser & Timeline** — GP5 loading via `pyguitarpro`, timeline data structure~~ **Done**
-3. ~~**Scrolling Display MVP** — PyGame window with 6 string lanes, tempo-synced scrolling~~ **Done**
-4. ~~**Live Matching & Feedback** — pitch comparison, hit/miss visuals, accuracy scoring~~ **Done**
-5. ~~**Polish** — tempo control, section looping, device selector, backing tracks, count-in, progress tracking, song browser, difficulty filter, themes, practice recommendations, `.exe` packaging~~ **Done**
-6. ~~**Wait Mode** — beginner-friendly practice mode that pauses playback when you haven't played the correct note, resumes instantly when you do. Toggle with **W** during playback.~~ **Done**
-
-## Troubleshooting
-
-**No notes detected / no signal:**
-- Turn up the volume knob on your guitar (most common gotcha!)
-- Check the pickup selector is in a live position (bridge or neck, not between clicks)
-- Unplug and re-plug the USB cable at both ends
-- Use a rear motherboard USB port, not a front panel or hub
-- In Windows: `Settings > System > Sound > Input` — select "USB Audio" and check the volume slider isn't at zero. You should see the input meter move when you strum.
-
-**Testing your setup:**
-Run `python -m pickhero --console` to see detected notes printed live in the terminal. This helps isolate whether the issue is hardware (no signal) or software (signal present but not matching).
-
-**Audio detection not working in-game:**
-- Audio detection is enabled by default. If you turned it off, press **A** during playback to re-enable it. The bottom status bar should show `A: audio ON`.
-- Press **D** on the menu screen to select the correct audio input device.
-- Press **G** on the menu screen to run guitar calibration — this improves detection accuracy by learning your guitar's actual frequencies.
-
-**Beginner tip — Wait Mode:**
-- Press **W** during playback to enable wait mode. The tab will pause whenever you haven't played the correct note yet and resume the moment you do. Great for learning new songs at your own pace without accumulating misses.
-
-**High latency or missed notes:**
-- Lower the noise gate with **X** during playback (default is -60 dB)
-- Cheap USB cables can add 10-20ms of latency — this is usually fine but noticeable on fast passages
-- Slow the song down with **PgDn** while practicing
-- Press **H** during playback to see a full help overlay with controls and color legend
-
-## References
-
-- [aubio](https://github.com/aubio/aubio) — pitch/onset detection
-- [PyGuitarPro](https://github.com/Perlence/PyGuitarPro) — GP file parser
-- [TabRiPP](https://github.com/josipnigojevic/TabRiPP) — Songsterr GP5 downloader (reference for API approach)
-- [AlphaTab](https://github.com/CoderLine/alphaTab) — JS tab rendering engine (UI reference)
-- [TuxGuitar](https://tuxguitar.app/) — free Guitar Pro editor
-
-## License
-
-MIT
+The prior README identified the project's roots in
+[Artemarius/PickHero](https://github.com/Artemarius/PickHero) and described it as
+MIT-licensed. That attribution and repository history are preserved. This change
+updates the web product flow; it does not establish a new license or erase the
+upstream history.

@@ -4,6 +4,7 @@ export interface TabNote {
   fret: number;
   timestampMs: number;
   durationMs: number;
+  expectedMidi?: number; // Sounding pitch from the imported score, including tuning.
   isHarmonic?: boolean;
   harmonicType?: 'natural' | 'artificial' | 'pinch' | 'tap' | 'semi' | 'unknown';
   isHammerOn?: boolean;

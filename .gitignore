@@ -29,3 +29,7 @@ PickHero.exe
 *.spec
 !guitar-trainer/pickhero.spec
 !pickhero.spec
+
+# Browser test output
+playwright-report/
+test-results/

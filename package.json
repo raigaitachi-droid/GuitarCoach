@@ -1,15 +1,16 @@
 {
-  "name": "react-example",
+  "name": "guitarcoach",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "tsx server.ts",
+    "start": "vite --host 0.0.0.0",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "playwright test"
   },
   "dependencies": {
     "@coderline/alphatab": "^1.8.4",
@@ -27,6 +28,8 @@
     "vite": "^8.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -34,7 +37,6 @@
     "esbuild": "^0.28.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2",
-    "@types/express": "^4.17.21"
+    "typescript": "^7.0.2"
   }
 }

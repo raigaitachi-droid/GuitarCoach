@@ -32,6 +32,13 @@ export class MicrophonePitchDetector {
   private latestResult: PitchResult | null = null;
   private listeners = new Set<PitchListener>();
   private estimatedInputLatencyMs = 0;
+  private activeDeviceId = '';
+  private requestId = 0;
+  private errorMessage: string | null = null;
+
+  getErrorMessage(): string | null {
+    return this.errorMessage;
+  }
 
   // Voice vs guitar stability tracking
   private lastMidi = -1;
@@ -74,9 +81,15 @@ export class MicrophonePitchDetector {
     });
   }
 
-  async startListening(): Promise<boolean> {
+  async startListening(deviceId = ''): Promise<boolean> {
+    if (this.isListening && this.audioContext?.state === 'running' && this.activeDeviceId === deviceId) return true;
+    this.stopListening();
+    const requestId = this.requestId;
+    this.errorMessage = null;
     try {
-      if (this.isListening && this.audioContext?.state === 'running') return true;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('unsupported');
+      }
 
       const AudioCtx =
         window.AudioContext ||
@@ -89,10 +102,13 @@ export class MicrophonePitchDetector {
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
+      if (requestId !== this.requestId) return false;
 
+      let stream: MediaStream;
       try {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           audio: {
+            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
@@ -101,13 +117,23 @@ export class MicrophonePitchDetector {
             latency: { ideal: 0.01 },
           } as MediaTrackConstraints,
         });
-      } catch {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (error) {
+        // Only relax optional constraints; never silently switch a selected input.
+        if ((error as DOMException).name !== 'OverconstrainedError') throw error;
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+        });
       }
+      if (requestId !== this.requestId) {
+        stream.getTracks().forEach((track) => track.stop());
+        return false;
+      }
+      this.mediaStream = stream;
 
       await this.audioContext.audioWorklet.addModule(
         `${import.meta.env.BASE_URL}pitch-worklet.js`
       );
+      if (requestId !== this.requestId) return false;
 
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
       this.workletNode = new AudioWorkletNode(
@@ -157,16 +183,33 @@ export class MicrophonePitchDetector {
       };
 
       this.isListening = true;
+      this.activeDeviceId = deviceId;
+      this.mediaStream.getAudioTracks()[0]?.addEventListener('ended', () => {
+        if (requestId !== this.requestId) return;
+        this.errorMessage = 'Your guitar input disconnected. Check the cable and try again.';
+        this.stopListening();
+        this.emit(null);
+      });
       return true;
     } catch (error) {
-      console.warn('Microphone access denied or unavailable:', error);
+      if (requestId !== this.requestId) return false;
+      const name = (error as DOMException).name;
+      this.errorMessage = name === 'NotAllowedError'
+        ? 'Allow microphone access in your browser, then try again.'
+        : name === 'NotFoundError' || name === 'OverconstrainedError'
+        ? 'We can’t find that guitar input. Connect your device and try again.'
+        : !navigator.mediaDevices?.getUserMedia
+        ? 'Audio input needs HTTPS and a supported browser. Open GuitarCoach in Chrome or Edge.'
+        : 'We can’t hear your guitar. Check your input device and try again.';
       this.stopListening();
       return false;
     }
   }
 
   stopListening() {
+    this.requestId += 1;
     this.isListening = false;
+    if (this.workletNode) this.workletNode.port.onmessage = null;
     this.workletNode?.disconnect();
     this.sourceNode?.disconnect();
     this.silentGain?.disconnect();
@@ -182,6 +225,9 @@ export class MicrophonePitchDetector {
     }
     this.audioContext = null;
     this.latestResult = null;
+    this.lastRms = 0;
+    this.lastMidi = -1;
+    this.lastPitchTimeMs = 0;
   }
 
   getIsListening(): boolean {

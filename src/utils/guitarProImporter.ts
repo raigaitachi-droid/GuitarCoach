@@ -3,7 +3,7 @@ import { ImportedSong, SongSection, TabNote } from '../types';
 import { analyzeTechniqueMap } from './musicAnalysis/arpeggioAnalyzer';
 import { buildPracticeFlowAssignment } from './musicAnalysis/practiceFlowRules';
 
-const SUPPORTED_EXTENSIONS = ['.gp', '.gpx', '.gp3', '.gp4', '.gp5'];
+const SUPPORTED_EXTENSIONS = ['.gp', '.gpx', '.gp3', '.gp4', '.gp5', '.gp7', '.gp8'];
 
 function hasMeaningfulHarmonicProperty(value: unknown, depth = 0): boolean {
   if (!value || typeof value !== 'object' || depth > 2) return false;
@@ -337,7 +337,7 @@ function detectAutoSections(summaries: MeasureSummary[]): SongSection[] {
 
 export async function importGuitarProFile(file: File): Promise<ImportedSong> {
   if (!isSupportedGuitarProFile(file)) {
-    throw new Error('Поддържани формати: .gp, .gpx, .gp3, .gp4 и .gp5');
+    throw new Error('Choose a Guitar Pro file (.gp, .gpx, .gp3, .gp4, .gp5, .gp7 or .gp8).');
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -352,7 +352,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
     ) || score.tracks[0];
 
   if (!track) {
-    throw new Error('Файлът не съдържа партия, която може да бъде импортирана.');
+    throw new Error('This file does not contain a playable guitar track.');
   }
 
   const tempo = Math.max(1, Math.round(score.tempo || 120));
@@ -393,6 +393,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
               fret: Math.round(note.fret),
               timestampMs: Math.round(timestampMs),
               durationMs,
+              expectedMidi: note.realValue,
               ...harmonicInfo,
               ...hammerPullInfo,
               measureIndex,
@@ -420,7 +421,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
   }
 
   if (notes.length === 0) {
-    throw new Error('Не бяха открити китарни ноти в избраната партия.');
+    throw new Error('This track does not contain guitar notes.');
   }
 
   const lastNote = notes[notes.length - 1];
@@ -434,13 +435,13 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
     markerSections.length > 0 ? markerSections : detectAutoSections(measureSummaries);
   const detectedTechniques = analyzeTechniqueMap(notes, tempo);
   const practiceFlow = buildPracticeFlowAssignment(detectedTechniques, tempo);
-  const fileTitle = file.name.replace(/\.(gp|gpx|gp3|gp4|gp5)$/i, '');
+  const fileTitle = file.name.replace(/\.(gp|gpx|gp3|gp4|gp5|gp7|gp8)$/i, '');
   const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   return {
     id,
     title: score.title?.trim() || fileTitle,
-    artist: score.artist?.trim() || 'Моя таблатура',
+    artist: score.artist?.trim() || '',
     tempo,
     durationMs: lastNote.timestampMs + lastNote.durationMs + 500,
     difficulty: 'Intermediate',
