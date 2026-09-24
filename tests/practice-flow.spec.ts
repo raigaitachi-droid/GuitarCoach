@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -24,11 +24,11 @@ async function silentGuitar(page: Page) {
       const destination = context.createMediaStreamDestination();
       source.connect(destination);
       source.start();
-      state.pluck = (midi) => {
+      state.pluck = (midi, level = 0.15) => {
         const oscillator = context.createOscillator();
         const gain = context.createGain();
         oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
-        gain.gain.value = 0.15;
+        gain.gain.value = level;
         oscillator.connect(gain).connect(destination);
         oscillator.start();
         oscillator.stop(context.currentTime + 0.3);
@@ -175,4 +175,15 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByRole('heading', { name: '100% accuracy' })).toBeVisible();
   await expect(page.getByText('1 of 1 single notes played correctly.')).toBeVisible();
+});
+
+test('a quiet guitar-input signal can still release Wait Mode', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await page.getByRole('button', { name: 'Wait Mode Off' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.006));
+  await expect(page.getByRole('status')).toContainText('Correct note');
 });

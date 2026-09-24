@@ -122,7 +122,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         return;
       }
       if (!result || !playingRef.current || completedRef.current) return;
-      if (result.isVoiceLike || (!result.onset && result.confidence < 0.68)) return;
+      // Correct notes can be accepted from a quieter pick transient. A wrong
+      // note needs a cleaner pitch estimate so background noise cannot produce
+      // distracting false-red feedback.
+      if (result.isVoiceLike || (!result.onset && result.confidence < 0.56)) return;
       const judgement = judgeDetectedPitch({
         notes: notesRef.current,
         scorableIds,
@@ -134,6 +137,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       });
       if (judgement.kind === 'ignored') return;
       if (judgement.kind === 'wrong') {
+        if (result.confidence < 0.64) return;
         if (result.pluckId !== lastFeedbackPluck.current) {
           lastFeedbackPluck.current = result.pluckId;
           updateNotes(notesRef.current.map((note) => note.id === judgement.expected.id

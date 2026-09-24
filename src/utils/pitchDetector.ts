@@ -27,7 +27,9 @@ export class MicrophonePitchDetector {
   private workletNode: AudioWorkletNode | null = null;
   private silentGain: GainNode | null = null;
   private isListening = false;
-  private noiseThreshold = 0.005;
+  // USB interfaces often expose a much quieter DI signal than a laptop mic.
+  // The score-aware matcher below still guards against accepting room noise.
+  private noiseThreshold = 0.002;
   private lastRms = 0;
   private latestResult: PitchResult | null = null;
   private listeners = new Set<PitchListener>();
@@ -46,7 +48,7 @@ export class MicrophonePitchDetector {
   private lastPitchTimeMs = 0;
 
   setNoiseThreshold(threshold: number) {
-    this.noiseThreshold = Math.max(0.001, Math.min(0.05, threshold));
+    this.noiseThreshold = Math.max(0.0005, Math.min(0.05, threshold));
     this.workletNode?.port.postMessage({
       type: 'threshold',
       value: this.noiseThreshold,
@@ -287,7 +289,10 @@ export class MicrophonePitchDetector {
     }
 
     // Require clean periodicity. Spoken room noise and low-clarity chatter are filtered here.
-    const minRequiredCorrelation = onset ? 0.58 : 0.64;
+    // The first 40–80 ms of a guitar note has a noisy pick transient. Keep a
+    // usable pitch candidate through that transient; PlayingStage only accepts
+    // it when it matches the note currently due in the tab.
+    const minRequiredCorrelation = onset ? 0.50 : 0.56;
     if (bestPeriod < 0 || bestCorrelation < minRequiredCorrelation) return null;
 
     let adjustedPeriod = bestPeriod;
