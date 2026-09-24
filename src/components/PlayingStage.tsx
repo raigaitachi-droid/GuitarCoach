@@ -34,8 +34,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const playingRef = useRef(true);
   const [playbackMs, setPlaybackMs] = useState(() => startingBoundaries?.startMs || 0);
   const playbackRef = useRef(startingBoundaries?.startMs || 0);
-  const [waitMode, setWaitMode] = useState(false);
-  const waitModeRef = useRef(false);
+  // For live input, waiting is the safer default: browser/device latency should
+  // never turn an otherwise playable note into an immediate missed note.
+  const [waitMode, setWaitMode] = useState(withAudio);
+  const waitModeRef = useRef(withAudio);
   const [waiting, setWaiting] = useState<TabNote | null>(null);
   const waitingRef = useRef<TabNote | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; kind: 'correct' | 'wrong'; timing?: string; at: number } | null>(null);

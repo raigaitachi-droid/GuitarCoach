@@ -99,7 +99,6 @@ test('selected audio input, wait gate, zero score for silence, and cleanup', asy
   expect(await page.evaluate(() => (window as any).testGuitar.active)).toBe(0);
   await page.getByLabel('Guitar input', { exact: true }).selectOption('usb-guitar');
   await page.getByRole('button', { name: 'Start Practice' }).click();
-  await page.getByRole('button', { name: 'Wait Mode Off' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for', { timeout: 5000 });
   const position = await page.getByRole('progressbar').getAttribute('value');
   await page.getByLabel('Tempo').selectOption('80');
@@ -163,7 +162,6 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await page.goto('/');
   await loadRiff(page);
   await page.getByRole('button', { name: 'Start Practice' }).click();
-  await page.getByRole('button', { name: 'Wait Mode Off' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   const waitingPosition = await page.getByRole('progressbar').getAttribute('value');
   await page.evaluate(() => (window as any).testGuitar.pluck(41));
@@ -182,7 +180,6 @@ test('a quiet guitar-input signal can still release Wait Mode', async ({ page })
   await page.goto('/');
   await loadRiff(page);
   await page.getByRole('button', { name: 'Start Practice' }).click();
-  await page.getByRole('button', { name: 'Wait Mode Off' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.006));
   await expect(page.getByRole('status')).toContainText('Correct note');
