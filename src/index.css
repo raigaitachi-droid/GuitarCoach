@@ -52,6 +52,9 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
 .toggle-button span { margin-left: 10px; color: #96a299; }
 .toggle-button[aria-pressed="true"] { color: #c7e8d2; border-color: #94b69f; background: #202d24; }
 .toggle-button[aria-pressed="true"] span { color: #c7e8d2; }
+.loop-range { display: flex; gap: 12px; align-items: center; color: #aebbb2; font-size: 12px; }
+.loop-range label { display: flex; gap: 7px; align-items: center; white-space: nowrap; }
+.loop-range select { padding: 8px 9px; }
 .bar-position { margin-left: auto; color: #9daa9f; font: 13px var(--font-mono); }
 .practice-status { display: flex; justify-content: space-between; gap: 20px; align-items: center; min-height: 50px; font-size: 14px; color: #aebbb2; }
 .practice-status .correct { color: #89d9a8; }

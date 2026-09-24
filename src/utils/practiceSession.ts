@@ -1,4 +1,4 @@
-import { TabNote } from '../types';
+import { ImportedSong, SongBar, TabNote } from '../types';
 
 export interface PracticeResult {
   accuracy: number | null;
@@ -125,4 +125,60 @@ export function applyWaitGate(notes: TabNote[], scorableIds: Set<string>, propos
   return waitingNote
     ? { playbackMs: waitingNote.timestampMs, waitingNote }
     : { playbackMs: proposedPlaybackMs, waitingNote: null };
+}
+
+export interface PracticeLoopRange {
+  startBar: number;
+  endBar: number;
+}
+
+export interface LoopBoundaries {
+  startMs: number;
+  endMs: number;
+}
+
+// Imported Guitar Pro files supply this exact, repeat-expanded timeline. The
+// fallback keeps the demo song usable without inventing musical subdivisions.
+export function practiceBars(song: ImportedSong): SongBar[] {
+  if (song.bars?.length) return song.bars;
+
+  const bars: SongBar[] = [];
+  for (let index = 1; index <= song.measures; index++) {
+    const inBar = song.notes.filter((note) => (note.measureIndex || 1) === index);
+    const startMs = inBar.length ? Math.min(...inBar.map((note) => note.timestampMs)) : bars.at(-1)?.endMs || 0;
+    const endMs = inBar.length
+      ? Math.max(...inBar.map((note) => note.timestampMs + note.durationMs))
+      : Math.max(startMs + 1, index === song.measures ? song.durationMs : startMs + 1);
+    bars.push({ index, sourceMeasureIndex: index, startMs, endMs, timeSignature: '' });
+  }
+  return bars;
+}
+
+export function normalizeLoopRange(range: PracticeLoopRange, barCount: number): PracticeLoopRange {
+  const startBar = Math.min(Math.max(1, range.startBar), barCount);
+  return { startBar, endBar: Math.min(Math.max(startBar, range.endBar), barCount) };
+}
+
+export function loopBoundaries(bars: SongBar[], range: PracticeLoopRange): LoopBoundaries | null {
+  if (!bars.length) return null;
+  const normalized = normalizeLoopRange(range, bars.length);
+  const selected = bars.slice(normalized.startBar - 1, normalized.endBar);
+  return { startMs: selected[0].startMs, endMs: selected.at(-1)!.endMs };
+}
+
+// Wrapping is calculated from absolute bar boundaries, so repeated passes do
+// not accumulate timing drift.
+export function advanceLoop(proposedPlaybackMs: number, boundaries: LoopBoundaries): { playbackMs: number; wrapped: boolean } {
+  return proposedPlaybackMs >= boundaries.endMs
+    ? { playbackMs: boundaries.startMs, wrapped: true }
+    : { playbackMs: proposedPlaybackMs, wrapped: false };
+}
+
+// Each pass starts clean only inside the selected bars. Notes outside the loop
+// retain their session history for the final practice result.
+export function resetLoopPass(notes: TabNote[], boundaries: LoopBoundaries): TabNote[] {
+  return notes.map((note) => note.timestampMs >= boundaries.startMs && note.timestampMs < boundaries.endMs
+    ? { ...note, hitState: undefined, timingOffsetMs: undefined }
+    : note
+  );
 }

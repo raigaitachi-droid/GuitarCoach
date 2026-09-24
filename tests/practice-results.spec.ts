@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { applyWaitGate, judgeDetectedPitch, missedNoteIds, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
-import { TabNote } from '../src/types';
+import { advanceLoop, applyWaitGate, judgeDetectedPitch, loopBoundaries, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { SongBar, TabNote } from '../src/types';
 
 const notes: TabNote[] = [
   { id: 'hit', string: 1, fret: 0, timestampMs: 1000, durationMs: 500, hitState: 'hit' },
@@ -47,4 +47,21 @@ test('wait mode stops on the first unresolved single note and releases only afte
   expect(applyWaitGate([first, second], scorableIds, 1400)).toEqual({ playbackMs: 1000, waitingNote: first });
   expect(applyWaitGate([{ ...first, hitState: 'hit' }, second], scorableIds, 1400)).toEqual({ playbackMs: 1400, waitingNote: null });
   expect(applyWaitGate([{ ...first, hitState: 'hit' }, second], scorableIds, 1600)).toEqual({ playbackMs: 1500, waitingNote: second });
+});
+
+test('loop uses exact bar boundaries and resets only its selected pass', () => {
+  const bars: SongBar[] = [
+    { index: 1, sourceMeasureIndex: 1, startMs: 0, endMs: 1000, timeSignature: '4/4' },
+    { index: 2, sourceMeasureIndex: 2, startMs: 1500, endMs: 2350, timeSignature: '4/4' },
+    { index: 3, sourceMeasureIndex: 3, startMs: 2350, endMs: 3100, timeSignature: '4/4' },
+  ];
+  const boundaries = loopBoundaries(bars, { startBar: 2, endBar: 3 })!;
+  expect(boundaries).toEqual({ startMs: 1500, endMs: 3100 });
+  expect(advanceLoop(3099, boundaries)).toEqual({ playbackMs: 3099, wrapped: false });
+  expect(advanceLoop(3100, boundaries)).toEqual({ playbackMs: 1500, wrapped: true });
+
+  const reset = resetLoopPass(notes, boundaries);
+  expect(reset.find((note) => note.id === 'hit')?.hitState).toBe('hit');
+  expect(reset.find((note) => note.id === 'miss')?.hitState).toBeUndefined();
+  expect(reset.find((note) => note.id === 'future')?.hitState).toBeUndefined();
 });

@@ -8,25 +8,26 @@ GuitarCoach is a desktop-first browser practice tool for guitarists who already
 use Guitar Pro tabs. Chrome and Edge desktop are the primary targets. No account,
 API key, desktop installation, or audio upload is required.
 
-## Current checkpoint: Stages 1-5
+## Current checkpoint: Stages 1-6
 
 The active app has three screens:
 
 1. **Start:** drop a Guitar Pro file or try the bundled demo, select an input, and
    start practicing. `Find inputs` requests browser permission so device names
    become available. Playback without audio is available if an input cannot be used.
-2. **Practice:** the scrolling tab fills the screen. Play/Pause, tempo presets,
-   and the existing Wait Mode are the only practice controls. `Finish practice`
-   ends the session; a song also ends naturally. Space toggles playback and W
-   toggles Wait Mode when focus is outside a form control.
+2. **Practice:** the scrolling tab fills the screen. Play/Pause, five tempo
+   presets, Loop, and Wait Mode are the only practice controls. Loop starts at
+   the current bar and exposes only a From/To bar selection. It uses the exact
+   expanded Guitar Pro bar timeline and resets the selected pass cleanly.
+   `Finish practice` ends the session; a song also ends naturally. Space toggles
+   playback and W toggles Wait Mode when focus is outside a form control.
 3. **Result:** accuracy from assessed single notes, Play again, and Load another
    tab. Playback without audio never generates an accuracy score. Unplayed notes
    after an early stop do not count as misses. Audio capture stops on completion.
 
-This is not the finished feedback MVP. Loop
-selection and the weakest-section recommendation are deliberately absent until
-Stages 6 and 7. There are no placeholder scores or nonfunctional recommendation
-buttons.
+This is not the finished feedback MVP. The weakest-section recommendation is
+deliberately absent until Stage 7. There are no placeholder scores or
+nonfunctional recommendation buttons.
 
 ## Run locally
 
@@ -102,7 +103,7 @@ checks before the next stage starts.
 | 3 — Audio | Done in-browser: input selection, disconnect recovery, human errors, local worklet capture, onset/confidence filtering, and a sustainable analysis rate. | Browser lifecycle tests pass. Real USB cable/interface/microphone validation remains required. |
 | 4 — Matching | Done: compare detected pitch to the sounding score pitch on the playback clock; account for capture latency and tempo; distinguish wrong, missed, early, and late notes without repeat credits. | Deterministic tests cover latency, cents tolerance, timing boundaries, silence, repeated plucks, and miss deadlines. |
 | 5 — Wait Mode | Done: gate the playback clock at the first unresolved single note; release once per valid note; ignore duplicate feedback from one pluck. | Silence and wrong notes hold; the right note advances once; no unintended credits. |
-| 6 — Loop and tempo | Select an inclusive bar range directly from the score; enable loop; preserve exact boundaries and percentage presets. | Repeated loops do not drift, skip first/last notes, or leak scores between passes. |
+| 6 — Loop and tempo | Done: enable Loop at the current bar, select an inclusive From/To range, restart exactly at its first expanded Guitar Pro bar, and retain the five percentage presets. | Pure tests cover exact boundaries, wrap behavior, and pass-only score reset; the full browser suite passes. |
 | 7 — Weak section | Collect errors by played bar and scan short contiguous windows; require enough attempts, rank by mistake concentration, and break ties consistently. Recommend only observed sections. CTA selects that range, enables loop, reduces tempo when useful, and starts practice. | Sparse/unplayed regions never win; clustered mistakes do; CTA starts the exact recommended range. |
 | 8 — Polish | Remove remaining dead code/dependencies; check focus, readable feedback, loading/error recovery, and desktop layout; verify hosting asset paths and Chrome/Edge. | A guitarist can load, connect, play, understand feedback, and repeat a weak section without instructions. |
 
@@ -121,8 +122,8 @@ checks before the next stage starts.
   the existing synth.
 - A disconnected input pauses practice. Finish and reconnect from Start; direct
   in-session recovery is Stage 3 work.
-- The existing GitHub Pages deployment configuration is retained. Verify its base
-  path in Stage 8 before deploying from a repository subdirectory.
+- GitHub Pages builds with the repository base path, so the deployed preview can
+  load its assets from a repository subdirectory.
 
 ## Attribution
 
