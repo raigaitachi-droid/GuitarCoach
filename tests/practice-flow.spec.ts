@@ -11,11 +11,11 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number) => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
-    navigator.mediaDevices.enumerateDevices = async () => [
+    navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
-    ];
+    ] : [];
     navigator.mediaDevices.getUserMedia = async (constraints) => {
       state.constraints = constraints || null;
       const context = new AudioContext();
@@ -39,6 +39,7 @@ async function silentGuitar(page: Page) {
       let ended = false;
       state.active++;
       track.stop = () => { if (!ended) { ended = true; state.active--; source.stop(); void context.close(); } stop(); };
+      state.disconnect = () => { track.dispatchEvent(new Event('ended')); track.stop(); };
       return stream;
     };
   });
@@ -125,6 +126,30 @@ test('permission denial keeps the tab and offers playback without a score', asyn
   await page.getByRole('button', { name: 'Continue without audio' }).click();
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByRole('heading', { name: 'Practice complete' })).toBeVisible();
+});
+
+test('a disconnected input pauses practice with a human error', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await page.evaluate(() => (window as any).testGuitar.disconnect());
+  await expect(page.getByRole('status')).toHaveText('Your guitar input disconnected. Check the cable and try again.');
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeDisabled();
+});
+
+test('a removed selected input returns to the default choice', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Find inputs' }).click();
+  const input = page.getByLabel('Guitar input', { exact: true });
+  await input.selectOption('usb-guitar');
+  await page.evaluate(() => {
+    (window as any).testGuitar.inputsAvailable = false;
+    navigator.mediaDevices.dispatchEvent(new Event('devicechange'));
+  });
+  await expect(input).toHaveValue('');
 });
 
 test('a real worklet pitch event releases the wait gate and appears in the result', async ({ page }) => {

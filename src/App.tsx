@@ -49,6 +49,12 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (deviceId && !devices.some((device) => device.deviceId === deviceId)) {
+      setDeviceId('');
+    }
+  }, [deviceId, devices]);
+
   const loadFile = async (file: File) => {
     if (operation.current) return;
     operation.current = true;
