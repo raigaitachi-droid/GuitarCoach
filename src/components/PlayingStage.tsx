@@ -28,6 +28,8 @@ import {
   Plus,
   Gauge,
   Check,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { TabNote, SongMetadata, FeedbackData, SongSection, CoachEvaluation, SongAnalysis } from '../types';
 import { GuitarTuner } from './GuitarTuner';
@@ -100,8 +102,8 @@ const INITIAL_DEMO_NOTES: TabNote[] = [
   { id: '10', string: 3, fret: 0, timestampMs: 6900, durationMs: 550 },
   { id: '11', string: 4, fret: 2, timestampMs: 7600, durationMs: 450 },
   { id: '12', string: 1, fret: 5, timestampMs: 8300, durationMs: 700 }, // sustained note!
-  { id: '13', string: 2, fret: 7, timestampMs: 9200, durationMs: 600 },
-  { id: '14', string: 3, fret: 7, timestampMs: 9900, durationMs: 500 },
+  { id: '13', string: 2, fret: 7, timestampMs: 9200, durationMs: 600, isHarmonic: true, harmonicType: 'natural' }, // natural harmonic!
+  { id: '14', string: 3, fret: 7, timestampMs: 9900, durationMs: 500, isHarmonic: true, harmonicType: 'natural' }, // natural harmonic!
   { id: '15', string: 1, fret: 3, timestampMs: 10600, durationMs: 450 },
   { id: '16', string: 2, fret: 5, timestampMs: 11200, durationMs: 600 },
   { id: '17', string: 6, fret: 3, timestampMs: 11900, durationMs: 700 },
@@ -122,6 +124,40 @@ function getNoteNameFromMidi(midi: number): string {
 
 function getExpectedNoteName(stringNum: number, fret: number): string {
   return getNoteNameFromMidi(getExpectedMidi(stringNum, fret));
+}
+
+function isGuitarPitchMatch(
+  detectedMidi: number,
+  candidate: TabNote,
+  detectedCents: number
+): boolean {
+  if (Math.abs(detectedCents) > 46) return false;
+
+  const expectedMidi = getExpectedMidi(candidate.string, candidate.fret);
+
+  // Exact pitch class and octave match (normal physical guitar note)
+  if (detectedMidi === expectedMidi) return true;
+
+  // Natural Harmonics:
+  // 12th fret = +12 st (octave above)
+  // 7th fret = +19 st (octave + 5th)
+  // 5th fret = +24 st (2 octaves above)
+  if (candidate.isHarmonic) {
+    if (candidate.fret === 12 && detectedMidi === expectedMidi + 12) return true;
+    if (candidate.fret === 7 && detectedMidi === expectedMidi + 19) return true;
+    if (candidate.fret === 5 && detectedMidi === expectedMidi + 24) return true;
+    if (Math.abs(detectedMidi - expectedMidi) === 12) return true;
+  }
+
+  // Low wound strings (String 4: D, String 5: A, String 6: E):
+  // The 2nd harmonic (+12 semitones / 1 octave above) can physically dominate depending on pickup position.
+  if (candidate.string >= 4 && detectedMidi === expectedMidi + 12) {
+    return true;
+  }
+
+  // Reject all other octave jumps (especially 24, 36, 48 semitones, or lower octaves for high strings)
+  // to prevent human speaking voice from triggering guitar notes.
+  return false;
 }
 
 export const PlayingStage: React.FC<PlayingStageProps> = ({
@@ -260,6 +296,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     inTune: false,
   });
   const lastPluckTimeRef = useRef(0);
+  const lastConsumedPluckIdRef = useRef<number>(-1);
+  const lastHitEventRef = useRef<{
+    id: string;
+    timestampMs: number;
+    string: number;
+    fret: number;
+    time: number;
+  } | null>(null);
   const playbackMsRef = useRef(0);
   const isPlayingRef = useRef(isPlaying);
   const isAutoDemoRef = useRef(isAutoDemo);
@@ -282,7 +326,24 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   const [particles, setParticles] = useState<Array<{ id: number; text: string; color: string }>>([]);
 
   const hitZoneFraction = 0.22;
-  const visibleWindowMs = 5500;
+  const [visibleWindowMs, setVisibleWindowMs] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('guitar_coach_visible_window_ms');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (parsed >= 1200 && parsed <= 6000) return parsed;
+      }
+    } catch {}
+    return 2400; // Optimal 2.4s: wide, un-crowded, comfortable note highway
+  });
+
+  const changeVisibleWindow = (newMs: number) => {
+    const clamped = Math.max(1200, Math.min(5500, Math.round(newMs)));
+    setVisibleWindowMs(clamped);
+    try {
+      localStorage.setItem('guitar_coach_visible_window_ms', String(clamped));
+    } catch {}
+  };
 
   useEffect(() => {
     playbackMsRef.current = playbackMs;
@@ -449,8 +510,13 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         setIsPlaying(true);
       }
 
+      // Voice & Ambient Noise Filter:
+      // Reject human speech vowels, vocal vibrato jitter, and low-confidence ambient noise
+      if (result.isVoiceLike) return;
+      if (!result.onset && result.confidence < 0.68) return;
+
       const now = performance.now();
-      if (now - lastPluckTimeRef.current <= 90) return;
+      if (now - lastPluckTimeRef.current <= 80) return;
 
       const effectiveTime = currentPlaybackMs - currentLatencyOffsetMs;
       const windowMs = getToleranceWindowMs(hitToleranceRef.current);
@@ -463,14 +529,57 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 Math.abs(note.timestampMs - effectiveTime) <= windowMs
             );
 
-      const matched = candidateNotes.find((candidate) => {
-        const expectedMidi = getExpectedMidi(candidate.string, candidate.fret);
-        const midiDifference = Math.abs(result.midiNumber - expectedMidi);
-        return midiDifference % 12 === 0;
+      if (candidateNotes.length === 0) return;
+
+      // Sort candidate notes by closest proximity to effective playback time
+      const sortedCandidates = [...candidateNotes].sort(
+        (a, b) => Math.abs(a.timestampMs - effectiveTime) - Math.abs(b.timestampMs - effectiveTime)
+      );
+
+      const matched = sortedCandidates.find((candidate) => {
+        return isGuitarPitchMatch(result.midiNumber, candidate, result.cents);
       });
 
       if (matched) {
+        const lastHit = lastHitEventRef.current;
+        const currentPluckId = result.pluckId;
+        const isSamePluckAsLastHit =
+          lastHit !== null && currentPluckId === lastConsumedPluckIdRef.current;
+
+        if (isSamePluckAsLastHit) {
+          // If this matched note was already hit, skip
+          if (matched.id === lastHit.id) return;
+
+          // Check if this note is part of the SAME simultaneous chord strum (within 45ms)
+          const isSimultaneousChordNote =
+            Math.abs(matched.timestampMs - lastHit.timestampMs) <= 45;
+
+          if (!isSimultaneousChordNote) {
+            // This is a sequential note occurring later in the song.
+            // When playing repeated notes (e.g. playing the same note twice or thrice)
+            // or sequential notes, a single physical pluck CANNOT hit multiple notes!
+            // Exception: Legato hammer-on or pull-off to a DIFFERENT fret.
+            const isLegatoToDifferentFret =
+              (matched.isHammerOn || matched.isPullOff) && matched.fret !== lastHit.fret;
+
+            if (!isLegatoToDifferentFret) {
+              // The guitar string is merely sustaining from the previous pluck.
+              // The guitarist MUST pick the string again to register this note!
+              return;
+            }
+          }
+        }
+
         lastPluckTimeRef.current = now;
+        lastConsumedPluckIdRef.current = currentPluckId;
+        lastHitEventRef.current = {
+          id: matched.id,
+          timestampMs: matched.timestampMs,
+          string: matched.string,
+          fret: matched.fret,
+          time: now,
+        };
+
         const timingOffset = Math.round(effectiveTime - matched.timestampMs);
         const absTimingOffset = Math.abs(timingOffset);
 
@@ -708,13 +817,22 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     // Determine whether to play synthetic plucked sound from speakers:
     // When plucking a REAL guitar with the microphone: do NOT blast synthetic speaker sound
     // (the user already hears their real guitar, and computer speakers feedback into the microphone!)
+    const hitNote = noteId ? notes.find((n) => n.id === noteId) : null;
+    const isHammer = Boolean(hitNote && (hitNote.isHammerOn || hitNote.technique === 'hammer-on'));
+    const isPull = Boolean(hitNote && (hitNote.isPullOff || hitNote.technique === 'pull-off'));
+    const isHarm = Boolean(hitNote && hitNote.isHarmonic);
+
     const shouldPlaySpeakerSound =
       source === 'demo' ||
       (source === 'manual' && (!isListeningMic || synthSoundWithMic)) ||
       (source === 'mic' && synthSoundWithMic);
 
     if (shouldPlaySpeakerSound) {
-      guitarSynth.playGuitarNote(stringNum, fret);
+      guitarSynth.playGuitarNote(stringNum, fret, {
+        isHarmonic: isHarm,
+        isHammerOn: isHammer,
+        isPullOff: isPull,
+      });
       micDetector.notifySpeakerPlayed(350); // Echo gate refractory window
     }
 
@@ -771,12 +889,31 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
     // Trigger particle burst
     const pId = Date.now();
+    const particleText = isHarm
+      ? '✨ HARMONIC! +350'
+      : isHammer
+      ? '🔨 HAMMER-ON! +250'
+      : isPull
+      ? '⚡ PULL-OFF! +250'
+      : isPerfect
+      ? 'PERFECT! +300'
+      : 'GREAT! +200';
+    const particleColor = isHarm
+      ? '#FFE66D'
+      : isHammer
+      ? '#00E5BE'
+      : isPull
+      ? '#FB7185'
+      : isPerfect
+      ? '#2ED573'
+      : '#00E5BE';
+
     setParticles((prev) => [
       ...prev,
       {
         id: pId,
-        text: isPerfect ? 'PERFECT! +300' : 'GREAT! +200',
-        color: isPerfect ? '#2ED573' : '#00E5BE',
+        text: particleText,
+        color: particleColor,
       },
     ]);
     setTimeout(() => {
@@ -793,7 +930,15 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
     setFeedback({
       matchType: isClose ? 'CLOSE' : 'HIT',
-      headline: isPerfect ? 'PERFECT' : 'GOOD',
+      headline: isHarm
+        ? 'HARMONIC'
+        : isHammer
+        ? 'HAMMER-ON'
+        : isPull
+        ? 'PULL-OFF'
+        : isPerfect
+        ? 'PERFECT'
+        : 'GOOD',
       expectedNote: `${STRING_NAMES[stringNum - 1]}+${fret}`,
       playedNote: `${STRING_NAMES[stringNum - 1]}+${fret}`,
       timingErrorMs: Math.round(offsetMs),
@@ -832,6 +977,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     setStreak(0);
     setMultiplier(1);
     setStats({ hits: 0, close: 0, misses: 0 });
+    lastConsumedPluckIdRef.current = -1;
+    lastHitEventRef.current = null;
   };
 
   const seekTo = (nextPlaybackMs: number, shouldPlay = false) => {
@@ -903,6 +1050,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     })),
   ];
   const shouldShowHarmonic = (note: TabNote) => Boolean(note.isHarmonic);
+  const isHammerOnNote = (note: TabNote) => Boolean(!note.isHarmonic && (note.isHammerOn || note.technique === 'hammer-on'));
+  const isPullOffNote = (note: TabNote) => Boolean(!note.isHarmonic && (note.isPullOff || note.technique === 'pull-off'));
 
   const getChordEventNotes = (anchor: TabNote, sourceNotes: TabNote[]) =>
     sourceNotes.filter(
@@ -914,28 +1063,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   const getChordEventIds = (anchor: TabNote, sourceNotes: TabNote[]) => {
     const chordNotes = getChordEventNotes(anchor, sourceNotes);
     return chordNotes.length >= 2 ? chordNotes.map((note) => note.id) : [anchor.id];
-  };
-
-  const getVisualNoteOffset = (note: TabNote, visibleNotes: TabNote[]) => {
-    const chordNotes = visibleNotes.filter((candidate) => Math.abs(candidate.timestampMs - note.timestampMs) <= 35);
-    const denseStringNotes = visibleNotes
-      .filter(
-        (candidate) =>
-          candidate.string === note.string &&
-          Math.abs(candidate.timestampMs - note.timestampMs) <= 185
-      )
-      .sort((a, b) => a.timestampMs - b.timestampMs || a.fret - b.fret || a.id.localeCompare(b.id));
-    const denseIndex = denseStringNotes.findIndex((candidate) => candidate.id === note.id);
-    const visualRows = [0, -22, 22, -38, 38];
-    const visualRow = denseIndex >= 0 ? visualRows[denseIndex % visualRows.length] : 0;
-    const stringClusterCenter = (denseStringNotes.length - 1) / 2;
-
-    return {
-      x: denseStringNotes.length > 1 ? (denseIndex - stringClusterCenter) * 7 : 0,
-      y: denseStringNotes.length > 1 ? visualRow : 0,
-      isChord: chordNotes.length > 1,
-      sameStringCount: denseStringNotes.length,
-    };
   };
 
   useEffect(() => {
@@ -1027,19 +1154,71 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
       const now = playbackMsRef.current;
       const beatMs = 60000 / Math.max(1, activeSong.tempo || 120);
-      const gridStart = now - (now % beatMs);
-      for (let t = gridStart; t < now + visibleWindowMs; t += beatMs) {
+      const beatsPerMeasure = activeSong.id === 'nothing-else-matters' ? 3 : 4;
+      const minGridT = Math.max(0, Math.floor((now - 300) / beatMs) * beatMs);
+      const maxGridT = now + visibleWindowMs + beatMs * 2;
+
+      for (let t = minGridT; t <= maxGridT; t += beatMs) {
         const diffMs = t - now;
         const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
-        if (x < hitX - 80 || x > rect.width + 80) continue;
+        if (x < -80 || x > rect.width + 80) continue;
 
-        const alpha = Math.max(0.08, 0.32 - Math.abs(x - hitX) / rect.width);
-        ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x + (x - hitX) * 0.04, rect.height);
-        ctx.stroke();
+        const beatIndexTotal = Math.round(t / beatMs);
+        const isMeasureBar = beatIndexTotal % beatsPerMeasure === 0;
+        const measureNum = Math.floor(beatIndexTotal / beatsPerMeasure) + 1;
+
+        if (isMeasureBar) {
+          // Subtle, elegant dashed bar line for measure division
+          const distFromHit = Math.abs(x - hitX);
+          const alpha = Math.max(0.18, Math.min(0.52, 0.48 - (distFromHit / (rect.width * 1.2)) * 0.3));
+
+          ctx.save();
+          ctx.setLineDash([5, 4]); // Elegant dashed measure division line
+          ctx.strokeStyle = `rgba(100, 210, 255, ${alpha})`;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x + (x - hitX) * 0.04, rect.height);
+          ctx.stroke();
+
+          // Subtle measure pill badge at the top of the highway
+          if (measureNum > 0 && x >= 36 && x <= rect.width - 24) {
+            ctx.setLineDash([]);
+            const badgeText = rect.width > 540 ? `Такт ${measureNum}` : `T${measureNum}`;
+            ctx.font = '700 10px JetBrains Mono, monospace';
+            const metrics = ctx.measureText(badgeText);
+            const badgeW = metrics.width + 10;
+            const badgeH = 16;
+            const badgeY = 6;
+
+            ctx.fillStyle = 'rgba(6, 12, 22, 0.85)';
+            ctx.strokeStyle = `rgba(100, 210, 255, ${Math.min(0.7, alpha * 1.5)})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(x - badgeW / 2, badgeY, badgeW, badgeH, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = `rgba(180, 235, 255, ${Math.min(1, alpha * 1.8 + 0.35)})`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(badgeText, x, badgeY + badgeH / 2);
+          }
+          ctx.restore();
+        } else {
+          // Subtle faint dotted line for beats within the measure
+          const distFromHit = Math.abs(x - hitX);
+          const alpha = Math.max(0.04, 0.16 - distFromHit / (rect.width * 1.1));
+          ctx.save();
+          ctx.setLineDash([2, 5]);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x + (x - hitX) * 0.04, rect.height);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
 
       for (const technique of detectedTechniques.slice(0, 8)) {
@@ -1061,102 +1240,120 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         return x >= -80 && x <= rect.width + 120;
       });
 
-      const groupedNoteIds = new Set<string>();
-      const denseGroups: TabNote[][] = [];
-      for (let stringNum = 1; stringNum <= 6; stringNum += 1) {
-        const stringNotes = visibleNotes
-          .filter((note) => note.string === stringNum && !note.hitState && !shouldShowHarmonic(note))
-          .sort((a, b) => a.timestampMs - b.timestampMs || a.fret - b.fret || a.id.localeCompare(b.id));
-
-        let cluster: TabNote[] = [];
-        for (const note of stringNotes) {
-          const previous = cluster[cluster.length - 1];
-          if (!previous || note.timestampMs - previous.timestampMs <= 150) {
-            cluster.push(note);
-          } else {
-            if (cluster.length >= 3) denseGroups.push(cluster);
-            cluster = [note];
-          }
-        }
-        if (cluster.length >= 3) denseGroups.push(cluster);
+      // Map notes per string to calculate precise horizontal gaps between consecutive notes
+      const stringNoteMap = new Map<number, TabNote[]>();
+      for (let s = 1; s <= 6; s += 1) {
+        stringNoteMap.set(s, []);
       }
-
-      for (const group of denseGroups) {
-        const stringIdx = group[0].string - 1;
-        const laneY = laneHeight * (stringIdx + 0.5);
-        const startMs = group[0].timestampMs;
-        const endMs = group[group.length - 1].timestampMs;
-        const centerMs = (startMs + endMs) / 2;
-        const centerX = hitX + ((centerMs - now) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
-        const color = STRING_COLORS[stringIdx];
-        const uniqueFrets = Array.from(new Set(group.map((note) => note.fret)));
-        const label =
-          uniqueFrets.length === 1
-            ? `${uniqueFrets[0]}×${group.length}`
-            : group.length <= 4
-            ? group.map((note) => note.fret).join(' ')
-            : `${group[0].fret}…${group[group.length - 1].fret}`;
-        const groupWidth = Math.min(128, Math.max(58, 30 + label.length * 12));
-
-        group.forEach((note) => groupedNoteIds.add(note.id));
-
-        const spanWidth = Math.max(12, ((endMs - startMs) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width));
-        ctx.strokeStyle = `${color}55`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.roundRect(centerX - spanWidth / 2, laneY - 5, spanWidth, 10, 5);
-        ctx.stroke();
-
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 18;
-        ctx.fillStyle = color;
-        ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.roundRect(centerX - groupWidth / 2, laneY - 20, groupWidth, 40, 13);
-        ctx.fill();
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.strokeStyle = 'rgba(0,0,0,0.78)';
-        ctx.lineWidth = 4;
-        ctx.font = '900 16px JetBrains Mono, monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.strokeText(label, centerX, laneY + 0.5);
-        ctx.fillText(label, centerX, laneY + 0.5);
-
-        ctx.fillStyle = 'rgba(2,4,9,0.92)';
-        ctx.strokeStyle = `${color}CC`;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(centerX + groupWidth / 2 - 13, laneY - 29, 25, 17, 8);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '900 9px JetBrains Mono, monospace';
-        ctx.fillText(String(group.length), centerX + groupWidth / 2 - 0.5, laneY - 20.5);
-      }
-
       for (const note of visibleNotes) {
-        if (groupedNoteIds.has(note.id)) continue;
+        stringNoteMap.get(note.string)?.push(note);
+      }
+      for (let s = 1; s <= 6; s += 1) {
+        stringNoteMap.get(s)?.sort((a, b) => a.timestampMs - b.timestampMs);
+      }
+
+      // Draw Legato Slur Arcs connecting origin notes to hammer-on / pull-off notes
+      for (const note of visibleNotes) {
+        const isHammer = isHammerOnNote(note);
+        const isPull = isPullOffNote(note);
+        if (!isHammer && !isPull) continue;
+
+        // Find origin note on the same string
+        const sameStringList = stringNoteMap.get(note.string) || [];
+        const noteIdx = sameStringList.findIndex((n) => n.id === note.id);
+        const prevNote = note.legatoOriginNoteId
+          ? sameStringList.find((n) => n.id === note.legatoOriginNoteId) || (noteIdx > 0 ? sameStringList[noteIdx - 1] : null)
+          : noteIdx > 0 ? sameStringList[noteIdx - 1] : null;
+
+        if (!prevNote) continue;
+        if (note.timestampMs - prevNote.timestampMs > 1800) continue;
+
+        const originX = hitX + ((prevNote.timestampMs - now) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
+        const destX = hitX + ((note.timestampMs - now) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
+        const stringIdx = note.string - 1;
+        const laneY = laneHeight * (stringIdx + 0.5);
+
+        if (destX > originX + 10 && originX > -120 && destX < rect.width + 120) {
+          const arcSpan = destX - originX;
+          const arcHeight = Math.min(22, Math.max(11, arcSpan * 0.16));
+          const midX = (originX + destX) / 2;
+          const midY = laneY - 14 - arcHeight;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(originX + 14, laneY - 10);
+          ctx.quadraticCurveTo(midX, midY, destX - 14, laneY - 10);
+          ctx.strokeStyle = isHammer ? 'rgba(0, 229, 190, 0.85)' : 'rgba(251, 113, 133, 0.85)';
+          ctx.lineWidth = 2.2;
+          ctx.setLineDash([4, 2.5]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Apex slur technique badge [H] or [P]
+          if (arcSpan > 30) {
+            const badgeW = 18;
+            const badgeH = 13;
+            ctx.fillStyle = isHammer ? '#041f19' : '#330815';
+            ctx.strokeStyle = isHammer ? '#00E5BE' : '#F43F5E';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.roundRect(midX - badgeW / 2, midY - badgeH / 2, badgeW, badgeH, 3.5);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = isHammer ? '#00E5BE' : '#FB7185';
+            ctx.font = '900 9px JetBrains Mono, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(isHammer ? 'H' : 'P', midX, midY + 0.5);
+          }
+          ctx.restore();
+        }
+      }
+
+      // Draw notes in reverse timestamp order (furthest first) so the note closest to hitX renders on top
+      const sortedVisibleNotes = [...visibleNotes].sort((a, b) => b.timestampMs - a.timestampMs);
+
+      for (const note of sortedVisibleNotes) {
         const diffMs = note.timestampMs - now;
         const x = hitX + (diffMs / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width);
 
         const stringIdx = note.string - 1;
-        const layoutOffset = getVisualNoteOffset(note, visibleNotes);
-        const y = laneHeight * (stringIdx + 0.5) + layoutOffset.y;
-        const visualX = x + layoutOffset.x;
+        const y = laneHeight * (stringIdx + 0.5);
+        const visualX = x;
         const color = note.hitState === 'hit' ? '#10B981' : note.hitState === 'miss' ? '#EF4444' : STRING_COLORS[stringIdx];
         const isOpen = note.fret === 0;
         const isHarmonic = shouldShowHarmonic(note);
-        const isDense = layoutOffset.sameStringCount > 1;
+        const isHammer = isHammerOnNote(note);
+        const isPull = isPullOffNote(note);
         const harmonicColor = '#FFE66D';
-        const radius = isOpen ? 17 : isDense ? 19 : isHarmonic ? 27 : 22;
-        const sustain = Math.max(0, (note.durationMs / visibleWindowMs) * 300);
 
-        if (sustain > 24) {
+        // Calculate distance in pixels to previous and next notes on the same string
+        const sameStringList = stringNoteMap.get(note.string) || [];
+        const noteIdx = sameStringList.findIndex((n) => n.id === note.id);
+        const prevNote = noteIdx > 0 ? sameStringList[noteIdx - 1] : null;
+        const nextNote = noteIdx >= 0 && noteIdx < sameStringList.length - 1 ? sameStringList[noteIdx + 1] : null;
+
+        const prevDistPx = prevNote
+          ? ((note.timestampMs - prevNote.timestampMs) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width)
+          : 9999;
+        const nextDistPx = nextNote
+          ? ((nextNote.timestampMs - note.timestampMs) / visibleWindowMs) * ((1 - hitZoneFraction) * rect.width)
+          : 9999;
+        const minDistPx = Math.min(prevDistPx, nextDistPx);
+
+        // Adapt radius dynamically when notes are fast/close so they NEVER overlap
+        const baseRadius = isOpen ? 16 : 20;
+        const radius = minDistPx < 44
+          ? Math.max(12, Math.min(baseRadius, Math.floor((minDistPx - 3) / 2)))
+          : baseRadius;
+
+        // Clamp sustain trail so it never bleeds underneath the next note on the string
+        const rawSustain = Math.max(0, (note.durationMs / visibleWindowMs) * 300);
+        const maxSustainPx = nextDistPx < 9999 ? Math.max(0, nextDistPx - radius - 5) : rawSustain;
+        const sustain = Math.min(rawSustain, maxSustainPx);
+
+        if (sustain > 14) {
           ctx.fillStyle = `${color}24`;
           ctx.strokeStyle = `${color}88`;
           ctx.lineWidth = 1;
@@ -1166,79 +1363,220 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           ctx.stroke();
         }
 
-        if (layoutOffset.isChord) {
-          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(x, laneHeight * (stringIdx + 0.5));
-          ctx.lineTo(visualX, y);
-          ctx.stroke();
-        }
+        if (isHarmonic) {
+          // Adaptive diamond dimensions to fit tight sequences without colliding
+          const baseRx = 21;
+          const rx = minDistPx < 46 ? Math.max(14, Math.min(baseRx, Math.floor((minDistPx - 3) / 2))) : baseRx;
+          const ry = Math.max(10, Math.round(rx * 0.7));
+          const isHit = note.hitState === 'hit';
+          const isMiss = note.hitState === 'miss';
 
-        ctx.shadowColor = isHarmonic && !note.hitState ? harmonicColor : color;
-        ctx.shadowBlur = note.hitState ? 18 : isHarmonic ? 28 : 14;
-        ctx.fillStyle = isHarmonic && !note.hitState ? '#16120A' : isOpen ? '#071018' : color;
-        ctx.strokeStyle = note.hitState === 'miss' ? '#FFD1D1' : isHarmonic ? harmonicColor : 'rgba(255,255,255,0.85)';
-        ctx.lineWidth = isOpen ? 3 : 2.5;
-        if (isHarmonic && !note.hitState) {
-          ctx.save();
-          ctx.translate(visualX, y);
-          ctx.rotate(Math.PI / 4);
+          ctx.shadowColor = isHit ? '#10B981' : isMiss ? '#EF4444' : harmonicColor;
+          ctx.shadowBlur = isHit ? 22 : isMiss ? 18 : 22;
+          ctx.fillStyle = isHit ? '#064E3B' : isMiss ? '#450A0A' : '#14110A';
+          ctx.strokeStyle = isHit ? '#34D399' : isMiss ? '#F87171' : harmonicColor;
+          ctx.lineWidth = rx < 18 ? 2 : 2.6;
+          ctx.lineJoin = 'round';
+
+          // Outer rhomboid path
           ctx.beginPath();
-          ctx.roundRect(-23, -23, 46, 46, 8);
+          ctx.moveTo(visualX, y - ry);
+          ctx.lineTo(visualX + rx, y);
+          ctx.lineTo(visualX, y + ry);
+          ctx.lineTo(visualX - rx, y);
+          ctx.closePath();
           ctx.fill();
           ctx.stroke();
 
-          ctx.strokeStyle = 'rgba(255,230,109,0.45)';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.roundRect(-15, -15, 30, 30, 5);
-          ctx.stroke();
-          ctx.restore();
-        } else {
-          ctx.beginPath();
-          ctx.roundRect(visualX - radius, y - 19, radius * 2, 38, 11);
-          ctx.fill();
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
+          // Inner concentric accent rhomboid
+          if (rx >= 17) {
+            const innerRx = rx - 5;
+            const innerRy = ry - 4;
+            ctx.strokeStyle = isHit
+              ? 'rgba(52, 211, 153, 0.45)'
+              : isMiss
+              ? 'rgba(248, 113, 113, 0.45)'
+              : 'rgba(255, 230, 109, 0.55)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(visualX, y - innerRy);
+            ctx.lineTo(visualX + innerRx, y);
+            ctx.lineTo(visualX, y + innerRy);
+            ctx.lineTo(visualX - innerRx, y);
+            ctx.closePath();
+            ctx.stroke();
+          }
 
-        if (isHarmonic && !note.hitState) {
-          ctx.fillStyle = harmonicColor;
-          ctx.strokeStyle = 'rgba(0,0,0,0.82)';
-          ctx.lineWidth = 3;
-          ctx.font = '900 11px JetBrains Mono, monospace';
+          ctx.shadowBlur = 0;
+
+          // Note label inside rhomboid
+          ctx.fillStyle = '#FFFFFF';
+          ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+          ctx.lineWidth = 3.5;
+          const harmFontSize = rx < 16 ? 11 : rx < 19 ? 13 : isHit || isMiss ? 16 : 14;
+          ctx.font = `900 ${harmFontSize}px JetBrains Mono, monospace`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.strokeText('H', visualX + 23, y - 24);
-          ctx.fillText('H', visualX + 23, y - 24);
-        }
+          const label = isHit ? '✓' : isMiss ? '✕' : String(note.fret);
+          ctx.strokeText(label, visualX, y + 0.5);
+          ctx.fillText(label, visualX, y + 0.5);
+        } else {
+          // Standard / Hammer-on / Pull-off pill capsule notehead
+          const isHit = note.hitState === 'hit';
+          const isMiss = note.hitState === 'miss';
+          const noteThemeColor = isHit
+            ? '#10B981'
+            : isMiss
+            ? '#EF4444'
+            : isHammer
+            ? '#00E5BE'
+            : isPull
+            ? '#FB7185'
+            : color;
 
-        ctx.fillStyle = '#FFFFFF';
-        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
-        ctx.lineWidth = 4;
-        ctx.font = `900 ${isHarmonic && !note.hitState ? 14 : isDense ? 16 : 18}px JetBrains Mono, monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const noteLabel = note.hitState === 'hit' ? '✓' : note.hitState === 'miss' ? '✕' : isHarmonic ? `H${note.fret}` : String(note.fret);
-        ctx.strokeText(noteLabel, visualX, y + 0.5);
-        ctx.fillText(noteLabel, visualX, y + 0.5);
+          ctx.shadowColor = noteThemeColor;
+          ctx.shadowBlur = isHit ? 20 : isHammer || isPull ? 16 : 12;
+          ctx.fillStyle = isOpen
+            ? '#071018'
+            : isHit
+            ? '#064E3B'
+            : isMiss
+            ? '#450A0A'
+            : isHammer
+            ? '#052922'
+            : isPull
+            ? '#360817'
+            : color;
+
+          ctx.strokeStyle = isMiss
+            ? '#FFD1D1'
+            : isHammer
+            ? '#00E5BE'
+            : isPull
+            ? '#FB7185'
+            : isOpen
+            ? '#FFFFFF'
+            : 'rgba(255,255,255,0.85)';
+
+          ctx.lineWidth = isHammer || isPull ? 2.8 : isOpen ? 2.8 : 2.2;
+          ctx.beginPath();
+          const pillHeight = radius < 15 ? 30 : 36;
+          ctx.roundRect(visualX - radius, y - pillHeight / 2, radius * 2, pillHeight, Math.min(11, radius * 0.55));
+          ctx.fill();
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Upper technique badge on the notehead for Hammer-on (H) or Pull-off (P)
+          if ((isHammer || isPull) && !isHit && !isMiss && radius >= 13) {
+            const badgeW = 15;
+            const badgeH = 12;
+            const badgeX = visualX - radius - 2;
+            const badgeY = y - pillHeight / 2 - 5;
+            ctx.fillStyle = isHammer ? '#00E5BE' : '#F43F5E';
+            ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = isHammer ? '#031915' : '#FFFFFF';
+            ctx.font = '900 8.5px JetBrains Mono, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(isHammer ? 'H' : 'P', badgeX + badgeW / 2, badgeY + badgeH / 2 + 0.5);
+          }
+
+          // Fret number text
+          ctx.fillStyle = isHammer ? '#00FADC' : isPull ? '#FFA8BA' : '#FFFFFF';
+          ctx.strokeStyle = 'rgba(0,0,0,0.78)';
+          ctx.lineWidth = radius < 15 ? 2.8 : 3.8;
+          const fontSize = radius < 15 ? 11 : radius < 18 ? 13 : 16;
+          ctx.font = `900 ${fontSize}px JetBrains Mono, monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const noteLabel = isHit ? '✓' : isMiss ? '✕' : String(note.fret);
+          ctx.strokeText(noteLabel, visualX, y + 0.5);
+          ctx.fillText(noteLabel, visualX, y + 0.5);
+        }
       }
 
       if (activeTargetNoteRef.current) {
         const target = activeTargetNoteRef.current;
         const y = laneHeight * (target.string - 0.5);
         const pulse = 0.5 + Math.sin(performance.now() / 120) * 0.5;
-        ctx.strokeStyle = `rgba(0,229,190,${0.45 + pulse * 0.35})`;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(hitX, y, 24 + pulse * 8, 0, Math.PI * 2);
-        ctx.stroke();
+        const isTargetHarmonic = shouldShowHarmonic(target);
+        const isTargetHammer = isHammerOnNote(target);
+        const isTargetPull = isPullOffNote(target);
 
-        ctx.fillStyle = 'rgba(0,229,190,0.12)';
-        ctx.beginPath();
-        ctx.arc(hitX, y, 34 + pulse * 10, 0, Math.PI * 2);
-        ctx.fill();
+        if (isTargetHarmonic) {
+          const prx = 30 + pulse * 6;
+          const pry = 20 + pulse * 4;
+          ctx.strokeStyle = `rgba(255,230,109,${0.5 + pulse * 0.4})`;
+          ctx.lineWidth = 3;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(hitX, y - pry);
+          ctx.lineTo(hitX + prx, y);
+          ctx.lineTo(hitX, y + pry);
+          ctx.lineTo(hitX - prx, y);
+          ctx.closePath();
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(255,230,109,0.12)';
+          ctx.beginPath();
+          ctx.moveTo(hitX, y - (pry + 6));
+          ctx.lineTo(hitX + (prx + 8), y);
+          ctx.lineTo(hitX, y + (pry + 6));
+          ctx.lineTo(hitX - (prx + 8), y);
+          ctx.closePath();
+          ctx.fill();
+        } else if (isTargetHammer) {
+          ctx.strokeStyle = `rgba(0,229,190,${0.55 + pulse * 0.35})`;
+          ctx.lineWidth = 3.2;
+          ctx.beginPath();
+          ctx.arc(hitX, y, 24 + pulse * 8, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(0,229,190,0.14)';
+          ctx.beginPath();
+          ctx.arc(hitX, y, 34 + pulse * 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#00E5BE';
+          ctx.font = '900 11px JetBrains Mono, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('H', hitX - 32 - pulse * 4, y);
+        } else if (isTargetPull) {
+          ctx.strokeStyle = `rgba(251,113,133,${0.55 + pulse * 0.35})`;
+          ctx.lineWidth = 3.2;
+          ctx.beginPath();
+          ctx.arc(hitX, y, 24 + pulse * 8, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(251,113,133,0.14)';
+          ctx.beginPath();
+          ctx.arc(hitX, y, 34 + pulse * 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#FB7185';
+          ctx.font = '900 11px JetBrains Mono, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('P', hitX - 32 - pulse * 4, y);
+        } else {
+          ctx.strokeStyle = `rgba(0,229,190,${0.45 + pulse * 0.35})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(hitX, y, 24 + pulse * 8, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(0,229,190,0.12)';
+          ctx.beginPath();
+          ctx.arc(hitX, y, 34 + pulse * 10, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       ctx.textAlign = 'left';
@@ -1271,13 +1609,33 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     timingCueDiffMs === null
       ? 0
       : Math.max(0, Math.min(100, ((1800 - timingCueDiffMs) / 1800) * 100));
+  const isTimingHarmonic = Boolean(timingCueNote && shouldShowHarmonic(timingCueNote));
+  const isTimingHammer = Boolean(timingCueNote && isHammerOnNote(timingCueNote));
+  const isTimingPull = Boolean(timingCueNote && isPullOffNote(timingCueNote));
+
   const timingCueLabel =
     timingCueUrgency === 'hit'
-      ? 'УДАРИ СЕГА'
+      ? isTimingHarmonic
+        ? '✨ ФЛАЖОЛЕТ СЕГА'
+        : isTimingHammer
+        ? '🔨 ХАМЪР-ОН СЕГА'
+        : isTimingPull
+        ? '↩️ ПУЛ-ОФ СЕГА'
+        : 'УДАРИ СЕГА'
       : timingCueUrgency === 'ready'
-      ? 'ГОТОВ'
+      ? isTimingHarmonic
+        ? '✨ ГОТВИ ФЛАЖОЛЕТ'
+        : isTimingHammer
+        ? '🔨 ГОТВИ ХАМЪР (H)'
+        : isTimingPull
+        ? '↩️ ГОТВИ ПУЛ-ОФ (P)'
+        : 'ГОТОВ'
       : timingCueUrgency === 'wait'
-      ? 'СЛЕДИ НОТАТА'
+      ? isTimingHammer
+        ? 'ХАМЪР-ОН СЛЕДВА'
+        : isTimingPull
+        ? 'ПУЛ-ОФ СЛЕДВА'
+        : 'СЛЕДИ НОТАТА'
       : 'ЧАКА СЛЕДВАЩА НОТА';
   const activeSection = songSections.find(
     (section) => playbackMs >= section.startMs && playbackMs <= section.endMs
@@ -1296,6 +1654,16 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       (technique) => playbackMs >= technique.startMs - 120 && playbackMs <= technique.endMs + 120
     ) || null;
   const focusTechnique = activeTechnique || selectedAnalysis?.primaryFocus || detectedTechniques[0] || null;
+
+  const beatsPerMeasure = activeSong.id === 'nothing-else-matters' ? 3 : 4;
+  const currentBeatMs = 60000 / Math.max(1, activeSong.tempo || 120);
+  const currentMeasureMs = currentBeatMs * beatsPerMeasure;
+  const currentMeasureNum = Math.max(1, Math.floor(playbackMs / currentMeasureMs) + 1);
+  const totalSongMeasures = Math.max(1, Math.ceil(noteSequenceDurationMs / currentMeasureMs));
+  const currentBeatInMeasure = Math.max(
+    1,
+    Math.min(beatsPerMeasure, Math.floor((playbackMs % currentMeasureMs) / currentBeatMs) + 1)
+  );
 
   return (
     <div
@@ -1501,6 +1869,71 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             ))}
           </div>
 
+          {/* Current Measure & Beat Position Floating Pill ("Къде си") */}
+          <div
+            id="guitar-measure-beat-pill"
+            className="absolute top-3 left-12 sm:left-14 z-30 flex items-center gap-2 bg-[#060A13]/90 border border-[#64D2FF]/25 hover:border-[#64D2FF]/50 rounded-full px-2.5 sm:px-3 py-1 backdrop-blur-md shadow-xl transition-all"
+            title={`Такт ${currentMeasureNum} от ${totalSongMeasures} • Удар ${currentBeatInMeasure}/${beatsPerMeasure}`}
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#64D2FF] shadow-[0_0_8px_#64D2FF] animate-pulse" />
+              <span className="text-[11px] font-mono font-bold text-white tracking-wide">
+                Такт {currentMeasureNum}
+              </span>
+            </div>
+            <div className="h-3 w-px bg-white/15" />
+            <div className="flex items-center gap-1 text-[10px] font-mono text-[#8EA1B8]">
+              <span className="hidden sm:inline">Удар</span>
+              <span className="font-bold text-[#64D2FF]">{currentBeatInMeasure}/{beatsPerMeasure}</span>
+              <div className="flex items-center gap-1 ml-0.5" aria-hidden="true">
+                {Array.from({ length: beatsPerMeasure }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={`w-1.5 h-1.5 rounded-full transition-all duration-100 ${
+                      i + 1 === currentBeatInMeasure
+                        ? 'bg-[#64D2FF] scale-125 shadow-[0_0_8px_#64D2FF]'
+                        : i + 1 < currentBeatInMeasure
+                        ? 'bg-white/40'
+                        : 'bg-white/15'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Highway Note Spacing / Zoom Control Floating Pill */}
+          <div className="absolute top-3 right-3 z-30 flex items-center gap-1 bg-[#060A13]/90 border border-white/10 hover:border-[#00E5BE]/40 rounded-full px-2.5 py-1 backdrop-blur-md shadow-xl transition-all">
+            <span className="text-[10px] uppercase font-bold text-[#677D96] tracking-wider hidden md:inline mr-1">
+              Разстояние:
+            </span>
+            <button
+              onClick={() => changeVisibleWindow(visibleWindowMs + 300)}
+              disabled={visibleWindowMs >= 5200}
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-white/[0.04] hover:bg-white/[0.12] text-[#8EA1B8] hover:text-white disabled:opacity-25 cursor-pointer text-xs transition"
+              title="Повече ноти на екрана (по-компактно)"
+              aria-label="Повече ноти на екрана"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => changeVisibleWindow(2400)}
+              className="font-mono text-xs font-bold text-[#00E5BE] hover:underline px-1.5 min-w-[34px] text-center cursor-pointer"
+              title="Кликнете за връщане към оптимално разстояние (2.4s)"
+            >
+              {(visibleWindowMs / 1000).toFixed(1)}s
+            </button>
+            <button
+              onClick={() => changeVisibleWindow(visibleWindowMs - 300)}
+              disabled={visibleWindowMs <= 1200}
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-white/[0.04] hover:bg-white/[0.12] text-[#8EA1B8] hover:text-white disabled:opacity-25 cursor-pointer text-xs transition"
+              title="По-голямо разстояние между нотите (по-просторно)"
+              aria-label="По-голямо разстояние между нотите"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+
           {/* Laser Target Zone Line */}
           <div
             id="guitar-laser-hit-zone"
@@ -1518,9 +1951,21 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             <div
               className={`absolute -left-20 top-4 w-40 rounded-2xl border px-3 py-2 text-center shadow-xl backdrop-blur-md transition-all duration-150 ${
                 timingCueUrgency === 'hit'
-                  ? 'bg-[#00E5BE] text-[#061014] border-white/70 scale-105 shadow-[0_0_28px_rgba(0,229,190,0.42)]'
+                  ? isTimingHarmonic
+                    ? 'bg-[#FFE66D] text-[#191505] border-white/80 scale-105 shadow-[0_0_28px_rgba(255,230,109,0.5)]'
+                    : isTimingHammer
+                    ? 'bg-[#00E5BE] text-[#041713] border-white/80 scale-105 shadow-[0_0_28px_rgba(0,229,190,0.45)]'
+                    : isTimingPull
+                    ? 'bg-[#FB7185] text-[#1D050B] border-white/80 scale-105 shadow-[0_0_28px_rgba(251,113,133,0.45)]'
+                    : 'bg-[#00E5BE] text-[#061014] border-white/70 scale-105 shadow-[0_0_28px_rgba(0,229,190,0.42)]'
                   : timingCueUrgency === 'ready'
-                  ? 'bg-[#101A28]/95 text-white border-[#FFD32A]/60 shadow-[0_0_20px_rgba(255,211,42,0.18)]'
+                  ? isTimingHarmonic
+                    ? 'bg-[#18150C]/95 text-[#FFE66D] border-[#FFE66D]/70 shadow-[0_0_20px_rgba(255,230,109,0.22)]'
+                    : isTimingHammer
+                    ? 'bg-[#081816]/95 text-[#00E5BE] border-[#00E5BE]/70 shadow-[0_0_20px_rgba(0,229,190,0.22)]'
+                    : isTimingPull
+                    ? 'bg-[#200A12]/95 text-[#FB7185] border-[#FB7185]/70 shadow-[0_0_20px_rgba(251,113,133,0.22)]'
+                    : 'bg-[#101A28]/95 text-white border-[#FFD32A]/60 shadow-[0_0_20px_rgba(255,211,42,0.18)]'
                   : 'bg-[#080D16]/90 text-[#9CB1C8] border-[#21324A]'
               }`}
             >
@@ -1528,10 +1973,17 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 {timingCueLabel}
               </div>
               {timingCueNote && (
-                <div className="mt-1 flex items-center justify-center gap-2 text-xs font-black">
-                  <span>Струна {timingCueNote.string}</span>
+                <div className="mt-1 flex items-center justify-center gap-1.5 text-xs font-black">
+                  {isTimingHarmonic ? (
+                    <span className="text-[#FFE66D] text-[10px] uppercase font-bold">✨ Ромб</span>
+                  ) : isTimingHammer ? (
+                    <span className="text-[#00E5BE] text-[10px] uppercase font-bold">🔨 [H]</span>
+                  ) : isTimingPull ? (
+                    <span className="text-[#FB7185] text-[10px] uppercase font-bold">↩️ [P]</span>
+                  ) : null}
+                  <span>Стр {timingCueNote.string}</span>
                   <span className="opacity-60">•</span>
-                  <span>Прагче {timingCueNote.fret}</span>
+                  <span>Праг {timingCueNote.fret}</span>
                 </div>
               )}
               <div className="mt-1 text-[9px] font-mono opacity-70">
@@ -1540,7 +1992,15 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               <div className="mt-2 h-1.5 rounded-full bg-black/25 overflow-hidden">
                 <div
                   className={`h-full rounded-full ${
-                    timingCueUrgency === 'hit' ? 'bg-white' : 'bg-[#00E5BE]'
+                    timingCueUrgency === 'hit'
+                      ? 'bg-white'
+                      : isTimingHarmonic
+                      ? 'bg-[#FFE66D]'
+                      : isTimingHammer
+                      ? 'bg-[#00E5BE]'
+                      : isTimingPull
+                      ? 'bg-[#FB7185]'
+                      : 'bg-[#00E5BE]'
                   }`}
                   style={{ width: `${timingCueProgress}%` }}
                 />
@@ -1710,7 +2170,19 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 </div>
 
                 <div className="text-white font-extrabold text-xl mt-1 tracking-tight">
-                  {activeTargetNote.fret === 0 ? (
+                  {shouldShowHarmonic(activeTargetNote) ? (
+                    <span>
+                      ✨ Флажолет: докоснете леко <strong className="text-[#FFE66D]">прагче {activeTargetNote.fret}</strong> над металната пластина без натиск
+                    </span>
+                  ) : isHammerOnNote(activeTargetNote) ? (
+                    <span>
+                      🔨 Хамър-он: чукнете решително с пръст <strong className="text-[#00E5BE]">прагче {activeTargetNote.fret}</strong> без ново замахване с перце
+                    </span>
+                  ) : isPullOffNote(activeTargetNote) ? (
+                    <span>
+                      ↩️ Пул-оф: издърпайте леко пръста от струната към <strong className="text-[#FB7185]">прагче {activeTargetNote.fret}</strong>
+                    </span>
+                  ) : activeTargetNote.fret === 0 ? (
                     <span>
                       Дръпнете <strong className="text-[#00E5BE]">свободна струна {STRING_NAMES[activeTargetNote.string - 1]}</strong> (Прагче 0)
                     </span>
@@ -1868,7 +2340,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               const yPercent = stringIdx * laneHeightPercent + laneHeightPercent * 0.16;
               const noteHeightPercent = laneHeightPercent * 0.68;
               const isOpenString = note.fret === 0;
-              const layoutOffset = getVisualNoteOffset(note, scrollingNotes);
 
               const isPast = diffMs < 0;
               const hasSustain = note.durationMs > 400;
@@ -1890,10 +2361,9 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                   }`}
                   style={{
                     left: `${xPercent}%`,
-                    top: `calc(${yPercent}% + ${layoutOffset.y}px)`,
-                    transform: `translateX(${layoutOffset.x}px)`,
+                    top: `${yPercent}%`,
                     height: `${noteHeightPercent}%`,
-                    willChange: 'left, transform',
+                    willChange: 'left',
                   }}
                 >
                   {/* Translucent Sustain Trail Ribbon */}
@@ -1911,58 +2381,91 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                     />
                   )}
 
-                  {/* Note Head Capsule */}
-                  <div
-                    id={`note-head-${note.id}`}
-                    className={`relative w-10 h-full flex items-center justify-center z-10 transition-all ${
-                      shouldShowHarmonic(note) && !isHit && !isMiss ? 'rounded-lg rotate-45' : 'rounded-xl'
-                    } ${
-                      isWaitingThisNote
-                        ? 'ring-4 ring-[#00E5BE] scale-110 shadow-[0_0_20px_#00E5BE]'
-                        : isMiss
-                        ? 'scale-105 shadow-[0_0_16px_#EF4444]'
-                        : ''
-                    }`}
-                    style={{
-                      backgroundColor: isHit
-                        ? '#10B981'
-                        : isMiss
-                        ? '#DC2626'
-                        : shouldShowHarmonic(note)
-                        ? '#16120A'
-                        : isOpenString
-                        ? '#0A0F19'
-                        : color,
-                      border: isHit
-                        ? '2px solid #FFFFFF'
-                        : isMiss
-                        ? '2px solid #FFA3A3'
-                        : shouldShowHarmonic(note)
-                        ? '2px solid #FFE66D'
-                        : isOpenString
-                        ? `2px solid ${color}`
-                        : '1.5px solid rgba(255,255,255,0.75)',
-                      boxShadow: isHit
-                        ? '0 0 16px #10B981'
-                        : isMiss
-                        ? '0 0 16px #EF4444'
-                        : shouldShowHarmonic(note)
-                        ? '0 0 18px #FFE66D88, 0 0 5px #FFE66D'
-                        : isOpenString
-                        ? `0 0 10px ${color}66`
-                        : `0 4px 12px rgba(0,0,0,0.5), 0 0 8px ${color}44`,
-                    }}
-                  >
-                    {shouldShowHarmonic(note) && !isHit && !isMiss && (
-                      <span className="absolute -right-2 -top-2 -rotate-45 rounded-full border border-[#FFE66D]/80 bg-[#0A0F19] px-1 text-[8px] font-black text-[#FFE66D]">
-                        H
+                  {/* Note Head Capsule or Rhomboid */}
+                  {shouldShowHarmonic(note) ? (
+                    <div
+                      id={`note-head-${note.id}`}
+                      className={`relative w-12 h-full flex items-center justify-center z-10 transition-all ${
+                        isWaitingThisNote
+                          ? 'scale-110 drop-shadow-[0_0_18px_#00E5BE]'
+                          : isMiss
+                          ? 'scale-105 drop-shadow-[0_0_14px_#EF4444]'
+                          : 'drop-shadow-[0_0_14px_#FFE66D88]'
+                      }`}
+                    >
+                      <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 48 34">
+                        {/* Outer Rhomboid */}
+                        <polygon
+                          points="24,2 46,17 24,32 2,17"
+                          fill={isHit ? '#064E3B' : isMiss ? '#450A0A' : '#14110A'}
+                          stroke={isHit ? '#34D399' : isMiss ? '#F87171' : '#FFE66D'}
+                          strokeWidth="2.5"
+                          strokeLinejoin="round"
+                        />
+                        {/* Inner Concentric Rhomboid */}
+                        <polygon
+                          points="24,6.5 40.5,17 24,27.5 7.5,17"
+                          fill="none"
+                          stroke={
+                            isHit
+                              ? 'rgba(52, 211, 153, 0.45)'
+                              : isMiss
+                              ? 'rgba(248, 113, 113, 0.45)'
+                              : 'rgba(255, 230, 109, 0.55)'
+                          }
+                          strokeWidth="1.2"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {!isHit && !isMiss && (
+                        <span className="absolute -right-1 -top-1.5 rounded-full border border-[#FFE66D]/80 bg-[#0A0F19] px-1 text-[8px] font-black text-[#FFE66D] z-20">
+                          H
+                        </span>
+                      )}
+                      <span className="relative z-10 font-mono font-black text-[13px] text-white drop-shadow-sm">
+                        {isHit ? '✓' : isMiss ? '✕' : `H${note.fret}`}
                       </span>
-                    )}
-                    {/* Fret Number Label, Checkmark, or Red Cross */}
-                    <span className={`font-mono font-black text-sm text-white drop-shadow-sm ${shouldShowHarmonic(note) && !isHit && !isMiss ? '-rotate-45 text-[11px]' : ''}`}>
-                      {isHit ? '✓' : isMiss ? '✕' : shouldShowHarmonic(note) ? `H${note.fret}` : note.fret}
-                    </span>
-                  </div>
+                    </div>
+                  ) : (
+                    <div
+                      id={`note-head-${note.id}`}
+                      className={`relative w-10 h-full flex items-center justify-center z-10 transition-all rounded-xl ${
+                        isWaitingThisNote
+                          ? 'ring-4 ring-[#00E5BE] scale-110 shadow-[0_0_20px_#00E5BE]'
+                          : isMiss
+                          ? 'scale-105 shadow-[0_0_16px_#EF4444]'
+                          : ''
+                      }`}
+                      style={{
+                        backgroundColor: isHit
+                          ? '#10B981'
+                          : isMiss
+                          ? '#DC2626'
+                          : isOpenString
+                          ? '#0A0F19'
+                          : color,
+                        border: isHit
+                          ? '2px solid #FFFFFF'
+                          : isMiss
+                          ? '2px solid #FFA3A3'
+                          : isOpenString
+                          ? `2px solid ${color}`
+                          : '1.5px solid rgba(255,255,255,0.75)',
+                        boxShadow: isHit
+                          ? '0 0 16px #10B981'
+                          : isMiss
+                          ? '0 0 16px #EF4444'
+                          : isOpenString
+                          ? `0 0 10px ${color}66`
+                          : `0 4px 12px rgba(0,0,0,0.5), 0 0 8px ${color}44`,
+                      }}
+                    >
+                      {/* Fret Number Label, Checkmark, or Red Cross */}
+                      <span className="font-mono font-black text-sm text-white drop-shadow-sm">
+                        {isHit ? '✓' : isMiss ? '✕' : note.fret}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -2329,9 +2832,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         id="song-timeline-scrub-bar"
         className="px-6 py-2 bg-[#05070B] border-t border-white/5 flex items-center space-x-3 shrink-0"
       >
-        <span className="text-[11px] font-mono font-bold text-[#8FA5BF] w-9 text-right">
-          {formatTime(playbackMs)}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[11px] font-mono font-bold text-[#8FA5BF] w-9 text-right">
+            {formatTime(playbackMs)}
+          </span>
+          <span className="text-[10px] font-mono font-semibold text-[#64D2FF] bg-[#64D2FF]/10 border border-[#64D2FF]/20 px-1.5 py-0.5 rounded">
+            Т{currentMeasureNum}
+          </span>
+        </div>
 
         <div
           onClick={(e) => {
@@ -2341,6 +2849,13 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           }}
           className="flex-1 h-2 bg-[#121926] hover:h-2.5 rounded-full relative cursor-pointer group transition-all"
         >
+          {/* Subtle Measure Dividers on scrub track */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-full flex justify-between px-0.5 opacity-30">
+            {Array.from({ length: Math.min(64, totalSongMeasures) }).map((_, i) => (
+              <span key={i} className="w-px h-full bg-white/40" />
+            ))}
+          </div>
+
           <div
             className="h-full bg-[#00E5BE] rounded-full relative"
             style={{
@@ -2351,9 +2866,14 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
           </div>
         </div>
 
-        <span className="text-[11px] font-mono font-bold text-[#56687D] w-9">
-          {formatTime(noteSequenceDurationMs)}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] font-mono text-[#56687D] hidden sm:inline">
+            общо {totalSongMeasures} т.
+          </span>
+          <span className="text-[11px] font-mono font-bold text-[#56687D] w-9">
+            {formatTime(noteSequenceDurationMs)}
+          </span>
+        </div>
       </div>
 
       {/* Bottom Practice Toolbar & Controls */}
@@ -2393,6 +2913,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               setScore(0);
               setStars(0);
               setStats({ hits: 0, close: 0, misses: 0 });
+              lastConsumedPluckIdRef.current = -1;
+              lastHitEventRef.current = null;
             }}
             className="w-9 h-9 rounded-full bg-white/[0.03] hover:bg-white/[0.07] text-[#9FB0C4] hover:text-white flex items-center justify-center border border-white/10 transition-colors cursor-pointer"
             title="Рестартирай песента от началото"
@@ -2846,6 +3368,28 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                       {isListeningMic ? 'Дръпнете струна...' : 'Включете микрофона от сцената'}
                     </span>
                   )}
+                </div>
+              </div>
+
+              {/* Advanced Guitar Engine Protections */}
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="bg-[#070D16] border border-[#142337] rounded-xl p-2.5">
+                  <div className="flex items-center gap-1.5 font-bold text-[#00E5BE]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00E5BE]" />
+                    <span>Филтър за глас</span>
+                  </div>
+                  <p className="text-[10px] text-[#71879F] mt-1 leading-snug">
+                    Блокира говор и страничен глас, зачитайки само чисти китарни тонове в точната им октава.
+                  </p>
+                </div>
+                <div className="bg-[#070D16] border border-[#142337] rounded-xl p-2.5">
+                  <div className="flex items-center gap-1.5 font-bold text-[#F59E0B]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
+                    <span>Повторни ноти (Re-pluck)</span>
+                  </div>
+                  <p className="text-[10px] text-[#71879F] mt-1 leading-snug">
+                    Изисква отделен удар с перце за всяка поредна нота (звъняща струна не маркира 2 или 3 ноти).
+                  </p>
                 </div>
               </div>
 

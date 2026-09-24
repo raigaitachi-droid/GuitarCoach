@@ -8,7 +8,10 @@ export interface PitchResult {
   inTune: boolean;
   audioTimeMs: number;
   onset: boolean;
+  pluckId: number;
+  crestFactor?: number;
   confidence: number;
+  isVoiceLike?: boolean;
   stringIndex?: number;
   fret?: number;
 }
@@ -29,6 +32,11 @@ export class MicrophonePitchDetector {
   private latestResult: PitchResult | null = null;
   private listeners = new Set<PitchListener>();
   private estimatedInputLatencyMs = 0;
+
+  // Voice vs guitar stability tracking
+  private lastMidi = -1;
+  private lastCents = 0;
+  private lastPitchTimeMs = 0;
 
   setNoiseThreshold(threshold: number) {
     this.noiseThreshold = Math.max(0.001, Math.min(0.05, threshold));
@@ -140,7 +148,9 @@ export class MicrophonePitchDetector {
           this.audioContext!.sampleRate,
           message.rms,
           message.audioTimeMs,
-          message.onset
+          Boolean(message.onset),
+          Number(message.pluckId || 1),
+          Number(message.crestFactor || 1.8)
         );
         this.latestResult = result;
         this.emit(result);
@@ -190,7 +200,9 @@ export class MicrophonePitchDetector {
     sampleRate: number,
     rms: number,
     audioTimeMs: number,
-    onset: boolean
+    onset: boolean,
+    pluckId: number,
+    crestFactor: number
   ): PitchResult | null {
     if (rms < this.noiseThreshold) return null;
 
@@ -228,7 +240,9 @@ export class MicrophonePitchDetector {
       }
     }
 
-    if (bestPeriod < 0 || bestCorrelation < 0.52) return null;
+    // Require clean periodicity. Spoken room noise and low-clarity chatter are filtered here.
+    const minRequiredCorrelation = onset ? 0.58 : 0.64;
+    if (bestPeriod < 0 || bestCorrelation < minRequiredCorrelation) return null;
 
     let adjustedPeriod = bestPeriod;
     if (bestPeriod > minPeriod && bestPeriod < maxPeriod) {
@@ -251,6 +265,26 @@ export class MicrophonePitchDetector {
     const noteIndex = ((midiNumber % 12) + 12) % 12;
     const octave = Math.floor(midiNumber / 12) - 1;
 
+    // Detect Voice vs Guitar:
+    // A guitar string fundamental is fixed by fret and tension (cents jitter is small: < 15c).
+    // Human speech has continuous vocal glide/inflection (jitter > 26c within 50ms) and low crest factor (smooth vowels).
+    const timeDeltaMs = audioTimeMs - this.lastPitchTimeMs;
+    const centsJitter =
+      this.lastMidi === midiNumber && timeDeltaMs > 8 && timeDeltaMs < 80
+        ? Math.abs(cents - this.lastCents)
+        : 0;
+
+    const isSpeechVocalRange = frequency >= 85 && frequency <= 250;
+    const isSpeechLikeVowel =
+      !onset && isSpeechVocalRange && crestFactor < 1.72 && bestCorrelation < 0.78;
+    const isVocalJitter = !onset && centsJitter > 26;
+
+    const isVoiceLike = Boolean(!onset && (isSpeechLikeVowel || isVocalJitter));
+
+    this.lastMidi = midiNumber;
+    this.lastCents = cents;
+    this.lastPitchTimeMs = audioTimeMs;
+
     return {
       frequency,
       noteName: `${NOTE_NAMES[noteIndex]}${octave}`,
@@ -260,7 +294,10 @@ export class MicrophonePitchDetector {
       inTune: Math.abs(cents) <= 20,
       audioTimeMs,
       onset,
+      pluckId,
+      crestFactor,
       confidence: bestCorrelation,
+      isVoiceLike,
     };
   }
 }

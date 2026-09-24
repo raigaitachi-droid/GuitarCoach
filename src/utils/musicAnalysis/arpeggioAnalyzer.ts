@@ -505,6 +505,59 @@ function createDifficultyTechnique(allNotes: TabNote[], hotspot: DifficultyHotsp
   );
 }
 
+function detectLegatoPassages(notes: TabNote[]): TechniqueAnalysis[] {
+  const legatoNotes = notes.filter((n) => n.isHammerOn || n.isPullOff || n.technique === 'hammer-on' || n.technique === 'pull-off');
+  if (legatoNotes.length === 0) return [];
+
+  const results: TechniqueAnalysis[] = [];
+  let currentGroup: TabNote[] = [];
+
+  for (const note of legatoNotes) {
+    if (currentGroup.length === 0) {
+      currentGroup.push(note);
+    } else {
+      const prev = currentGroup[currentGroup.length - 1];
+      if (note.timestampMs - prev.timestampMs <= 2500) {
+        currentGroup.push(note);
+      } else {
+        if (currentGroup.length >= 1) {
+          results.push(createLegatoAnalysis(currentGroup));
+        }
+        currentGroup = [note];
+      }
+    }
+  }
+
+  if (currentGroup.length >= 1) {
+    results.push(createLegatoAnalysis(currentGroup));
+  }
+
+  return results;
+}
+
+function createLegatoAnalysis(group: TabNote[]): TechniqueAnalysis {
+  const hasHammer = group.some((n) => n.isHammerOn || n.technique === 'hammer-on');
+  const hasPull = group.some((n) => n.isPullOff || n.technique === 'pull-off');
+  const type: TechniqueType = hasHammer && hasPull ? 'legato' : hasHammer ? 'hammer-on' : 'pull-off';
+  const label = hasHammer && hasPull ? 'Hammer-on & Pull-off Legato' : hasHammer ? 'Hammer-on Sequence' : 'Pull-off Sequence';
+
+  return makeTechnique(
+    type,
+    label,
+    group,
+    0.85,
+    group.length >= 3 ? 'high' : 'medium',
+    label,
+    hasHammer && hasPull
+      ? 'Комбинация от хамър-они и пул-офи. Дръж лявата ръка отпусната и използвай върховете на пръстите.'
+      : hasHammer
+      ? 'Хамър-он пасаж. Удряй решително с пръста точно зад металното прагче без допълнителен удар с перцето.'
+      : 'Пул-оф пасаж. Издърпвай леко струната надолу при махане на пръста, за да запазиш силата на тона.',
+    `${group.length} легато ноти (H/P) на струна ${group[0].string}.`,
+    'Започни бавно без перце, само с легато техника на лявата ръка. Увери се, че всеки тон звучи равномерно.'
+  );
+}
+
 function sortTechniqueMap(items: TechniqueAnalysis[]): TechniqueAnalysis[] {
   const severityScore: Record<string, number> = { high: 3, medium: 2, low: 1 };
   return [...items]
@@ -519,6 +572,7 @@ export function analyzeTechniqueMap(notes: TabNote[], tempoBpm = 120): Technique
     .filter((item): item is TechniqueAnalysis => Boolean(item));
 
   const supportingTechniques = sortTechniqueMap([
+    ...detectLegatoPassages(notes),
     ...detectArpeggios(notes),
     ...detectStringSkips(notes),
     ...detectPositionShifts(notes),
@@ -526,9 +580,7 @@ export function analyzeTechniqueMap(notes: TabNote[], tempoBpm = 120): Technique
     ...detectDenseBeatGroups(notes, tempoBpm),
     ...detectPolyphonyStretch(notes),
     ...detectSpeedBursts(notes),
-  ]).filter((technique) =>
-    difficultyHotspots.some((hotspot) => technique.startMs <= hotspot.endMs && technique.endMs >= hotspot.startMs)
-  );
+  ]);
 
   const problemMap = sortTechniqueMap([
     ...difficultyTechniques,

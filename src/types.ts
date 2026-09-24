@@ -6,6 +6,10 @@ export interface TabNote {
   durationMs: number;
   isHarmonic?: boolean;
   harmonicType?: 'natural' | 'artificial' | 'pinch' | 'tap' | 'semi' | 'unknown';
+  isHammerOn?: boolean;
+  isPullOff?: boolean;
+  legatoOriginNoteId?: string;
+  technique?: 'normal' | 'hammer-on' | 'pull-off' | 'harmonic' | 'slide' | 'bend';
   measureIndex?: number;
   hitState?: 'unhit' | 'hit' | 'close' | 'miss' | 'wrong';
   timingOffsetMs?: number;
@@ -45,7 +49,10 @@ export type TechniqueType =
   | 'high-npm'
   | 'dense-beat'
   | 'polyphony-stretch'
-  | 'practice-strategy';
+  | 'practice-strategy'
+  | 'hammer-on'
+  | 'pull-off'
+  | 'legato';
 
 export interface TechniqueAnalysis {
   id: string;
@@ -96,7 +103,7 @@ export interface ImportedSong extends SongMetadata {
 
 export interface FeedbackData {
   matchType: 'HIT' | 'CLOSE' | 'WRONG' | 'MISS';
-  headline: 'PERFECT' | 'GOOD' | 'CLOSE' | 'WRONG NOTE' | 'MISSED';
+  headline: 'PERFECT' | 'GOOD' | 'CLOSE' | 'WRONG NOTE' | 'MISSED' | 'HARMONIC' | 'HAMMER-ON' | 'PULL-OFF';
   expectedNote: string;
   playedNote: string;
   timingErrorMs: number;

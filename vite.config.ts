@@ -5,7 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/GuitarCoach/',
+    base: '/',
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {

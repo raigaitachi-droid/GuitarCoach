@@ -105,6 +105,47 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
   return { isHarmonic: true, harmonicType: 'unknown' };
 }
 
+function getHammerPullInfo(note: unknown): { isHammerOn?: boolean; isPullOff?: boolean } {
+  const candidate = note as {
+    isHammerPullOrigin?: boolean;
+    isHammerPullDestination?: boolean;
+    hammerPullOrigin?: { fret?: number };
+    hammerPullDestination?: { fret?: number };
+    fret?: number;
+    effects?: {
+      isHammerPullOrigin?: boolean;
+      isHammerPullDestination?: boolean;
+      hammerPullOrigin?: { fret?: number };
+      hammerPullDestination?: { fret?: number };
+    };
+  };
+
+  const effectSource = candidate.effects ?? candidate;
+  const isDestination = Boolean(
+    effectSource.isHammerPullDestination ||
+    candidate.isHammerPullDestination ||
+    effectSource.hammerPullOrigin ||
+    candidate.hammerPullOrigin
+  );
+
+  if (isDestination) {
+    const origin = effectSource.hammerPullOrigin || candidate.hammerPullOrigin;
+    const originFret = typeof origin?.fret === 'number' ? origin.fret : -1;
+    const currentFret = typeof candidate.fret === 'number' ? candidate.fret : 0;
+
+    if (originFret >= 0) {
+      if (currentFret > originFret) return { isHammerOn: true };
+      if (currentFret < originFret) return { isPullOff: true };
+    }
+  }
+
+  const rawObj = candidate as Record<string, unknown>;
+  if (rawObj.isHammerOn === true || rawObj.hammerOn === true) return { isHammerOn: true };
+  if (rawObj.isPullOff === true || rawObj.pullOff === true) return { isPullOff: true };
+
+  return {};
+}
+
 export function isSupportedGuitarProFile(file: File): boolean {
   const name = file.name.toLowerCase();
   return SUPPORTED_EXTENSIONS.some((extension) => name.endsWith(extension));
@@ -339,6 +380,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
           for (const note of beat.notes) {
             if (note.fret < 0 || note.string < 1) continue;
             const harmonicInfo = getHarmonicInfo(note);
+            const hammerPullInfo = getHammerPullInfo(note);
 
             // alphaTab numbers string 1 from the lowest string; GuitarCoach
             // numbers string 1 from the highest string.
@@ -352,6 +394,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
               timestampMs: Math.round(timestampMs),
               durationMs,
               ...harmonicInfo,
+              ...hammerPullInfo,
               measureIndex,
             });
           }
@@ -361,6 +404,20 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
   }
 
   notes.sort((a, b) => a.timestampMs - b.timestampMs || a.string - b.string);
+
+  // Link legato chains between consecutive notes on the same string
+  for (let i = 1; i < notes.length; i += 1) {
+    const current = notes[i];
+    if (current.isHammerOn || current.isPullOff) {
+      for (let j = i - 1; j >= 0; j -= 1) {
+        const prev = notes[j];
+        if (prev.string === current.string && current.timestampMs - prev.timestampMs <= 1200) {
+          current.legatoOriginNoteId = prev.id;
+          break;
+        }
+      }
+    }
+  }
 
   if (notes.length === 0) {
     throw new Error('Не бяха открити китарни ноти в избраната партия.');

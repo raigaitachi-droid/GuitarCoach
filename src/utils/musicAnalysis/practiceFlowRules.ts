@@ -116,7 +116,7 @@ export function buildPracticeFlowAssignment(
     reason,
     startTempoPercent,
     chunk,
-    successCriteria: PRACTICE_FLOW_RULES.success.criteria,
+    successCriteria: [...PRACTICE_FLOW_RULES.success.criteria],
     failureAction:
       'Ако повториш същата грешка, не качвай темпото. Намали скоростта, скъси клетката или упражни ръката/гласа отделно.',
     nextStep:
