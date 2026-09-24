@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { advanceLoop, applyWaitGate, findWeakSection, judgeDetectedPitch, loopBoundaries, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { advanceLoop, applyWaitGate, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
 
 const notes: TabNote[] = [
@@ -28,7 +28,15 @@ test('pitch judgement applies latency, timing windows, and cents tolerance consi
   expect(judgeDetectedPitch({ ...base, playbackMs: 910 })).toMatchObject({ kind: 'correct', timing: 'early', timingOffsetMs: -120 });
   expect(judgeDetectedPitch({ ...base, playbackMs: 1130 })).toMatchObject({ kind: 'correct', timing: 'late', timingOffsetMs: 100 });
   expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 41, cents: 0 } })).toMatchObject({ kind: 'wrong', expected: target });
-  expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 40, cents: 47 } })).toMatchObject({ kind: 'wrong', expected: target });
+  expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 40, cents: 50 } })).toMatchObject({ kind: 'correct', note: target });
+});
+
+test('guitar pitches use the same MIDI-to-Hz map as the imported Guitar Pro notes', () => {
+  expect(expectedMidi({ id: 'high-e', string: 1, fret: 0, timestampMs: 0, durationMs: 1 })).toBe(64);
+  expect(expectedMidi({ id: 'low-e', string: 6, fret: 0, timestampMs: 0, durationMs: 1 })).toBe(40);
+  expect(midiToFrequency(40)).toBeCloseTo(82.4069, 4); // low E (E2)
+  expect(midiToFrequency(45)).toBeCloseTo(110, 4); // A2
+  expect(midiToFrequency(64)).toBeCloseTo(329.6276, 4); // high E (E4)
 });
 
 test('misses are only assigned after the scaled timing deadline', () => {

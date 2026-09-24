@@ -35,7 +35,14 @@ export const STANDARD_TUNING = [64, 59, 55, 50, 45, 40];
 // real-time forgiveness window at 100% tempo; it scales with playback speed.
 export const TIMING_WINDOW_MS = 360;
 export const TIMING_FEEDBACK_THRESHOLD_MS = 80;
-export const PITCH_TOLERANCE_CENTS = 46;
+// ±50 cents is exactly the boundary of the nearest semitone. It is the widest
+// useful tolerance: a slightly sharp/flat guitar note still counts, while the
+// neighboring note does not.
+export const PITCH_TOLERANCE_CENTS = 50;
+
+export function midiToFrequency(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
 
 export function expectedMidi(note: TabNote): number {
   if (note.expectedMidi !== undefined) return note.expectedMidi;

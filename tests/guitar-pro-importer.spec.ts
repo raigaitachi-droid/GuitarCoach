@@ -21,7 +21,9 @@ test('imports alphaTab playback timing and exposes real bar boundaries', async (
   expect(song.title).toBe('Timing test');
   expect(song.notes.map((note) => note.timestampMs)).toEqual([1000, 1500, 1750, 2000, 2125]);
   expect(song.notes.map((note) => note.durationMs)).toEqual([500, 250, 250, 125, 125]);
-  expect(song.notes.every((note) => typeof note.expectedMidi === 'number')).toBe(true);
+  // AlphaTab's realValue is the sounding MIDI pitch: string tuning + fret.
+  // These are E2, F#2, G2, A2, and B2 on the low E string.
+  expect(song.notes.map((note) => note.expectedMidi)).toEqual([40, 42, 43, 45, 47]);
   expect(song.bars).toEqual(expect.arrayContaining([
     expect.objectContaining({ index: 1, sourceMeasureIndex: 1, startMs: 1000, timeSignature: '4/4' }),
   ]));
