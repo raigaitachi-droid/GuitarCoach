@@ -133,6 +133,7 @@ test('a disconnected input pauses practice with a human error', async ({ page })
   await page.goto('/');
   await loadRiff(page);
   await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Listening');
   await page.evaluate(() => (window as any).testGuitar.disconnect());
   await expect(page.getByRole('status')).toHaveText('Your guitar input disconnected. Check the cable and try again.');
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeDisabled();
@@ -159,6 +160,11 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await page.getByRole('button', { name: 'Wait Mode Off' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  const waitingPosition = await page.getByRole('progressbar').getAttribute('value');
+  await page.evaluate(() => (window as any).testGuitar.pluck(41));
+  await expect(page.getByRole('status')).toContainText('Wrong note · play E2');
+  await page.waitForTimeout(250);
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', waitingPosition!);
   await page.evaluate(() => (window as any).testGuitar.pluck(40));
   await expect(page.getByRole('status')).toContainText('Correct note');
   await page.getByRole('button', { name: 'Finish practice' }).click();

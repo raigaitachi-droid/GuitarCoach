@@ -111,3 +111,18 @@ export function missedNoteIds(notes: TabNote[], scorableIds: Set<string>, playba
     .filter((note) => scorableIds.has(note.id) && !note.hitState && playbackMs - note.timestampMs > deadlineMs)
     .map((note) => note.id));
 }
+
+export interface WaitGateResult {
+  playbackMs: number;
+  waitingNote: TabNote | null;
+}
+
+export function applyWaitGate(notes: TabNote[], scorableIds: Set<string>, proposedPlaybackMs: number): WaitGateResult {
+  const waitingNote = notes.find((note) =>
+    scorableIds.has(note.id) && !note.hitState && note.timestampMs <= proposedPlaybackMs
+  ) || null;
+
+  return waitingNote
+    ? { playbackMs: waitingNote.timestampMs, waitingNote }
+    : { playbackMs: proposedPlaybackMs, waitingNote: null };
+}

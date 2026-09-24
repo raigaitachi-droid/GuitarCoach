@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { judgeDetectedPitch, missedNoteIds, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { applyWaitGate, judgeDetectedPitch, missedNoteIds, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { TabNote } from '../src/types';
 
 const notes: TabNote[] = [
@@ -37,4 +37,14 @@ test('misses are only assigned after the scaled timing deadline', () => {
   expect([...missedNoteIds([target], scorableIds, 1240, 1)]).toEqual([]);
   expect([...missedNoteIds([target], scorableIds, 1241, 1)]).toEqual(['target']);
   expect([...missedNoteIds([target], scorableIds, 1121, 0.5)]).toEqual(['target']);
+});
+
+test('wait mode stops on the first unresolved single note and releases only after it is hit', () => {
+  const first: TabNote = { id: 'first', string: 6, fret: 0, timestampMs: 1000, durationMs: 500 };
+  const second: TabNote = { id: 'second', string: 5, fret: 0, timestampMs: 1500, durationMs: 500 };
+  const scorableIds = new Set(['first', 'second']);
+
+  expect(applyWaitGate([first, second], scorableIds, 1400)).toEqual({ playbackMs: 1000, waitingNote: first });
+  expect(applyWaitGate([{ ...first, hitState: 'hit' }, second], scorableIds, 1400)).toEqual({ playbackMs: 1400, waitingNote: null });
+  expect(applyWaitGate([{ ...first, hitState: 'hit' }, second], scorableIds, 1600)).toEqual({ playbackMs: 1500, waitingNote: second });
 });

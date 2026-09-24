@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector } from '../utils/pitchDetector';
-import { expectedMidi, judgeDetectedPitch, missedNoteIds, PracticeResult, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
+import { applyWaitGate, expectedMidi, judgeDetectedPitch, missedNoteIds, PracticeResult, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
@@ -36,6 +36,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
   const completedRef = useRef(false);
   const onFinishRef = useRef(onFinish);
   const lastConsumedPluck = useRef(-1);
+  const lastFeedbackPluck = useRef(-1);
   const lastHitNote = useRef<TabNote | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
   const hasChords = scorableIds.size !== song.notes.length;
@@ -87,7 +88,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
       });
       if (judgement.kind === 'ignored') return;
       if (judgement.kind === 'wrong') {
-        if (result.pluckId !== lastConsumedPluck.current) {
+        if (result.pluckId !== lastFeedbackPluck.current) {
+          lastFeedbackPluck.current = result.pluckId;
           setFeedback({ text: `Wrong note · play ${noteName(judgement.expected)}`, kind: 'wrong', at: performance.now() });
         }
         return;
@@ -115,10 +117,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
         const previous = playbackRef.current;
         let next = Math.min(duration, previous + elapsed * tempoRef.current);
         if (waitModeRef.current && withAudio) {
-          const target = notesRef.current.find((note) => scorableIds.has(note.id) && !note.hitState && note.timestampMs <= next);
-          if (target) {
-            next = target.timestampMs;
-            if (waitingRef.current?.id !== target.id) { waitingRef.current = target; setWaiting(target); }
+          const gated = applyWaitGate(notesRef.current, scorableIds, next);
+          next = gated.playbackMs;
+          if (waitingRef.current?.id !== gated.waitingNote?.id) {
+            waitingRef.current = gated.waitingNote;
+            setWaiting(gated.waitingNote);
           }
         }
         if (withAudio && !waitModeRef.current) {
@@ -174,7 +177,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
       </div>
       <div className="practice-status">
         <p className={inputError ? 'error-message' : recentFeedback?.kind || ''} role="status">
-          {inputError || (!playing ? 'Paused' : waiting ? `Waiting for ${noteName(waiting)}` : recentFeedback?.text || (withAudio ? 'Listening · play along' : 'Playback only · audio input is off'))}
+          {inputError || (!playing ? 'Paused' : recentFeedback?.text || (waiting ? `Waiting for ${noteName(waiting)}` : withAudio ? 'Listening · play along' : 'Playback only · audio input is off'))}
           {playing && !waiting && recentFeedback?.timing && <span className="timing-feedback">{recentFeedback.timing}</span>}
         </p>
         {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
