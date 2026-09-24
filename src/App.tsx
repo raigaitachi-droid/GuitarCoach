@@ -14,7 +14,7 @@ function demoSong(): ImportedSong {
     ...note,
     measureIndex: Math.max(1, Math.floor((note.timestampMs - 1000) / (60000 / song.tempo * 4)) + 1),
   }));
-  return { ...song, title: 'Canon in D · demo', notes, sections: [], sourceFileName: '', attempts: 0, bestAccuracy: 0, measures: Math.max(...notes.map((note) => note.measureIndex)) };
+  return { ...song, title: 'Canon in D · demo', notes, sourceFileName: '', attempts: 0, bestAccuracy: 0, measures: Math.max(...notes.map((note) => note.measureIndex)) };
 }
 
 export default function App() {

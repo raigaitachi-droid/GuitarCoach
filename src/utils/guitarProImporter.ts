@@ -319,7 +319,6 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
     bestAccuracy: 0,
     measures: bars.length || score.masterBars.length,
     notes,
-    sections: [],
     bars,
     sourceFileName: file.name,
   };

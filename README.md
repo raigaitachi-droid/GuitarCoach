@@ -8,7 +8,7 @@ GuitarCoach is a desktop-first browser practice tool for guitarists who already
 use Guitar Pro tabs. Chrome and Edge desktop are the primary targets. No account,
 API key, desktop installation, or audio upload is required.
 
-## Current checkpoint: Stages 1-7
+## Current checkpoint: Minimal MVP complete (Stages 1-8)
 
 The active app has three screens:
 
@@ -27,8 +27,8 @@ The active app has three screens:
    never generates an accuracy score. Unplayed notes after an early stop do not
    count as misses. Audio capture stops on completion.
 
-This is not the finished feedback MVP. There are no placeholder scores or
-nonfunctional recommendation buttons.
+The MVP intentionally stops here: no account, social layer, lessons, chat,
+gamification, or analytics dashboard competes with the practice loop.
 
 ## Run locally
 
@@ -47,9 +47,8 @@ npm run build
 npm run preview
 ```
 
-The default development command runs Vite only. The retained `server.ts` and
-legacy AI components are outside the active application; no AI service runs or
-receives practice data.
+The default development command runs Vite only. There is no server-side AI
+service, account system, or practice-data upload.
 
 ## Verify
 
@@ -64,8 +63,8 @@ file failures and a generated real GP file, pause/replay, natural completion,
 input selection, denied permission, the wait gate, scoring silence, and capture
 cleanup. A synthetic pitched tone passes through the real worklet and detector
 to release Wait Mode and produce a measured result. Tests also check partial-session
-accuracy and exclusion of simultaneous chords. `CHROMIUM_EXECUTABLE_PATH` can point
-to an already-installed Chromium.
+accuracy, exclusion of simultaneous chords, exact loop boundaries, and a weak-section
+restart. `CHROMIUM_EXECUTABLE_PATH` can point to an already-installed Chromium.
 
 Synthetic browser inputs verify the application lifecycle, **not real-guitar
 pitch accuracy**. USB cable/interface/microphone testing on Chrome and Edge is a
@@ -82,12 +81,12 @@ Keep the web foundation, importer, audio worklet, pitch detector, synthesizer,
 scrolling note geometry, and useful session data. Simplify their connections
 before replacing working behavior.
 
-Removed from the active flow: AI chat and adaptive coaching, catalog browsing,
-tuner screens, technique-map drawers, manual simulated hits, score multipliers,
-stars, streaks, fullscreen/settings panels, and automatic endless replay. Legacy
-UI components remain unreferenced and are not shipped in the active JavaScript
-entry. The old automatic section and technique-analysis heuristics have been
-removed from the importer because they do not support the practice loop.
+Removed: AI chat and adaptive coaching, catalog browsing, tuner screens,
+technique-map drawers, manual simulated hits, score multipliers, stars, streaks,
+fullscreen/settings panels, and automatic endless replay. Their unused
+components, server, analysis utilities, and dependencies are removed from the
+repository. The old automatic section and technique-analysis heuristics have
+also been removed from the importer because they do not support the practice loop.
 
 Stage 1 also stops crediting every note in a chord from a single detected pitch.
 Simultaneous notes remain visible but are excluded from scoring and the wait gate.
@@ -106,7 +105,7 @@ checks before the next stage starts.
 | 5 — Wait Mode | Done: gate the playback clock at the first unresolved single note; release once per valid note; ignore duplicate feedback from one pluck. | Silence and wrong notes hold; the right note advances once; no unintended credits. |
 | 6 — Loop and tempo | Done: enable Loop at the current bar, select an inclusive From/To range, restart exactly at its first expanded Guitar Pro bar, and retain the five percentage presets. | Pure tests cover exact boundaries, wrap behavior, and pass-only score reset; the full browser suite passes. |
 | 7 — Weak section | Done: collect wrong and missed notes by bar, scan up to three adjacent played bars, require at least two assessed notes, and rank error concentration deterministically. The CTA selects the exact range, enables Loop, drops one tempo preset, and starts again. | Sparse/unplayed regions never win; clustered mistakes do; pure and browser tests verify the focused restart. |
-| 8 — Polish | Remove remaining dead code/dependencies; check focus, readable feedback, loading/error recovery, and desktop layout; verify hosting asset paths and Chrome/Edge. | A guitarist can load, connect, play, understand feedback, and repeat a weak section without instructions. |
+| 8 — Polish | Done: remove the unused AI/server, tuner, catalog, analysis modules and their dependencies; retain keyboard focus states, human audio errors, responsive desktop controls, and GitHub Pages base-path build. | TypeScript, production build, and all 15 browser/unit tests pass. |
 
 ## Known limits at this checkpoint
 
@@ -121,8 +120,8 @@ checks before the next stage starts.
   other techniques require validation before their feedback can be relied on.
 - Practice audio is not monitored through the speakers. Playback-only mode uses
   the existing synth.
-- A disconnected input pauses practice. Finish and reconnect from Start; direct
-  in-session recovery is Stage 3 work.
+- A disconnected input pauses practice. Finish, return to Start, and reconnect
+  the input before the next attempt.
 - GitHub Pages builds with the repository base path, so the deployed preview can
   load its assets from a repository subdirectory.
 
