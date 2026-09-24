@@ -26,6 +26,16 @@ export interface SongSection {
   confidence: 'marker' | 'auto';
 }
 
+export interface SongBar {
+  /** Position in the playback timeline. Repeated bars appear once per pass. */
+  index: number;
+  /** Original Guitar Pro bar number, before repeats are expanded. */
+  sourceMeasureIndex: number;
+  startMs: number;
+  endMs: number;
+  timeSignature: string;
+}
+
 export interface SongMetadata {
   id: string;
   title: string;
@@ -98,6 +108,7 @@ export interface SongAnalysis {
 export interface ImportedSong extends SongMetadata {
   notes: TabNote[];
   sections: SongSection[];
+  bars?: SongBar[];
   sourceFileName: string;
   analysis?: SongAnalysis;
 }
