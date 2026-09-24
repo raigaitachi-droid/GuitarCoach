@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { advanceLoop, applyWaitGate, judgeDetectedPitch, loopBoundaries, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
-import { SongBar, TabNote } from '../src/types';
+import { advanceLoop, applyWaitGate, findWeakSection, judgeDetectedPitch, loopBoundaries, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { ImportedSong, SongBar, TabNote } from '../src/types';
 
 const notes: TabNote[] = [
   { id: 'hit', string: 1, fret: 0, timestampMs: 1000, durationMs: 500, hitState: 'hit' },
@@ -64,4 +64,22 @@ test('loop uses exact bar boundaries and resets only its selected pass', () => {
   expect(reset.find((note) => note.id === 'hit')?.hitState).toBe('hit');
   expect(reset.find((note) => note.id === 'miss')?.hitState).toBeUndefined();
   expect(reset.find((note) => note.id === 'future')?.hitState).toBeUndefined();
+});
+
+test('weak section needs meaningful played evidence and chooses the densest error cluster', () => {
+  const bars: SongBar[] = [
+    { index: 1, sourceMeasureIndex: 1, startMs: 0, endMs: 1000, timeSignature: '4/4' },
+    { index: 2, sourceMeasureIndex: 2, startMs: 1000, endMs: 2000, timeSignature: '4/4' },
+    { index: 3, sourceMeasureIndex: 3, startMs: 2000, endMs: 3000, timeSignature: '4/4' },
+    { index: 4, sourceMeasureIndex: 4, startMs: 3000, endMs: 4000, timeSignature: '4/4' },
+  ];
+  const song = { bars, measures: 4 } as ImportedSong;
+  const played: TabNote[] = [
+    { id: 'one', string: 6, fret: 0, timestampMs: 100, durationMs: 100, hitState: 'hit' },
+    { id: 'two', string: 6, fret: 1, timestampMs: 1100, durationMs: 100, hitState: 'miss' },
+    { id: 'three', string: 6, fret: 2, timestampMs: 1500, durationMs: 100, mistakeCount: 1 },
+    { id: 'four', string: 6, fret: 3, timestampMs: 2100, durationMs: 100, hitState: 'hit' },
+  ];
+  expect(findWeakSection(song, played)).toMatchObject({ startBar: 2, endBar: 2, attempted: 2, mistakes: 2 });
+  expect(findWeakSection(song, [{ ...played[1], timestampMs: 3100 }])).toBeNull();
 });

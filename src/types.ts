@@ -14,6 +14,8 @@ export interface TabNote {
   measureIndex?: number;
   hitState?: 'unhit' | 'hit' | 'close' | 'miss' | 'wrong';
   timingOffsetMs?: number;
+  /** Wrong detected pitches before a note is resolved; used only for practice focus. */
+  mistakeCount?: number;
 }
 
 export interface SongSection {

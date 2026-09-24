@@ -9,9 +9,16 @@ export interface PracticeResult {
   hadAudio: boolean;
 }
 
+export interface WeakSection {
+  startBar: number;
+  endBar: number;
+  attempted: number;
+  mistakes: number;
+}
+
 // Only judged notes count. Stopping early must not penalize the unplayed tail.
 export function summarizePractice(notes: TabNote[], tempoPercent: number, hadAudio: boolean): PracticeResult {
-  const attempted = hadAudio ? notes.filter((note) => note.hitState && note.hitState !== 'unhit') : [];
+  const attempted = hadAudio ? notes.filter((note) => (note.hitState && note.hitState !== 'unhit') || note.mistakeCount) : [];
   const correct = attempted.filter((note) => note.hitState === 'hit' || note.hitState === 'close').length;
   return {
     accuracy: attempted.length ? Math.round(correct / attempted.length * 100) : null,
@@ -178,7 +185,32 @@ export function advanceLoop(proposedPlaybackMs: number, boundaries: LoopBoundari
 // retain their session history for the final practice result.
 export function resetLoopPass(notes: TabNote[], boundaries: LoopBoundaries): TabNote[] {
   return notes.map((note) => note.timestampMs >= boundaries.startMs && note.timestampMs < boundaries.endMs
-    ? { ...note, hitState: undefined, timingOffsetMs: undefined }
+    ? { ...note, hitState: undefined, timingOffsetMs: undefined, mistakeCount: undefined }
     : note
   );
+}
+
+// This deliberately stays small and explainable: scan up to three adjacent
+// played bars, ignore sparse data, then prefer the highest error concentration.
+export function findWeakSection(song: ImportedSong, notes: TabNote[]): WeakSection | null {
+  const bars = practiceBars(song);
+  let best: WeakSection | null = null;
+
+  for (let start = 0; start < bars.length; start++) {
+    for (let end = start; end < Math.min(bars.length, start + 3); end++) {
+      const selected = notes.filter((note) => note.timestampMs >= bars[start].startMs && note.timestampMs < bars[end].endMs);
+      const attempted = selected.filter((note) => (note.hitState && note.hitState !== 'unhit') || note.mistakeCount).length;
+      const mistakes = selected.reduce((total, note) => total + (note.mistakeCount || 0) + (note.hitState === 'miss' ? 1 : 0), 0);
+      if (attempted < 2 || mistakes === 0) continue;
+      const candidate = { startBar: bars[start].index, endBar: bars[end].index, attempted, mistakes };
+      const candidateRate = candidate.mistakes / candidate.attempted;
+      const bestRate = best ? best.mistakes / best.attempted : -1;
+      if (!best || candidateRate > bestRate ||
+        (candidateRate === bestRate && candidate.mistakes > best.mistakes) ||
+        (candidateRate === bestRate && candidate.mistakes === best.mistakes && candidate.endBar - candidate.startBar < best.endBar - best.startBar)) {
+        best = candidate;
+      }
+    }
+  }
+  return best;
 }

@@ -107,6 +107,11 @@ test('selected audio input, wait gate, zero score for silence, and cleanup', asy
   expect(await page.evaluate(() => (window as any).testGuitar.constraints.audio.deviceId.exact)).toBe('usb-guitar');
   await page.getByRole('button', { name: 'Wait Mode On' }).click();
   await expect(page.getByRole('heading', { name: '0% accuracy' })).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText('Weakest section:')).toBeVisible();
+  await page.getByRole('button', { name: 'Practice weak section' }).click();
+  await expect(page.getByRole('button', { name: 'Loop On' })).toBeVisible();
+  await expect(page.getByLabel('Tempo')).toHaveValue('70');
+  await page.getByRole('button', { name: 'Finish practice' }).click();
   expect(await page.evaluate(() => (window as any).testGuitar.active)).toBe(0);
   await page.getByRole('button', { name: 'Play again' }).click();
   expect(await page.evaluate(() => (window as any).testGuitar.active)).toBe(1);

@@ -69,6 +69,7 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
 .result-content { width: min(100%, 600px); text-align: center; }
 .result-content h1 { font-size: 26px; font-weight: 500; margin-top: 32px; margin-bottom: 20px; }
 .accuracy { display: block; font-size: 88px; line-height: 1.2; letter-spacing: -4px; color: #c7e8d2; }
+.weak-section { color: #c7e8d2; font-size: 15px; margin-top: 18px; }
 .result-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 36px; }
 .result-content .error-message { margin-top: 20px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

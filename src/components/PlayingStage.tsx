@@ -9,6 +9,7 @@ interface Props {
   song: ImportedSong;
   withAudio: boolean;
   tempoPercent: number;
+  initialLoopRange?: PracticeLoopRange | null;
   onTempoPercentChange: (percent: number) => void;
   onFinish: (result: PracticeResult) => void;
 }
@@ -23,24 +24,26 @@ function barAt(bars: ReturnType<typeof practiceBars>, playbackMs: number) {
   return bars.find((bar) => playbackMs >= bar.startMs && playbackMs < bar.endMs) || bars.at(-1);
 }
 
-export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChange, onFinish }: Props) {
-  const [notes, setNotes] = useState<TabNote[]>(() => song.notes.map((note) => ({ ...note, hitState: undefined })));
+export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, onTempoPercentChange, onFinish }: Props) {
+  const bars = useMemo(() => practiceBars(song), [song]);
+  const startingRange = normalizeLoopRange(initialLoopRange || { startBar: 1, endBar: 1 }, bars.length);
+  const startingBoundaries = initialLoopRange ? loopBoundaries(bars, startingRange) : null;
+  const [notes, setNotes] = useState<TabNote[]>(() => song.notes.map((note) => ({ ...note, hitState: undefined, mistakeCount: undefined })));
   const notesRef = useRef<TabNote[]>(notes);
   const [playing, setPlaying] = useState(true);
   const playingRef = useRef(true);
-  const [playbackMs, setPlaybackMs] = useState(0);
-  const playbackRef = useRef(0);
+  const [playbackMs, setPlaybackMs] = useState(() => startingBoundaries?.startMs || 0);
+  const playbackRef = useRef(startingBoundaries?.startMs || 0);
   const [waitMode, setWaitMode] = useState(false);
   const waitModeRef = useRef(false);
   const [waiting, setWaiting] = useState<TabNote | null>(null);
   const waitingRef = useRef<TabNote | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; kind: 'correct' | 'wrong'; timing?: string; at: number } | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
-  const bars = useMemo(() => practiceBars(song), [song]);
-  const [loopEnabled, setLoopEnabled] = useState(false);
-  const loopEnabledRef = useRef(false);
-  const [loopRange, setLoopRange] = useState<PracticeLoopRange>({ startBar: 1, endBar: 1 });
-  const loopRangeRef = useRef<PracticeLoopRange>({ startBar: 1, endBar: 1 });
+  const [loopEnabled, setLoopEnabled] = useState(Boolean(initialLoopRange));
+  const loopEnabledRef = useRef(Boolean(initialLoopRange));
+  const [loopRange, setLoopRange] = useState<PracticeLoopRange>(startingRange);
+  const loopRangeRef = useRef<PracticeLoopRange>(startingRange);
   const tempoRef = useRef(tempoPercent / 100);
   const completedRef = useRef(false);
   const onFinishRef = useRef(onFinish);
@@ -133,6 +136,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
       if (judgement.kind === 'wrong') {
         if (result.pluckId !== lastFeedbackPluck.current) {
           lastFeedbackPluck.current = result.pluckId;
+          updateNotes(notesRef.current.map((note) => note.id === judgement.expected.id
+            ? { ...note, mistakeCount: (note.mistakeCount || 0) + 1 }
+            : note
+          ));
           setFeedback({ text: `Wrong note · play ${noteName(judgement.expected)}`, kind: 'wrong', at: performance.now() });
         }
         return;

@@ -8,7 +8,7 @@ GuitarCoach is a desktop-first browser practice tool for guitarists who already
 use Guitar Pro tabs. Chrome and Edge desktop are the primary targets. No account,
 API key, desktop installation, or audio upload is required.
 
-## Current checkpoint: Stages 1-6
+## Current checkpoint: Stages 1-7
 
 The active app has three screens:
 
@@ -21,12 +21,13 @@ The active app has three screens:
    expanded Guitar Pro bar timeline and resets the selected pass cleanly.
    `Finish practice` ends the session; a song also ends naturally. Space toggles
    playback and W toggles Wait Mode when focus is outside a form control.
-3. **Result:** accuracy from assessed single notes, Play again, and Load another
-   tab. Playback without audio never generates an accuracy score. Unplayed notes
-   after an early stop do not count as misses. Audio capture stops on completion.
+3. **Result:** accuracy from assessed single notes and, when there is enough
+   played evidence, one weakest bar range. `Practice weak section` immediately
+   opens that range in Loop at one lower tempo preset. Playback without audio
+   never generates an accuracy score. Unplayed notes after an early stop do not
+   count as misses. Audio capture stops on completion.
 
-This is not the finished feedback MVP. The weakest-section recommendation is
-deliberately absent until Stage 7. There are no placeholder scores or
+This is not the finished feedback MVP. There are no placeholder scores or
 nonfunctional recommendation buttons.
 
 ## Run locally
@@ -104,7 +105,7 @@ checks before the next stage starts.
 | 4 — Matching | Done: compare detected pitch to the sounding score pitch on the playback clock; account for capture latency and tempo; distinguish wrong, missed, early, and late notes without repeat credits. | Deterministic tests cover latency, cents tolerance, timing boundaries, silence, repeated plucks, and miss deadlines. |
 | 5 — Wait Mode | Done: gate the playback clock at the first unresolved single note; release once per valid note; ignore duplicate feedback from one pluck. | Silence and wrong notes hold; the right note advances once; no unintended credits. |
 | 6 — Loop and tempo | Done: enable Loop at the current bar, select an inclusive From/To range, restart exactly at its first expanded Guitar Pro bar, and retain the five percentage presets. | Pure tests cover exact boundaries, wrap behavior, and pass-only score reset; the full browser suite passes. |
-| 7 — Weak section | Collect errors by played bar and scan short contiguous windows; require enough attempts, rank by mistake concentration, and break ties consistently. Recommend only observed sections. CTA selects that range, enables loop, reduces tempo when useful, and starts practice. | Sparse/unplayed regions never win; clustered mistakes do; CTA starts the exact recommended range. |
+| 7 — Weak section | Done: collect wrong and missed notes by bar, scan up to three adjacent played bars, require at least two assessed notes, and rank error concentration deterministically. The CTA selects the exact range, enables Loop, drops one tempo preset, and starts again. | Sparse/unplayed regions never win; clustered mistakes do; pure and browser tests verify the focused restart. |
 | 8 — Polish | Remove remaining dead code/dependencies; check focus, readable feedback, loading/error recovery, and desktop layout; verify hosting asset paths and Chrome/Edge. | A guitarist can load, connect, play, understand feedback, and repeat a weak section without instructions. |
 
 ## Known limits at this checkpoint
