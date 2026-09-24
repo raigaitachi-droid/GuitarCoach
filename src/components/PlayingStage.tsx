@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector } from '../utils/pitchDetector';
-import { expectedMidi, PracticeResult, singleNoteIds, summarizePractice } from '../utils/practiceSession';
+import { expectedMidi, judgeDetectedPitch, missedNoteIds, PracticeResult, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
@@ -13,7 +13,6 @@ interface Props {
   onFinish: (result: PracticeResult) => void;
 }
 
-const TIMING_WINDOW_MS = 240;
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 function noteName(note: TabNote) {
   const midi = expectedMidi(note);
@@ -77,29 +76,32 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
       }
       if (!result || !playingRef.current || completedRef.current) return;
       if (result.isVoiceLike || (!result.onset && result.confidence < 0.68)) return;
-      const effectiveTime = playbackRef.current - micDetector.getEstimatedInputLatencyMs() * tempoRef.current;
-      const windowMs = TIMING_WINDOW_MS * tempoRef.current;
-      const candidates = waitingRef.current ? [waitingRef.current] : notesRef.current.filter((note) =>
-        scorableIds.has(note.id) && !note.hitState && Math.abs(note.timestampMs - effectiveTime) <= windowMs
-      ).sort((a, b) => Math.abs(a.timestampMs - effectiveTime) - Math.abs(b.timestampMs - effectiveTime));
-      if (!candidates.length) return;
-      const matched = candidates.find((note) => result.midiNumber === expectedMidi(note) && Math.abs(result.cents) <= 46);
-      if (!matched) {
+      const judgement = judgeDetectedPitch({
+        notes: notesRef.current,
+        scorableIds,
+        playbackMs: playbackRef.current,
+        tempoScale: tempoRef.current,
+        inputLatencyMs: micDetector.getEstimatedInputLatencyMs(),
+        detected: result,
+        waitingNoteId: waitingRef.current?.id,
+      });
+      if (judgement.kind === 'ignored') return;
+      if (judgement.kind === 'wrong') {
         if (result.pluckId !== lastConsumedPluck.current) {
-          setFeedback({ text: `Wrong note · play ${noteName(candidates[0])}`, kind: 'wrong', at: performance.now() });
+          setFeedback({ text: `Wrong note · play ${noteName(judgement.expected)}`, kind: 'wrong', at: performance.now() });
         }
         return;
       }
+      const matched = judgement.note;
       // A sustained note cannot satisfy another pick. Retain legato support.
       if (result.pluckId === lastConsumedPluck.current &&
           !(lastHitNote.current && (matched.isHammerOn || matched.isPullOff) && expectedMidi(matched) !== expectedMidi(lastHitNote.current))) return;
       lastConsumedPluck.current = result.pluckId;
       lastHitNote.current = matched;
-      const offset = waitingRef.current ? 0 : Math.round((effectiveTime - matched.timestampMs) / tempoRef.current);
-      updateNotes(notesRef.current.map((note) => note.id === matched.id ? { ...note, hitState: 'hit', timingOffsetMs: offset } : note));
+      updateNotes(notesRef.current.map((note) => note.id === matched.id ? { ...note, hitState: 'hit', timingOffsetMs: judgement.timingOffsetMs } : note));
       waitingRef.current = null;
       setWaiting(null);
-      setFeedback({ text: 'Correct note', kind: 'correct', timing: Math.abs(offset) > 80 ? offset < 0 ? 'EARLY' : 'LATE' : undefined, at: performance.now() });
+      setFeedback({ text: 'Correct note', kind: 'correct', timing: judgement.timing === 'on-time' ? undefined : judgement.timing.toUpperCase(), at: performance.now() });
     });
   }, [withAudio, scorableIds]);
 
@@ -120,15 +122,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
           }
         }
         if (withAudio && !waitModeRef.current) {
-          let missed = false;
-          const judged = notesRef.current.map((note) => {
-            if (scorableIds.has(note.id) && !note.hitState && next - note.timestampMs > TIMING_WINDOW_MS * tempoRef.current) {
-              missed = true;
-              return { ...note, hitState: 'miss' as const };
-            }
-            return note;
-          });
-          if (missed) {
+          const missedIds = missedNoteIds(notesRef.current, scorableIds, next, tempoRef.current);
+          if (missedIds.size > 0) {
+            const judged = notesRef.current.map((note) => missedIds.has(note.id) ? { ...note, hitState: 'miss' as const } : note);
             updateNotes(judged);
             setFeedback({ text: 'Missed note', kind: 'wrong', at: now });
           }

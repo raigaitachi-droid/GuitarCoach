@@ -8,7 +8,7 @@ GuitarCoach is a desktop-first browser practice tool for guitarists who already
 use Guitar Pro tabs. Chrome and Edge desktop are the primary targets. No account,
 API key, desktop installation, or audio upload is required.
 
-## Current checkpoint: Stages 1-2
+## Current checkpoint: Stages 1-4
 
 The active app has three screens:
 
@@ -99,8 +99,8 @@ checks before the next stage starts.
 |---|---|---|
 | 1 — Flow | Minimal Start → Practice → Result; device selection; real session summary; replay; remove competing surfaces. | Demo and imported tab can complete, stop, and replay; errors recover; no fabricated scores or audio leaks. |
 | 2 — GP loading and playback | Done: retain alphaTab's expanded playback ticks, select a non-percussion stringed track, preserve note durations, repeats, tempo changes, time signatures, and exact playback bars. | A generated GP7 fixture verifies note timing, MIDI pitches, and bar boundaries; the full browser suite passes. |
-| 3 — Audio | Stabilize input switching, capture ownership, disconnect recovery, pitch confidence, onset detection, silence handling, and human error messages. Keep processing local. | Recorded single guitar notes plus real USB cable/interface/microphone checks across the practical guitar range. |
-| 4 — Matching | Compare detected pitch to sounding score pitch on one clock; account for capture latency and tempo; distinguish wrong, missed, early, and late notes without repeat credits. | Deterministic pitch-event replays for correct/wrong notes, silence, repeated plucks, legato, and timing boundaries. |
+| 3 — Audio | Done in-browser: input selection, disconnect recovery, human errors, local worklet capture, onset/confidence filtering, and a sustainable analysis rate. | Browser lifecycle tests pass. Real USB cable/interface/microphone validation remains required. |
+| 4 — Matching | Done: compare detected pitch to the sounding score pitch on the playback clock; account for capture latency and tempo; distinguish wrong, missed, early, and late notes without repeat credits. | Deterministic tests cover latency, cents tolerance, timing boundaries, silence, repeated plucks, and miss deadlines. |
 | 5 — Wait Mode | Gate the authoritative playback clock at the next supported note; release once per valid note; handle pause, seek, restart, and repeated notes. | Silence and wrong notes hold; the right note advances once; no deadlocks or unintended credits. |
 | 6 — Loop and tempo | Select an inclusive bar range directly from the score; enable loop; preserve exact boundaries and percentage presets. | Repeated loops do not drift, skip first/last notes, or leak scores between passes. |
 | 7 — Weak section | Collect errors by played bar and scan short contiguous windows; require enough attempts, rank by mistake concentration, and break ties consistently. Recommend only observed sections. CTA selects that range, enables loop, reduces tempo when useful, and starts practice. | Sparse/unplayed regions never win; clustered mistakes do; CTA starts the exact recommended range. |
@@ -113,13 +113,12 @@ checks before the next stage starts.
   non-percussion stringed track, preferring six strings. It does not yet offer a
   track picker, and extension recognition does not mean every file variant is verified.
 - Input capture runs in an AudioWorklet; pitch analysis currently runs on the
-  browser's main thread. Detector accuracy, timing calibration, and performance
-  still require the Stage 3/4 validation matrix.
+  browser's main thread. The matching rules are covered by synthetic tests, but
+  detector accuracy and timing calibration still need real hardware validation.
 - Monophonic feedback only. Chords are displayed without scoring. Harmonics and
   other techniques require validation before their feedback can be relied on.
 - Practice audio is not monitored through the speakers. Playback-only mode uses
-  the existing synth. Backing playback and scoring need a coordinated clock in
-  Stage 4.
+  the existing synth.
 - A disconnected input pauses practice. Finish and reconnect from Start; direct
   in-session recovery is Stage 3 work.
 - The existing GitHub Pages deployment configuration is retained. Verify its base

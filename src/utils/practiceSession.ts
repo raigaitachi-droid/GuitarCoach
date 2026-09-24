@@ -24,6 +24,9 @@ export function summarizePractice(notes: TabNote[], tempoPercent: number, hadAud
 }
 
 export const STANDARD_TUNING = [64, 59, 55, 50, 45, 40];
+export const TIMING_WINDOW_MS = 240;
+export const TIMING_FEEDBACK_THRESHOLD_MS = 80;
+export const PITCH_TOLERANCE_CENTS = 46;
 
 export function expectedMidi(note: TabNote): number {
   if (note.expectedMidi !== undefined) return note.expectedMidi;
@@ -42,4 +45,69 @@ export function singleNoteIds(notes: TabNote[]): Set<string> {
   const counts = new Map<number, number>();
   for (const note of notes) counts.set(note.timestampMs, (counts.get(note.timestampMs) || 0) + 1);
   return new Set(notes.filter((note) => counts.get(note.timestampMs) === 1).map((note) => note.id));
+}
+
+export interface DetectedPitch {
+  midiNumber: number;
+  cents: number;
+}
+
+export type PitchJudgement =
+  | { kind: 'ignored' }
+  | { kind: 'wrong'; expected: TabNote }
+  | { kind: 'correct'; note: TabNote; timingOffsetMs: number; timing: 'early' | 'on-time' | 'late' };
+
+interface JudgePitchOptions {
+  notes: TabNote[];
+  scorableIds: Set<string>;
+  playbackMs: number;
+  tempoScale: number;
+  inputLatencyMs: number;
+  detected: DetectedPitch;
+  waitingNoteId?: string;
+}
+
+export function judgeDetectedPitch({
+  notes,
+  scorableIds,
+  playbackMs,
+  tempoScale,
+  inputLatencyMs,
+  detected,
+  waitingNoteId,
+}: JudgePitchOptions): PitchJudgement {
+  const scale = Math.max(0.01, tempoScale);
+  const effectivePlaybackMs = playbackMs - inputLatencyMs * scale;
+  const windowMs = TIMING_WINDOW_MS * scale;
+  const candidates = (waitingNoteId
+    ? notes.filter((note) => note.id === waitingNoteId && !note.hitState)
+    : notes.filter((note) =>
+        scorableIds.has(note.id) &&
+        !note.hitState &&
+        Math.abs(note.timestampMs - effectivePlaybackMs) <= windowMs
+      )
+  ).sort((a, b) => Math.abs(a.timestampMs - effectivePlaybackMs) - Math.abs(b.timestampMs - effectivePlaybackMs));
+
+  if (candidates.length === 0) return { kind: 'ignored' };
+
+  const matched = candidates.find((note) =>
+    detected.midiNumber === expectedMidi(note) && Math.abs(detected.cents) <= PITCH_TOLERANCE_CENTS
+  );
+  if (!matched) return { kind: 'wrong', expected: candidates[0] };
+
+  const timingOffsetMs = Math.round((effectivePlaybackMs - matched.timestampMs) / scale);
+  const timing = timingOffsetMs < -TIMING_FEEDBACK_THRESHOLD_MS
+    ? 'early'
+    : timingOffsetMs > TIMING_FEEDBACK_THRESHOLD_MS
+    ? 'late'
+    : 'on-time';
+
+  return { kind: 'correct', note: matched, timingOffsetMs, timing };
+}
+
+export function missedNoteIds(notes: TabNote[], scorableIds: Set<string>, playbackMs: number, tempoScale: number): Set<string> {
+  const deadlineMs = TIMING_WINDOW_MS * Math.max(0.01, tempoScale);
+  return new Set(notes
+    .filter((note) => scorableIds.has(note.id) && !note.hitState && playbackMs - note.timestampMs > deadlineMs)
+    .map((note) => note.id));
 }
