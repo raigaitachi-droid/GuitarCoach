@@ -2,7 +2,7 @@ name: Deploy GuitarCoach to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/minimal-practice-stage-1]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Build
-        run: npm run build
+        run: VITE_BASE_PATH=/GuitarCoach/ npm run build
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
