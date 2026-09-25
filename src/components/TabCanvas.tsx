@@ -64,10 +64,10 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         if (x < 50 || x > rect.width - 30) continue;
         ctx.fillStyle = '#929b99';
         ctx.fillText(`Bar ${note.measureIndex}`, Math.min(x, rect.width - 70), 20);
-        ctx.strokeStyle = '#3a4445';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x, 36); ctx.lineTo(x, rect.height - 30); ctx.stroke();
-        ctx.lineWidth = 1;
+        // Fill a snapped pixel column instead of stroking a fractional canvas
+        // coordinate; this keeps the bar boundary visibly solid on every DPR.
+        ctx.fillStyle = '#465152';
+        ctx.fillRect(Math.round(x) - 1, 36, 3, rect.height - 66);
       }
       ctx.strokeStyle = '#99b9a5';
       ctx.beginPath(); ctx.moveTo(hitX, 36); ctx.lineTo(hitX, rect.height - 30); ctx.stroke();
@@ -123,15 +123,12 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         ctx.fillStyle = isDragging ? 'rgba(5, 8, 9, 0.44)' : 'rgba(5, 8, 9, 0.56)';
         ctx.fillRect(0, 0, Math.max(0, left), rect.height);
         ctx.fillRect(Math.min(rect.width, right), 0, Math.max(0, rect.width - right), rect.height);
-        ctx.strokeStyle = isDragging ? '#b8a8e5' : '#8ecfb0';
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(startX, 32); ctx.lineTo(startX, rect.height - 26); ctx.stroke();
+        ctx.fillStyle = isDragging ? '#b8a8e5' : '#8ecfb0';
+        ctx.fillRect(Math.round(startX) - 2, 32, 4, rect.height - 58);
         // The right-hand vertical boundary makes the exact end of the loop
         // legible even when the final note has a long sustain.
-        ctx.strokeStyle = isDragging ? '#b8a8e5' : '#d9bd82';
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(endX, 32); ctx.lineTo(endX, rect.height - 26); ctx.stroke();
-        ctx.lineWidth = 1;
+        ctx.fillStyle = isDragging ? '#b8a8e5' : '#d9bd82';
+        ctx.fillRect(Math.round(endX) - 2, 32, 4, rect.height - 58);
       }
       frame = requestAnimationFrame(draw);
     };
