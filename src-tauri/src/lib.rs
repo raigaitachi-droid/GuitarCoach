@@ -323,6 +323,15 @@ fn build_stream(
       error_callback,
       None,
     ).map_err(|error| error.to_string()),
+    SampleFormat::U8 => device.build_input_stream(
+      config,
+      move |data: &[u8], _| {
+        let mono = data.chunks(channels).map(|frame| frame.iter().map(|sample| (*sample as f32 / u8::MAX as f32) * 2.0 - 1.0).sum::<f32>() / frame.len() as f32).collect();
+        process_input(mono, &processor, &app);
+      },
+      error_callback,
+      None,
+    ).map_err(|error| error.to_string()),
     unsupported => Err(format!("Unsupported input sample format: {unsupported:?}")),
   }
 }
