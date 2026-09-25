@@ -5,7 +5,7 @@ import { PracticeResult } from './components/PracticeResult';
 import { ImportedSong } from './types';
 import { micDetector } from './utils/pitchDetector';
 import { guitarSynth } from './utils/guitarSynth';
-import { PracticeResult as SessionResult } from './utils/practiceSession';
+import { findWeakSection, PracticeLoopRange, PracticeResult as SessionResult, WeakSection } from './utils/practiceSession';
 import { SONG_CATALOG, SONG_TABS } from './data/songTabs';
 
 function demoSong(): ImportedSong {
@@ -14,7 +14,7 @@ function demoSong(): ImportedSong {
     ...note,
     measureIndex: Math.max(1, Math.floor((note.timestampMs - 1000) / (60000 / song.tempo * 4)) + 1),
   }));
-  return { ...song, title: 'Canon in D · demo', notes, sections: [], sourceFileName: '', attempts: 0, bestAccuracy: 0, measures: Math.max(...notes.map((note) => note.measureIndex)) };
+  return { ...song, title: 'Canon in D · demo', notes, sourceFileName: '', attempts: 0, bestAccuracy: 0, measures: Math.max(...notes.map((note) => note.measureIndex)) };
 }
 
 export default function App() {
@@ -22,6 +22,8 @@ export default function App() {
   const [song, setSong] = useState<ImportedSong | null>(null);
   const [result, setResult] = useState<SessionResult | null>(null);
   const [tempoPercent, setTempoPercent] = useState(100);
+  const [weakSection, setWeakSection] = useState<WeakSection | null>(null);
+  const [practiceFocus, setPracticeFocus] = useState<PracticeLoopRange | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState('');
   const [withAudio, setWithAudio] = useState(false);
@@ -48,6 +50,12 @@ export default function App() {
       navigator.mediaDevices?.removeEventListener('devicechange', refreshInputs);
     };
   }, []);
+
+  useEffect(() => {
+    if (deviceId && !devices.some((device) => device.deviceId === deviceId)) {
+      setDeviceId('');
+    }
+  }, [deviceId, devices]);
 
   const loadFile = async (file: File) => {
     if (operation.current) return;
@@ -99,6 +107,7 @@ export default function App() {
       if (!useAudio) { micDetector.stopListening(); guitarSynth.resume(); }
       setWithAudio(useAudio);
       setResult(null);
+      setWeakSection(null);
       setScreen('practice');
     } finally {
       operation.current = false;
@@ -110,18 +119,25 @@ export default function App() {
     micDetector.stopListening();
     setSong(null);
     setResult(null);
+    setWeakSection(null);
+    setPracticeFocus(null);
     setError(null);
     setScreen('start');
   };
 
   if (screen === 'practice' && song) return (
-    <PlayingStage song={song} withAudio={withAudio} tempoPercent={tempoPercent} onTempoPercentChange={setTempoPercent}
-      onFinish={(session) => { micDetector.stopListening(); setResult(session); setScreen('result'); }} />
+    <PlayingStage song={song} withAudio={withAudio} tempoPercent={tempoPercent} initialLoopRange={practiceFocus} onTempoPercentChange={setTempoPercent}
+      onFinish={(session) => { micDetector.stopListening(); setPracticeFocus(null); setWeakSection(session.hadAudio ? findWeakSection(song, session.notes) : null); setResult(session); setScreen('result'); }} />
   );
 
   if (screen === 'result' && song && result) return (
-    <PracticeResult songTitle={song.title} result={result} isStarting={busy} error={error}
-      onReplay={() => { void startPractice(withAudio); }} onLoadAnother={reset} />
+    <PracticeResult songTitle={song.title} result={result} weakSection={weakSection} isStarting={busy} error={error}
+      onPracticeWeakSection={() => {
+        if (!weakSection) return;
+        setPracticeFocus({ startBar: weakSection.startBar, endBar: weakSection.endBar });
+        setTempoPercent(tempoPercent >= 90 ? 80 : tempoPercent >= 80 ? 70 : tempoPercent >= 70 ? 50 : 50);
+        void startPractice(withAudio);
+      }} onReplay={() => { setPracticeFocus(null); void startPractice(withAudio); }} onLoadAnother={reset} />
   );
 
   return <StartScreen song={song} loading={loading} busy={busy} error={error} devices={devices} deviceId={deviceId}

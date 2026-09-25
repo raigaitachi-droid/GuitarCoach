@@ -1,43 +1,79 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
-import { micDetector } from '../utils/pitchDetector';
-import { expectedMidi, PracticeResult, singleNoteIds, summarizePractice } from '../utils/practiceSession';
+import { micDetector, PitchResult } from '../utils/pitchDetector';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
   song: ImportedSong;
   withAudio: boolean;
   tempoPercent: number;
+  initialLoopRange?: PracticeLoopRange | null;
   onTempoPercentChange: (percent: number) => void;
   onFinish: (result: PracticeResult) => void;
 }
 
-const TIMING_WINDOW_MS = 240;
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 function noteName(note: TabNote) {
   const midi = expectedMidi(note);
   return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
-export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChange, onFinish }: Props) {
-  const [notes, setNotes] = useState<TabNote[]>(() => song.notes.map((note) => ({ ...note, hitState: undefined })));
+function midiName(midi: number) {
+  return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+}
+
+function barAt(bars: ReturnType<typeof practiceBars>, playbackMs: number) {
+  return bars.find((bar) => playbackMs >= bar.startMs && playbackMs < bar.endMs) || bars.at(-1);
+}
+
+function loopNoteLabel(notes: TabNote[], noteId: string | undefined) {
+  const index = notes.findIndex((note) => note.id === noteId);
+  return index < 0 ? '—' : `Note ${index + 1}`;
+}
+
+export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, onTempoPercentChange, onFinish }: Props) {
+  const bars = useMemo(() => practiceBars(song), [song]);
+  const startingRange = normalizeLoopRange(initialLoopRange || { startBar: 1, endBar: 1 }, bars.length);
+  const startingBoundaries = initialLoopRange ? loopBoundaries(bars, startingRange) : null;
+  const startingNoteRange = startingBoundaries ? noteLoopRangeForBars(song.notes, startingBoundaries) : null;
+  const initialNoteBoundaries = startingNoteRange ? noteLoopBoundaries(song.notes, startingNoteRange) : null;
+  const [notes, setNotes] = useState<TabNote[]>(() => song.notes.map((note) => ({ ...note, hitState: undefined, mistakeCount: undefined })));
   const notesRef = useRef<TabNote[]>(notes);
   const [playing, setPlaying] = useState(true);
   const playingRef = useRef(true);
-  const [playbackMs, setPlaybackMs] = useState(0);
-  const playbackRef = useRef(0);
-  const [waitMode, setWaitMode] = useState(false);
-  const waitModeRef = useRef(false);
+  const [playbackMs, setPlaybackMs] = useState(() => initialNoteBoundaries?.startMs || 0);
+  const playbackRef = useRef(initialNoteBoundaries?.startMs || 0);
+  // For live input, waiting is the safer default: browser/device latency should
+  // never turn an otherwise playable note into an immediate missed note.
+  const [waitMode, setWaitMode] = useState(withAudio);
+  const waitModeRef = useRef(withAudio);
   const [waiting, setWaiting] = useState<TabNote | null>(null);
   const waitingRef = useRef<TabNote | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; kind: 'correct' | 'wrong'; timing?: string; at: number } | null>(null);
+  const [heardPitch, setHeardPitch] = useState<Pick<PitchResult, 'noteName' | 'frequency' | 'confidence'> | null>(null);
+  const [heardChord, setHeardChord] = useState<number[]>([]);
+  const [polyphonicError, setPolyphonicError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
+  const [loopEnabled, setLoopEnabled] = useState(Boolean(startingNoteRange));
+  const loopEnabledRef = useRef(Boolean(startingNoteRange));
+  const [loopRange, setLoopRange] = useState<NoteLoopRange | null>(startingNoteRange);
+  const loopRangeRef = useRef<NoteLoopRange | null>(startingNoteRange);
+  const [selectingLoop, setSelectingLoop] = useState(false);
+  const selectingLoopRef = useRef(false);
   const tempoRef = useRef(tempoPercent / 100);
+  const [coachMode, setCoachMode] = useState(false);
+  const coachModeRef = useRef(false);
+  const [coachStreak, setCoachStreak] = useState(0);
+  const coachStreakRef = useRef(0);
+  const [coachMessage, setCoachMessage] = useState<string | null>(null);
   const completedRef = useRef(false);
   const onFinishRef = useRef(onFinish);
   const lastConsumedPluck = useRef(-1);
+  const lastFeedbackPluck = useRef(-1);
   const lastHitNote = useRef<TabNote | null>(null);
+  const lastHeardPitchUpdate = useRef(0);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
   const hasChords = scorableIds.size !== song.notes.length;
   const duration = Math.max(song.durationMs, ...song.notes.map((note) => note.timestampMs + Math.max(note.durationMs, TIMING_WINDOW_MS + 100)));
@@ -57,6 +93,103 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
     waitingRef.current = null;
     setWaiting(null);
   };
+  const clearLoopPass = (boundaries: NonNullable<ReturnType<typeof loopBoundaries>>) => {
+    updateNotes(resetLoopPass(notesRef.current, boundaries));
+    waitingRef.current = null;
+    setWaiting(null);
+    lastConsumedPluck.current = -1;
+    lastFeedbackPluck.current = -1;
+    lastHitNote.current = null;
+    setFeedback(null);
+    guitarSynth.stop();
+  };
+  const restartLoop = (range: NoteLoopRange) => {
+    const boundaries = noteLoopBoundaries(song.notes, range);
+    if (!boundaries) return;
+    clearLoopPass(boundaries);
+    playbackRef.current = boundaries.startMs;
+    setPlaybackMs(boundaries.startMs);
+  };
+  const changeLoop = () => {
+    const nextEnabled = !loopEnabledRef.current;
+    loopEnabledRef.current = nextEnabled;
+    setLoopEnabled(nextEnabled);
+    if (!nextEnabled) {
+      selectingLoopRef.current = false;
+      setSelectingLoop(false);
+      return;
+    }
+    loopRangeRef.current = null;
+    setLoopRange(null);
+    selectingLoopRef.current = true;
+    setSelectingLoop(true);
+    setTransport(false);
+  };
+  const beginLoopSelection = () => {
+    if (!loopEnabledRef.current) return;
+    loopRangeRef.current = null;
+    setLoopRange(null);
+    selectingLoopRef.current = true;
+    setSelectingLoop(true);
+    setTransport(false);
+  };
+  const selectLoopNotes = (start: TabNote, end: TabNote) => {
+    if (!loopEnabledRef.current || !selectingLoopRef.current) return;
+    const range = normalizeNoteLoopRange(song.notes, { startNoteId: start.id, endNoteId: end.id });
+    if (!range) return;
+    const boundaries = noteLoopBoundaries(song.notes, range);
+    if (!boundaries) return;
+    loopRangeRef.current = range;
+    setLoopRange(range);
+    selectingLoopRef.current = false;
+    setSelectingLoop(false);
+    restartLoop(range);
+  };
+  const setTempoBpm = (bpm: number) => {
+    const bounded = Math.min(300, Math.max(20, Math.round(bpm)));
+    const nextPercent = bounded / Math.max(1, song.tempo) * 100;
+    tempoRef.current = nextPercent / 100;
+    onTempoPercentChange(nextPercent);
+  };
+  const recordCoachPass = (boundaries: NonNullable<ReturnType<typeof noteLoopBoundaries>>) => {
+    const pass = assessLoopPass(notesRef.current, scorableIds, boundaries);
+    const clean = pass.accuracy !== null && pass.attempted > 0 && pass.accuracy >= 90;
+    if (!clean) {
+      coachStreakRef.current = 0;
+      setCoachStreak(0);
+      setCoachMessage(pass.accuracy === null ? 'Play the loop through to set a tempo.' : `${pass.accuracy}% this pass · repeat it cleanly.`);
+      return;
+    }
+    const nextStreak = coachStreakRef.current + 1;
+    if (nextStreak < 2) {
+      coachStreakRef.current = nextStreak;
+      setCoachStreak(nextStreak);
+      setCoachMessage(`${pass.accuracy}% this pass · one more clean loop.`);
+      return;
+    }
+    coachStreakRef.current = 0;
+    setCoachStreak(0);
+    const nextBpm = Math.min(300, Math.round(song.tempo * tempoRef.current * 100) / 100 + 5);
+    setTempoBpm(nextBpm);
+    setCoachMessage(nextBpm >= 300 ? '300 BPM reached · keep it clean.' : `Two clean loops · tempo ${nextBpm} BPM.`);
+  };
+  const changeCoachMode = () => {
+    const nextEnabled = !coachModeRef.current;
+    coachModeRef.current = nextEnabled;
+    setCoachMode(nextEnabled);
+    coachStreakRef.current = 0;
+    setCoachStreak(0);
+    setCoachMessage(nextEnabled ? 'Two loops at 90% raises tempo by 5 BPM.' : null);
+    if (!nextEnabled || loopEnabledRef.current) return;
+    loopEnabledRef.current = true;
+    setLoopEnabled(true);
+    loopRangeRef.current = null;
+    setLoopRange(null);
+    selectingLoopRef.current = true;
+    setSelectingLoop(true);
+    setTransport(false);
+    setCoachMessage('Drag from the first note to the last note.');
+  };
   const finish = () => {
     if (completedRef.current) return;
     completedRef.current = true;
@@ -72,34 +205,61 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
     return micDetector.subscribe((result) => {
       if (!micDetector.getIsListening()) {
         setTransport(false);
+        setHeardPitch(null);
         setInputError(micDetector.getErrorMessage() || 'We can’t hear your guitar. Check your input device and try again.');
         return;
       }
       if (!result || !playingRef.current || completedRef.current) return;
-      if (result.isVoiceLike || (!result.onset && result.confidence < 0.68)) return;
-      const effectiveTime = playbackRef.current - micDetector.getEstimatedInputLatencyMs() * tempoRef.current;
-      const windowMs = TIMING_WINDOW_MS * tempoRef.current;
-      const candidates = waitingRef.current ? [waitingRef.current] : notesRef.current.filter((note) =>
-        scorableIds.has(note.id) && !note.hitState && Math.abs(note.timestampMs - effectiveTime) <= windowMs
-      ).sort((a, b) => Math.abs(a.timestampMs - effectiveTime) - Math.abs(b.timestampMs - effectiveTime));
-      if (!candidates.length) return;
-      const matched = candidates.find((note) => result.midiNumber === expectedMidi(note) && Math.abs(result.cents) <= 46);
-      if (!matched) {
-        if (result.pluckId !== lastConsumedPluck.current) {
-          setFeedback({ text: `Wrong note · play ${noteName(candidates[0])}`, kind: 'wrong', at: performance.now() });
+      if (result.polyphonicError) {
+        setPolyphonicError(result.polyphonicError);
+        return;
+      }
+      if (result.polyphonicMidiNumbers) {
+        setHeardChord(result.polyphonicMidiNumbers);
+        return;
+      }
+      // A small live readout makes hardware issues observable without adding a
+      // separate tuner or diagnostic screen. Throttle re-renders to 8 Hz.
+      if (performance.now() - lastHeardPitchUpdate.current >= 125) {
+        lastHeardPitchUpdate.current = performance.now();
+        setHeardPitch({ noteName: result.noteName, frequency: result.frequency, confidence: result.confidence });
+      }
+      // Correct notes can be accepted from a quieter pick transient. A wrong
+      // note needs a cleaner pitch estimate so background noise cannot produce
+      // distracting false-red feedback.
+      if (result.isVoiceLike || (!result.onset && result.confidence < 0.56)) return;
+      const judgement = judgeDetectedPitch({
+        notes: notesRef.current,
+        scorableIds,
+        playbackMs: playbackRef.current,
+        tempoScale: tempoRef.current,
+        inputLatencyMs: micDetector.getEstimatedInputLatencyMs(),
+        detected: result,
+        waitingNoteId: waitingRef.current?.id,
+      });
+      if (judgement.kind === 'ignored') return;
+      if (judgement.kind === 'wrong') {
+        if (result.confidence < 0.64) return;
+        if (result.pluckId !== lastFeedbackPluck.current) {
+          lastFeedbackPluck.current = result.pluckId;
+          updateNotes(notesRef.current.map((note) => note.id === judgement.expected.id
+            ? { ...note, mistakeCount: (note.mistakeCount || 0) + 1 }
+            : note
+          ));
+          setFeedback({ text: `Wrong note · play ${noteName(judgement.expected)}`, kind: 'wrong', at: performance.now() });
         }
         return;
       }
+      const matched = judgement.note;
       // A sustained note cannot satisfy another pick. Retain legato support.
       if (result.pluckId === lastConsumedPluck.current &&
           !(lastHitNote.current && (matched.isHammerOn || matched.isPullOff) && expectedMidi(matched) !== expectedMidi(lastHitNote.current))) return;
       lastConsumedPluck.current = result.pluckId;
       lastHitNote.current = matched;
-      const offset = waitingRef.current ? 0 : Math.round((effectiveTime - matched.timestampMs) / tempoRef.current);
-      updateNotes(notesRef.current.map((note) => note.id === matched.id ? { ...note, hitState: 'hit', timingOffsetMs: offset } : note));
+      updateNotes(notesRef.current.map((note) => note.id === matched.id ? { ...note, hitState: 'hit', timingOffsetMs: judgement.timingOffsetMs } : note));
       waitingRef.current = null;
       setWaiting(null);
-      setFeedback({ text: 'Correct note', kind: 'correct', timing: Math.abs(offset) > 80 ? offset < 0 ? 'EARLY' : 'LATE' : undefined, at: performance.now() });
+      setFeedback({ text: 'Correct note', kind: 'correct', timing: judgement.timing === 'on-time' ? undefined : judgement.timing.toUpperCase(), at: performance.now() });
     });
   }, [withAudio, scorableIds]);
 
@@ -112,41 +272,46 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
       if (playingRef.current && !completedRef.current) {
         const previous = playbackRef.current;
         let next = Math.min(duration, previous + elapsed * tempoRef.current);
+        const activeLoop = loopEnabledRef.current && !selectingLoopRef.current && loopRangeRef.current
+          ? noteLoopBoundaries(song.notes, loopRangeRef.current)
+          : null;
+        const loopAdvance = activeLoop && advanceLoop(next, activeLoop);
+        const wrapped = loopAdvance?.wrapped || false;
+        if (loopAdvance) next = loopAdvance.playbackMs;
+        if (wrapped && activeLoop) {
+          if (coachModeRef.current && withAudio) recordCoachPass(activeLoop);
+          clearLoopPass(activeLoop);
+        }
         if (waitModeRef.current && withAudio) {
-          const target = notesRef.current.find((note) => scorableIds.has(note.id) && !note.hitState && note.timestampMs <= next);
-          if (target) {
-            next = target.timestampMs;
-            if (waitingRef.current?.id !== target.id) { waitingRef.current = target; setWaiting(target); }
+          const gated = applyWaitGate(notesRef.current, scorableIds, next);
+          next = gated.playbackMs;
+          if (waitingRef.current?.id !== gated.waitingNote?.id) {
+            waitingRef.current = gated.waitingNote;
+            setWaiting(gated.waitingNote);
           }
         }
-        if (withAudio && !waitModeRef.current) {
-          let missed = false;
-          const judged = notesRef.current.map((note) => {
-            if (scorableIds.has(note.id) && !note.hitState && next - note.timestampMs > TIMING_WINDOW_MS * tempoRef.current) {
-              missed = true;
-              return { ...note, hitState: 'miss' as const };
-            }
-            return note;
-          });
-          if (missed) {
+        if (withAudio && !waitModeRef.current && !wrapped) {
+          const missedIds = missedNoteIds(notesRef.current, scorableIds, next, tempoRef.current);
+          if (missedIds.size > 0) {
+            const judged = notesRef.current.map((note) => missedIds.has(note.id) ? { ...note, hitState: 'miss' as const } : note);
             updateNotes(judged);
             setFeedback({ text: 'Missed note', kind: 'wrong', at: now });
           }
         }
-        if (!withAudio) {
+        if (!withAudio && !wrapped) {
           for (const note of song.notes) {
             if (note.timestampMs >= previous && note.timestampMs < next) guitarSynth.playGuitarNote(note.string, note.fret, note);
           }
         }
         playbackRef.current = next;
         setPlaybackMs(next);
-        if (next >= duration) finish();
+        if (next >= duration && !loopEnabledRef.current) finish();
       }
       if (!completedRef.current) frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(frame); guitarSynth.stop(); };
-  }, [song, duration, withAudio, scorableIds]);
+  }, [song, bars, duration, withAudio, scorableIds]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -162,7 +327,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
 
   const recentFeedback = feedback && performance.now() - feedback.at < 1200 ? feedback : null;
   const currentNote = [...notes].reverse().find((note) => note.timestampMs <= playbackMs);
-  const currentBar = currentNote?.measureIndex || 1;
+  const currentBar = barAt(bars, playbackMs)?.index || currentNote?.measureIndex || 1;
 
   return (
     <main className="practice-screen" aria-labelledby="practice-heading">
@@ -172,18 +337,35 @@ export function PlayingStage({ song, withAudio, tempoPercent, onTempoPercentChan
       </header>
       <div className="practice-controls" aria-label="Playback controls">
         <button className="primary-button play-button" onClick={() => setTransport(!playingRef.current)} disabled={Boolean(inputError)}>{playing ? 'Pause' : 'Play'}</button>
-        <label className="tempo-control">Tempo<select aria-label="Tempo" value={tempoPercent} onChange={(event) => onTempoPercentChange(Number(event.target.value))}>{[50, 70, 80, 90, 100].map((percent) => <option key={percent} value={percent}>{percent}%</option>)}</select></label>
+        <div className="tempo-control"><span>Tempo</span>
+          <button className="tempo-step" aria-label="Decrease tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current - 5)} disabled={Boolean(inputError)}>−</button>
+          <input aria-label="Tempo" type="number" min="20" max="300" value={Math.round(song.tempo * tempoPercent / 100)} onChange={(event) => setTempoBpm(Number(event.target.value))} disabled={Boolean(inputError)} />
+          <span>BPM</span>
+          <button className="tempo-step" aria-label="Increase tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current + 5)} disabled={Boolean(inputError)}>+</button>
+        </div>
+        <button className="toggle-button" aria-pressed={loopEnabled} onClick={changeLoop} disabled={Boolean(inputError)}>Loop <span>{loopEnabled ? 'On' : 'Off'}</span></button>
+        {loopEnabled && <div className="loop-range" aria-label="Loop range">
+          <button className="text-button" onClick={beginLoopSelection}>{selectingLoop ? 'Drag across notes' : 'Select notes'}</button>
+          {!selectingLoop && loopRange && <span>{loopNoteLabel(song.notes, loopRange.startNoteId)} → {loopNoteLabel(song.notes, loopRange.endNoteId)}</span>}
+        </div>}
+        {withAudio && <button className="toggle-button" aria-pressed={coachMode} onClick={changeCoachMode} disabled={Boolean(inputError)} title="Raise tempo after two clean loop passes">Coach Mode <span>{coachMode ? 'On' : 'Off'}</span></button>}
         {withAudio && <button className="toggle-button" aria-pressed={waitMode} onClick={changeWaitMode} disabled={Boolean(inputError)} title="Wait for each correct note before continuing">Wait Mode <span>{waitMode ? 'On' : 'Off'}</span></button>}
-        <span className="bar-position">Bar {currentBar} / {song.measures}</span>
+        <span className="bar-position">{loopEnabled ? selectingLoop ? 'Drag from first note to last note' : loopRange ? `Loop ${loopNoteLabel(song.notes, loopRange.startNoteId)}–${loopNoteLabel(song.notes, loopRange.endNoteId)}` : 'Select loop notes' : `Bar ${currentBar} / ${bars.length}`}</span>
       </div>
       <div className="practice-status">
         <p className={inputError ? 'error-message' : recentFeedback?.kind || ''} role="status">
-          {inputError || (!playing ? 'Paused' : waiting ? `Waiting for ${noteName(waiting)}` : recentFeedback?.text || (withAudio ? 'Listening · play along' : 'Playback only · audio input is off'))}
+          {inputError || (!playing ? 'Paused' : recentFeedback?.text || (waiting ? `Waiting for ${noteName(waiting)}` : withAudio ? 'Listening · play along' : 'Playback only · audio input is off'))}
           {playing && !waiting && recentFeedback?.timing && <span className="timing-feedback">{recentFeedback.timing}</span>}
         </p>
-        {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
+        <div className="status-detail">
+          {withAudio && heardPitch && <span className="detector-readout">Heard {heardPitch.noteName} · {heardPitch.frequency.toFixed(1)} Hz · {Math.round(heardPitch.confidence * 100)}%</span>}
+          {withAudio && heardChord.length > 1 && <span className="detector-readout">Chord preview: {heardChord.map(midiName).join(' ')}</span>}
+          {withAudio && polyphonicError && <span className="detector-readout">Chord preview unavailable: {polyphonicError}</span>}
+          {coachMode && <span className="detector-readout">{coachMessage || `Coach: ${coachStreak}/2 clean loops`}</span>}
+          {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
+        </div>
       </div>
-      <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} />
+      <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
       <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>Single-note feedback only · chords are not scored.</span>}</footer>
     </main>

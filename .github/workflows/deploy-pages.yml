@@ -2,7 +2,7 @@ name: Deploy GuitarCoach to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/minimal-practice-stage-1]
   workflow_dispatch:
 
 permissions:
