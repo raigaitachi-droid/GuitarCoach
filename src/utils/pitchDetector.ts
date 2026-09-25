@@ -1,4 +1,27 @@
 // Low-latency guitar detector: AudioWorklet capture + event-driven pitch analysis.
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+
+export interface AudioInputDevice {
+  deviceId: string;
+  label: string;
+}
+
+interface CaptureMessage {
+  type: 'level' | 'ONSET_TRIGGERED' | 'samples';
+  rms: number;
+  samples?: Float32Array | number[];
+  peak?: number;
+  crestFactor?: number;
+  onset?: boolean;
+  pluckId?: number;
+  audioTimeMs?: number;
+}
+
+interface NativeCaptureStarted {
+  sampleRate: number;
+}
+
 export interface PitchResult {
   frequency: number;
   noteName: string;
@@ -44,6 +67,9 @@ export class MicrophonePitchDetector {
   private errorMessage: string | null = null;
   private polyphonicWorker: Worker | null = null;
   private polyphonicError: string | null = null;
+  private nativeCapture = false;
+  private nativeSampleRate = 48000;
+  private nativeUnlisteners: UnlistenFn[] = [];
 
   getErrorMessage(): string | null {
     return this.errorMessage;
@@ -56,6 +82,10 @@ export class MicrophonePitchDetector {
 
   setNoiseThreshold(threshold: number) {
     this.noiseThreshold = Math.max(0.0005, Math.min(0.05, threshold));
+    if (this.nativeCapture) {
+      void invoke('set_noise_threshold', { value: this.noiseThreshold }).catch(() => undefined);
+      return;
+    }
     this.workletNode?.port.postMessage({
       type: 'threshold',
       value: this.noiseThreshold,
@@ -84,17 +114,37 @@ export class MicrophonePitchDetector {
   }
 
   notifySpeakerPlayed(refractoryMs = 350) {
+    if (this.nativeCapture) {
+      void invoke('mute_output', { durationMs: refractoryMs }).catch(() => undefined);
+      return;
+    }
     this.workletNode?.port.postMessage({
       type: 'mute',
       durationMs: refractoryMs,
     });
   }
 
+  isNativeCaptureAvailable(): boolean {
+    return isTauri();
+  }
+
+  async listInputDevices(): Promise<AudioInputDevice[]> {
+    if (isTauri()) {
+      const devices = await invoke<Array<{ id: string; label: string }>>('list_audio_devices');
+      return devices.map((device) => ({ deviceId: device.id, label: device.label }));
+    }
+    const available = await navigator.mediaDevices?.enumerateDevices();
+    return (available || [])
+      .filter((device) => device.kind === 'audioinput')
+      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
+  }
+
   async startListening(deviceId = ''): Promise<boolean> {
-    if (this.isListening && this.audioContext?.state === 'running' && this.activeDeviceId === deviceId) return true;
+    if (this.isListening && this.activeDeviceId === deviceId && (this.nativeCapture || this.audioContext?.state === 'running')) return true;
     this.stopListening();
     const requestId = this.requestId;
     this.errorMessage = null;
+    if (isTauri()) return this.startNativeListening(deviceId, requestId);
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('unsupported');
@@ -169,47 +219,7 @@ export class MicrophonePitchDetector {
         (trackLatency + (this.audioContext.baseLatency || 0)) * 1000
       );
 
-      this.workletNode.port.onmessage = (event) => {
-        const message = event.data;
-        if (message?.type === 'level') {
-          this.lastRms = message.rms;
-          return;
-        }
-        if (message?.type === 'ONSET_TRIGGERED') {
-          this.lastRms = message.rms;
-          this.emit({
-            frequency: 0, noteName: '', midiNumber: 0, cents: 0, volumeRms: message.rms,
-            inTune: false, audioTimeMs: message.audioTimeMs, onset: false, pluckId: 0,
-            confidence: 0, quickOnset: true,
-          });
-          return;
-        }
-        if (message?.type !== 'samples') return;
-
-        this.lastRms = message.rms;
-        const samples = message.samples as Float32Array;
-        // The worklet emits a 2048-sample window every 1024 samples. Preserve
-        // the overlap for the worker while declaring the new hop explicitly.
-        const polyphonicSamples = samples.slice();
-        this.polyphonicWorker?.postMessage({
-          type: 'samples',
-          samples: polyphonicSamples,
-          hopSamples: polyphonicSamples.length / 2,
-          sampleRate: this.audioContext!.sampleRate,
-          audioTimeMs: message.audioTimeMs,
-        }, [polyphonicSamples.buffer]);
-        const result = this.analysePitch(
-          samples,
-          this.audioContext!.sampleRate,
-          message.rms,
-          message.audioTimeMs,
-          Boolean(message.onset),
-          Number(message.pluckId || 1),
-          Number(message.crestFactor || 1.8)
-        );
-        this.latestResult = result;
-        this.emit(result);
-      };
+      this.workletNode.port.onmessage = (event) => this.handleCaptureMessage(event.data, this.audioContext!.sampleRate);
 
       this.startPolyphonicPreview();
 
@@ -237,9 +247,90 @@ export class MicrophonePitchDetector {
     }
   }
 
+  private async startNativeListening(deviceId: string, requestId: number): Promise<boolean> {
+    try {
+      this.nativeUnlisteners = await Promise.all([
+        listen<{ rms: number }>('pitch:level', ({ payload }) => this.handleCaptureMessage({ type: 'level', rms: payload.rms }, this.nativeSampleRate)),
+        listen<{ rms: number; audioTimeMs: number }>('pitch:onset', ({ payload }) => this.handleCaptureMessage({
+          type: 'ONSET_TRIGGERED', rms: payload.rms, audioTimeMs: payload.audioTimeMs,
+        }, this.nativeSampleRate)),
+        listen<Omit<CaptureMessage, 'type'> & { samples: number[] }>('pitch:samples', ({ payload }) => this.handleCaptureMessage({
+          type: 'samples', ...payload,
+        }, this.nativeSampleRate)),
+      ]);
+      const started = await invoke<NativeCaptureStarted>('start_native_capture', { deviceId: deviceId || null });
+      this.nativeSampleRate = started.sampleRate;
+      this.nativeCapture = true;
+      if (requestId !== this.requestId) {
+        this.stopListening();
+        return false;
+      }
+      this.estimatedInputLatencyMs = 0;
+      this.isListening = true;
+      this.activeDeviceId = deviceId;
+      return true;
+    } catch (error) {
+      this.clearNativeListeners();
+      this.errorMessage = error instanceof Error ? error.message : 'We can’t open that native audio input.';
+      this.stopListening();
+      return false;
+    }
+  }
+
+  private handleCaptureMessage(message: CaptureMessage, sampleRate: number) {
+    if (message?.type === 'level') {
+      this.lastRms = message.rms;
+      return;
+    }
+    if (message?.type === 'ONSET_TRIGGERED') {
+      this.lastRms = message.rms;
+      this.emit({
+        frequency: 0, noteName: '', midiNumber: 0, cents: 0, volumeRms: message.rms,
+        inTune: false, audioTimeMs: message.audioTimeMs || 0, onset: false, pluckId: 0,
+        confidence: 0, quickOnset: true,
+      });
+      return;
+    }
+    if (message?.type !== 'samples' || !message.samples) return;
+
+    this.lastRms = message.rms;
+    const samples = message.samples instanceof Float32Array
+      ? message.samples
+      : Float32Array.from(message.samples);
+    // The worklet emits a 2048-sample window every 1024 samples. Preserve
+    // the overlap for the optional browser-only polyphonic preview.
+    const polyphonicSamples = samples.slice();
+    this.polyphonicWorker?.postMessage({
+      type: 'samples',
+      samples: polyphonicSamples,
+      hopSamples: polyphonicSamples.length / 2,
+      sampleRate,
+      audioTimeMs: message.audioTimeMs || 0,
+    }, [polyphonicSamples.buffer]);
+    const result = this.analysePitch(
+      samples,
+      sampleRate,
+      message.rms,
+      message.audioTimeMs || 0,
+      Boolean(message.onset),
+      Number(message.pluckId || 1),
+      Number(message.crestFactor || 1.8)
+    );
+    this.latestResult = result;
+    this.emit(result);
+  }
+
+  private clearNativeListeners() {
+    for (const unlisten of this.nativeUnlisteners) unlisten();
+    this.nativeUnlisteners = [];
+  }
+
   stopListening() {
     this.requestId += 1;
     this.isListening = false;
+    if (this.nativeCapture) void invoke('stop_native_capture').catch(() => undefined);
+    this.nativeCapture = false;
+    this.clearNativeListeners();
     if (this.workletNode) this.workletNode.port.onmessage = null;
     this.workletNode?.disconnect();
     this.sourceNode?.disconnect();
