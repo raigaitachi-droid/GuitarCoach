@@ -64,6 +64,7 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
 .practice-status .correct { color: #89d9a8; }
 .practice-status .wrong { color: #f29393; }
 .timing-feedback { margin-left: 18px; font-size: 11px; letter-spacing: 1px; color: #b9b2a3; }
+.onset-marker { color: #d6f7a3; font-weight: 700; }
 .tab-surface { flex: 1; position: relative; min-height: 360px; height: calc(100dvh - 300px); border: 1px solid #2c3330; border-radius: 5px; overflow: hidden; }
 .tab-surface canvas { position: absolute; width: 100%; height: 100%; display: block; }
 .tab-surface.is-selecting-loop { border-color: #8ecfb0; }
