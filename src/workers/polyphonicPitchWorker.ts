@@ -68,9 +68,9 @@ async function analyse(audioTimeMs: number) {
 }
 
 async function initialise(modelUrl: string) {
-  // CPU is deliberately used for this first browser-only preview. It is slower
-  // than a native engine, but avoids blocking the audio worklet and stays local.
-  await tf.setBackend('cpu');
+  // Prefer hardware acceleration for Basic Pitch inference so fast passages do
+  // not stall behind the TensorFlow.js CPU backend.
+  await tf.setBackend('webgl');
   await tf.ready();
   model = new BasicPitch(modelUrl);
   self.postMessage({ type: 'ready' });
