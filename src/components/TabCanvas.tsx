@@ -20,7 +20,6 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
   const view = useRef({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect });
   const draggedNote = useRef<TabNote | null>(null);
   const draggedEndNote = useRef<TabNote | null>(null);
-  const transitions = useRef(new Map<string, { state: TabNote['hitState']; at: number }>());
   view.current = { notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect };
 
   useEffect(() => {
@@ -50,11 +49,10 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       ctx.textBaseline = 'middle';
       for (let string = 1; string <= 6; string++) {
         const y = yAt(string);
-        ctx.strokeStyle = string === 1 || string === 6 ? '#3b4847' : '#354140';
+        ctx.strokeStyle = '#41494b';
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(44, y); ctx.lineTo(rect.width - 24, y); ctx.stroke();
-        ctx.fillStyle = '#a9bcb5';
-        ctx.font = '600 14px ui-monospace, monospace';
+        ctx.fillStyle = '#a2aba9';
         ctx.fillText(STRING_NAMES[string - 1], 20, y);
       }
       // Use imported measure indices for labels instead of inventing 4/4 bars.
@@ -71,57 +69,26 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         ctx.fillStyle = '#465152';
         ctx.fillRect(Math.round(x) - 1, 36, 3, rect.height - 66);
       }
-      // The fixed play position stays distinct from the moving loop brackets.
-      ctx.fillStyle = 'rgba(137, 217, 168, 0.07)';
-      ctx.fillRect(Math.round(hitX) - 9, 36, 18, rect.height - 66);
-      ctx.fillStyle = '#8fbba6';
-      ctx.fillRect(Math.round(hitX) - 1, 36, 2, rect.height - 66);
-      const visible = notes.filter((note) => xAt(note.timestampMs) >= 32 && xAt(note.timestampMs) <= rect.width + 32);
-      const frameTime = performance.now();
+      ctx.strokeStyle = '#99b9a5';
+      ctx.beginPath(); ctx.moveTo(hitX, 36); ctx.lineTo(hitX, rect.height - 30); ctx.stroke();
+      const visible = notes.filter((note) => xAt(note.timestampMs) >= 48 && xAt(note.timestampMs) <= rect.width + 24);
       for (const note of visible) {
         const x = xAt(note.timestampMs);
         const y = yAt(note.string);
         const next = notes.find((candidate) => candidate.string === note.string && candidate.timestampMs > note.timestampMs);
-        const radius = note.fret >= 10 ? 20 : 17;
-        const successful = note.hitState === 'hit' || note.hitState === 'close';
-        const missed = note.hitState === 'miss' || note.hitState === 'wrong';
-        const previousTransition = transitions.current.get(note.id);
-        if (previousTransition?.state !== note.hitState) {
-          transitions.current.set(note.id, { state: note.hitState, at: frameTime });
+        const gap = next ? xAt(next.timestampMs) - x : 100;
+        const radius = Math.max(9, Math.min(16, (gap - 4) / 2));
+        const color = note.hitState === 'hit' ? '#89d9a8' : note.hitState === 'miss' || note.hitState === 'wrong' ? '#f29393' : '#e3e8e4';
+        const sustain = Math.min(xAt(note.timestampMs + note.durationMs) - x, gap - radius - 4);
+        if (sustain > 20) {
+          ctx.strokeStyle = '#59615e';
+          ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + sustain, y); ctx.stroke();
         }
-        const transition = transitions.current.get(note.id);
-        const response = transition && (successful || missed) ? Math.max(0, 1 - (frameTime - transition.at) / 520) : 0;
-        const waiting = note.id === waitingId;
-        const approaching = !note.hitState && Math.abs(note.timestampMs - now) <= 160;
-        const pulse = waiting ? 0.5 + 0.5 * Math.sin(frameTime / 340) : 0;
-        const foreground = successful ? '#a9e4ba' : missed ? '#eeaaa2' : '#f0f4ef';
-        const background = successful ? '#20362b' : missed ? '#392a29' : waiting ? '#244037' : '#222c2b';
-        const sustainEnd = Math.min(note.timestampMs + note.durationMs, next?.timestampMs ?? Infinity);
-        const sustainX = xAt(sustainEnd);
-        if (sustainX - x > radius + 10) {
-          ctx.strokeStyle = successful ? '#6eaa83' : missed ? '#9e6660' : '#758e85';
-          ctx.lineWidth = 3;
-          ctx.lineCap = 'round';
-          ctx.beginPath(); ctx.moveTo(x + radius - 1, y); ctx.lineTo(sustainX, y); ctx.stroke();
-          ctx.lineCap = 'butt';
-          ctx.lineWidth = 1;
-        }
-        if (response > 0 || waiting || approaching) {
-          ctx.fillStyle = successful ? `rgba(137, 217, 168, ${0.16 * response})`
-            : missed ? `rgba(242, 147, 147, ${0.13 * response})`
-            : `rgba(137, 217, 168, ${waiting ? 0.07 + 0.08 * pulse : 0.07})`;
-          ctx.beginPath(); ctx.arc(x, y, radius + 9 + 4 * response, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.fillStyle = background;
-        ctx.strokeStyle = successful ? '#89d9a8' : missed ? '#c47e79' : waiting ? '#a9e4ba' : approaching ? '#96c5a8' : '#66827a';
-        ctx.lineWidth = waiting ? 2.5 : 1.5;
-        ctx.beginPath(); ctx.roundRect(x - radius, y - 17, radius * 2, 34, 7); ctx.fill(); ctx.stroke();
-        ctx.lineWidth = 1;
+        ctx.fillStyle = '#15191b';
+        ctx.fillRect(x - radius, y - 15, radius * 2, 30);
         if (note.id === waitingId) {
-          ctx.strokeStyle = `rgba(169, 228, 186, ${0.28 + 0.28 * pulse})`;
-          ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.roundRect(x - radius - 4, y - 21, radius * 2 + 8, 42, 9); ctx.stroke();
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#99b9a5';
+          ctx.strokeRect(x - radius - 4, y - 19, radius * 2 + 8, 38);
         }
         if (note.id === loopStartId || note.id === loopEndId) {
           ctx.strokeStyle = note.id === loopStartId ? '#8ecfb0' : '#d9bd82';
@@ -129,28 +96,18 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
           ctx.strokeRect(x - radius - 7, y - 22, radius * 2 + 14, 44);
           ctx.lineWidth = 1;
         }
-        ctx.fillStyle = foreground;
-        ctx.font = '700 23px ui-monospace, monospace';
+        ctx.fillStyle = color;
+        ctx.font = '600 20px ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.fillText(String(note.fret), x, y);
-        if (response > 0) {
-          ctx.globalAlpha = response;
-          ctx.font = '700 13px system-ui, sans-serif';
-          ctx.fillText(successful ? '✓' : '×', x, y + 29);
-          ctx.globalAlpha = 1;
+        if (note.hitState === 'hit' || note.hitState === 'miss') {
+          ctx.font = '12px system-ui, sans-serif';
+          ctx.fillText(note.hitState === 'hit' ? '✓' : '×', x, y + 22);
         }
-        if (successful && response > 0 && Math.abs(note.timingOffsetMs ?? 0) > 80) {
-          ctx.globalAlpha = response;
-          ctx.fillStyle = '#b9c9bd';
-          ctx.font = '600 10px system-ui, sans-serif';
-          ctx.fillText((note.timingOffsetMs ?? 0) < 0 ? 'EARLY' : 'LATE', x, y + 43);
-          ctx.globalAlpha = 1;
-        }
-        const technique = note.isHarmonic ? '◇' : note.isHammerOn ? 'H' : note.isPullOff ? 'P' : note.technique === 'slide' ? '/' : note.technique === 'bend' ? '↗' : null;
-        if (technique) {
-          ctx.font = '700 12px system-ui, sans-serif';
-          ctx.fillStyle = '#b3c7bb';
-          ctx.fillText(technique, x, y - 30);
+        if (note.isHarmonic || note.isHammerOn || note.isPullOff) {
+          ctx.font = '10px system-ui, sans-serif';
+          ctx.fillStyle = '#a2aba9';
+          ctx.fillText(note.isHarmonic ? '◇' : note.isHammerOn ? 'H' : 'P', x, y - 24);
         }
       }
       const isDragging = Boolean(draggedNote.current && draggedEndNote.current);
