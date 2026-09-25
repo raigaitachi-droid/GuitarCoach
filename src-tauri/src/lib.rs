@@ -23,25 +23,25 @@ struct AudioDevice {
   label: String,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CaptureStarted {
   sample_rate: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct LevelPayload {
   rms: f32,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OnsetPayload {
   rms: f32,
   audio_time_ms: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SamplesPayload {
   samples: Vec<f32>,
