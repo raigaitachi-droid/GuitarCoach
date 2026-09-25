@@ -1,6 +1,6 @@
 {
-  "name": "Guitar Trainer",
-  "description": "Desktop guitar practice and tab training application with real-time pitch detection, precision timing feedback, and modern visual design.",
+  "name": "GuitarCoach",
+  "description": "Practice any Guitar Pro tab with instant feedback.",
   "requestFramePermissions": ["microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

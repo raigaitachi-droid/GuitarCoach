@@ -1,6 +1,18 @@
 // Web Audio API plucked string synthesizer (Karplus-Strong / filtered harmonic oscillator)
 class GuitarAudioEngine {
   private ctx: AudioContext | null = null;
+  private voices = new Set<OscillatorNode>();
+
+  resume() {
+    this.initContext();
+  }
+
+  stop() {
+    for (const voice of this.voices) {
+      try { voice.stop(); } catch { /* Already ended. */ }
+    }
+    this.voices.clear();
+  }
 
   private initContext() {
     if (!this.ctx) {
@@ -18,7 +30,7 @@ class GuitarAudioEngine {
   playGuitarNote(
     stringNum: number,
     fret: number,
-    options?: { isHarmonic?: boolean; isHammerOn?: boolean; isPullOff?: boolean }
+    options?: { isHarmonic?: boolean; isHammerOn?: boolean; isPullOff?: boolean; expectedMidi?: number }
   ) {
     try {
       this.initContext();
@@ -32,9 +44,11 @@ class GuitarAudioEngine {
         else if (fret === 7 || fret === 19) frequency = baseFreq * 3;
         else if (fret === 5) frequency = baseFreq * 4;
       }
+      if (options?.expectedMidi !== undefined) frequency = 440 * Math.pow(2, (options.expectedMidi - 69) / 12);
 
       const now = this.ctx.currentTime;
       const osc = this.ctx.createOscillator();
+      this.voices.add(osc);
       const gain = this.ctx.createGain();
       const filter = this.ctx.createBiquadFilter();
 
@@ -62,6 +76,12 @@ class GuitarAudioEngine {
       osc.connect(filter);
       filter.connect(gain);
       gain.connect(this.ctx.destination);
+      osc.onended = () => {
+        this.voices.delete(osc);
+        osc.disconnect();
+        filter.disconnect();
+        gain.disconnect();
+      };
 
       osc.start(now);
       osc.stop(now + 1.8);

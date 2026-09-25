@@ -1,318 +1,146 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PlayingStage } from './components/PlayingStage';
-import { SongMenu } from './components/SongMenu';
-import { StudioTuner } from './components/StudioTuner';
-import { AICoachChat } from './components/AICoachChat';
-import { ImportedSong, SongAnalysis, SongMetadata, SongSection, TabNote } from './types';
-import { Play, Music, SlidersHorizontal, Bot, Mic, MicOff, ChevronRight } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { StartScreen } from './components/StartScreen';
+import { PracticeResult } from './components/PracticeResult';
+import { ImportedSong } from './types';
 import { micDetector } from './utils/pitchDetector';
-import { SONG_CATALOG } from './data/songTabs';
+import { guitarSynth } from './utils/guitarSynth';
+import { findWeakSection, PracticeLoopRange, PracticeResult as SessionResult, WeakSection } from './utils/practiceSession';
+import { SONG_CATALOG, SONG_TABS } from './data/songTabs';
 
-const IMPORTED_SONGS_STORAGE_KEY = 'guitar-coach-imported-songs';
-
-function sanitizeImportedSong(song: ImportedSong): ImportedSong {
-  const harmonicNotes = song.notes.filter((note) => note.isHarmonic);
-  if (song.notes.length === 0 || harmonicNotes.length === 0) return song;
-
-  const harmonicRatio = harmonicNotes.length / song.notes.length;
-  const unknownRatio =
-    harmonicNotes.filter((note) => !note.harmonicType || note.harmonicType === 'unknown').length /
-    harmonicNotes.length;
-
-  if (harmonicRatio < 0.95 || unknownRatio < 0.95) return song;
-
-  return {
-    ...song,
-    notes: song.notes.map(({ isHarmonic, harmonicType, ...note }) => note),
-  };
-}
-
-function loadImportedSongs(): ImportedSong[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(IMPORTED_SONGS_STORAGE_KEY) || '[]');
-    if (!Array.isArray(parsed)) return [];
-
-    const sanitized = parsed.map((song) => sanitizeImportedSong(song));
-    if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
-      localStorage.setItem(IMPORTED_SONGS_STORAGE_KEY, JSON.stringify(sanitized));
-    }
-    return sanitized;
-  } catch {
-    return [];
-  }
+function demoSong(): ImportedSong {
+  const song = SONG_CATALOG[0];
+  const notes = SONG_TABS[song.id].map((note) => ({
+    ...note,
+    measureIndex: Math.max(1, Math.floor((note.timestampMs - 1000) / (60000 / song.tempo * 4)) + 1),
+  }));
+  return { ...song, title: 'Canon in D · demo', notes, sourceFileName: '', attempts: 0, bestAccuracy: 0, measures: Math.max(...notes.map((note) => note.measureIndex)) };
 }
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'stage' | 'coach' | 'menu' | 'tuner'>('stage');
+  const [screen, setScreen] = useState<'start' | 'practice' | 'result'>('start');
+  const [song, setSong] = useState<ImportedSong | null>(null);
+  const [result, setResult] = useState<SessionResult | null>(null);
   const [tempoPercent, setTempoPercent] = useState(100);
-  const [selectedSong, setSelectedSong] = useState<SongMetadata | null>(null);
-  const [selectedNotes, setSelectedNotes] = useState<TabNote[] | null>(null);
-  const [selectedSections, setSelectedSections] = useState<SongSection[] | null>(null);
-  const [selectedAnalysis, setSelectedAnalysis] = useState<SongAnalysis | null>(null);
+  const [weakSection, setWeakSection] = useState<WeakSection | null>(null);
+  const [practiceFocus, setPracticeFocus] = useState<PracticeLoopRange | null>(null);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState('');
+  const [withAudio, setWithAudio] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const operation = useRef(false);
+  const mounted = useRef(true);
 
-  const activeSong = selectedSong || SONG_CATALOG[0];
-
-  const [importedSongs, setImportedSongs] = useState<ImportedSong[]>(loadImportedSongs);
-
-  // Global pitch monitoring for Tuner & HUD
-  const [tunerPitch, setTunerPitch] = useState({
-    pitch: 'E2',
-    frequency: 82.4,
-    cents: 0,
-    inTune: false,
-  });
-  const [isListeningMic, setIsListeningMic] = useState(false);
-  const [volumeRms, setVolumeRms] = useState(0);
+  const refreshInputs = async () => {
+    try {
+      const available = await navigator.mediaDevices?.enumerateDevices();
+      if (mounted.current) setDevices((available || []).filter((device) => device.kind === 'audioinput'));
+    } catch { /* Input permission remains recoverable through Start Practice. */ }
+  };
 
   useEffect(() => {
-    const unsub = micDetector.subscribe((res) => {
-      if (res) {
-        setTunerPitch({
-          pitch: res.noteName,
-          frequency: res.frequency,
-          cents: res.cents,
-          inTune: res.inTune,
-        });
-        setVolumeRms(res.volumeRms);
-        setIsListeningMic(true);
-      }
-    });
-    return () => unsub();
+    mounted.current = true;
+    void refreshInputs();
+    navigator.mediaDevices?.addEventListener('devicechange', refreshInputs);
+    return () => {
+      mounted.current = false;
+      micDetector.stopListening();
+      navigator.mediaDevices?.removeEventListener('devicechange', refreshInputs);
+    };
   }, []);
 
-  const handleToggleMic = async () => {
-    if (isListeningMic) {
-      micDetector.stopListening();
-      setIsListeningMic(false);
-    } else {
-      try {
-        const ok = await micDetector.startListening();
-        setIsListeningMic(ok);
-      } catch (err) {
-        console.error('Mic access error:', err);
-      }
+  useEffect(() => {
+    if (deviceId && !devices.some((device) => device.deviceId === deviceId)) {
+      setDeviceId('');
+    }
+  }, [deviceId, devices]);
+
+  const loadFile = async (file: File) => {
+    if (operation.current) return;
+    operation.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const { importGuitarProFile } = await import('./utils/guitarProImporter');
+      const imported = await importGuitarProFile(file);
+      if (mounted.current) { setSong(imported); setTempoPercent(100); }
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error && cause.message.startsWith('Choose a Guitar Pro')
+        ? cause.message
+        : 'We couldn’t open that tab. Try another Guitar Pro file.');
+    } finally {
+      operation.current = false;
+      if (mounted.current) setLoading(false);
     }
   };
 
-  const handleSelectSong = (song: SongMetadata) => {
-    setSelectedSong(song);
-    const imported = importedSongs.find((candidate) => candidate.id === song.id);
-    setSelectedNotes(imported?.notes || null);
-    setSelectedSections(imported?.sections || null);
-    setSelectedAnalysis(imported?.analysis || null);
-    setCurrentView('stage');
+  const findInputs = async () => {
+    if (operation.current) return;
+    operation.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const connected = await micDetector.startListening();
+      if (!mounted.current) return;
+      if (connected) await refreshInputs();
+      else setError(micDetector.getErrorMessage());
+    } finally {
+      micDetector.stopListening();
+      operation.current = false;
+      if (mounted.current) setBusy(false);
+    }
   };
 
-  const handleImportSong = (song: ImportedSong) => {
-    const sanitizedSong = sanitizeImportedSong(song);
-    setImportedSongs((current) => {
-      const updated = [sanitizedSong, ...current];
-      localStorage.setItem(IMPORTED_SONGS_STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-    setSelectedSong(sanitizedSong);
-    setSelectedNotes(sanitizedSong.notes);
-    setSelectedSections(sanitizedSong.sections);
-    setSelectedAnalysis(sanitizedSong.analysis || null);
-    setCurrentView('stage');
+  const startPractice = async (useAudio: boolean) => {
+    if (!song || operation.current) return;
+    operation.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      if (useAudio && !await micDetector.startListening(deviceId)) {
+        if (mounted.current) setError(micDetector.getErrorMessage());
+        return;
+      }
+      if (!mounted.current) return;
+      if (!useAudio) { micDetector.stopListening(); guitarSynth.resume(); }
+      setWithAudio(useAudio);
+      setResult(null);
+      setWeakSection(null);
+      setScreen('practice');
+    } finally {
+      operation.current = false;
+      if (mounted.current) setBusy(false);
+    }
   };
 
-  const navItems = [
-    { id: 'stage' as const, label: 'Сцена', icon: Play, desc: 'Интерактивни табове' },
-    { id: 'coach' as const, label: 'AI Треньор', icon: Bot, desc: 'Анализ и съвети' },
-    { id: 'menu' as const, label: 'Песни', icon: Music, desc: 'Библиотека' },
-    { id: 'tuner' as const, label: 'Тунер', icon: SlidersHorizontal, desc: 'Настройка на китара' },
-  ];
+  const reset = () => {
+    micDetector.stopListening();
+    setSong(null);
+    setResult(null);
+    setWeakSection(null);
+    setPracticeFocus(null);
+    setError(null);
+    setScreen('start');
+  };
 
-  return (
-    <div id="guitar-trainer-app" className="flex flex-col h-screen w-screen bg-[#030508] text-[#E2E8F0] overflow-hidden select-none font-sans">
-      {/* Unified Single Studio Top Bar */}
-      <header id="app-top-nav" className="h-12 bg-[#030508]/95 border-b border-white/5 px-4 sm:px-5 flex items-center justify-between z-30 shrink-0 backdrop-blur-md">
-        {/* Left: Brand & Active Song Badge */}
-        <div className="flex items-center gap-3">
-          <div
-            className="flex items-center gap-2 cursor-pointer group"
-            onClick={() => setCurrentView('stage')}
-            title="Към сцената"
-          >
-            <div className="w-7 h-7 rounded-full bg-[#00E5BE] flex items-center justify-center font-black text-[#070B12] text-xs group-hover:scale-105 transition-transform">
-              P
-            </div>
-            <span className="font-extrabold text-sm tracking-tight text-white hidden md:inline">
-              PickHero
-            </span>
-          </div>
-
-          <div className="h-4 w-px bg-[#1C293D] hidden sm:block" />
-
-          {/* Quick Active Song Indicator & Switcher */}
-          <button
-            onClick={() => setCurrentView('menu')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 text-xs transition-colors cursor-pointer group"
-            title="Кликни за избор на друга песен от библиотеката"
-          >
-            <Music className="w-3.5 h-3.5 text-[#00E5BE]" />
-            <span className="font-semibold text-white truncate max-w-[140px] sm:max-w-[180px]">
-              {activeSong.title}
-            </span>
-            <span className="text-[#596E84] font-mono text-[11px] hidden lg:inline">
-              {activeSong.tempo} BPM
-            </span>
-            <ChevronRight className="w-3 h-3 text-[#596E84] group-hover:text-white transition-colors" />
-          </button>
-        </div>
-
-        {/* Center: Clean Primary Navigation Tabs */}
-        <nav id="view-tabs" className="flex items-center bg-white/[0.03] p-0.5 rounded-full border border-white/10">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentView === item.id;
-            return (
-              <button
-                key={item.id}
-                id={`tab-${item.id}`}
-                onClick={() => setCurrentView(item.id)}
-                className={`relative flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                  isActive ? 'text-[#070B12]' : 'text-[#8295AB] hover:text-white'
-                }`}
-                title={item.desc}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="active-nav-indicator"
-                    className="absolute inset-0 bg-[#00E5BE] rounded-full"
-                    transition={{ type: 'spring', stiffness: 450, damping: 35 }}
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-1.5">
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{item.label}</span>
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Right: Single Clear Microphone Input Controller */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleToggleMic}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-mono font-medium transition-all cursor-pointer ${
-              isListeningMic
-                ? 'bg-[#00E5BE]/10 border-[#00E5BE]/40 text-[#00E5BE] shadow-sm shadow-[#00E5BE]/20'
-                : 'bg-[#101726] border-[#1E2E44] text-[#71859D] hover:text-white hover:border-[#2C3E5B]'
-            }`}
-            title={
-              isListeningMic
-                ? 'Микрофонът слуша на живо. Кликнете, за да го спрете.'
-                : 'Кликнете, за да активирате микрофона и засичането на китарата.'
-            }
-          >
-            {isListeningMic ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-[#00E5BE] animate-ping" />
-                <Mic className="w-3.5 h-3.5 text-[#00E5BE]" />
-                <span className="font-bold">
-                  {tunerPitch.frequency > 0 ? `${tunerPitch.pitch} (${tunerPitch.frequency.toFixed(0)}Hz)` : 'Слуша...'}
-                </span>
-              </>
-            ) : (
-              <>
-                <MicOff className="w-3.5 h-3.5 text-[#71859D]" />
-                <span>Микрофон: Изкл</span>
-              </>
-            )}
-          </button>
-        </div>
-      </header>
-
-      {/* Main View Area */}
-      <main id="app-view-container" className="flex-1 relative overflow-hidden bg-[#030508]">
-        <AnimatePresence mode="wait">
-          {currentView === 'stage' && (
-            <motion.div
-              key="stage"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.12 }}
-              className="h-full w-full"
-            >
-              <PlayingStage
-                selectedSong={selectedSong}
-                selectedNotes={selectedNotes}
-                selectedSections={selectedSections}
-                selectedAnalysis={selectedAnalysis}
-                tempoPercent={tempoPercent}
-                onTempoPercentChange={setTempoPercent}
-                onOpenLibrary={() => setCurrentView('menu')}
-                onOpenCoachChat={() => setCurrentView('coach')}
-              />
-            </motion.div>
-          )}
-
-          {currentView === 'coach' && (
-            <motion.div
-              key="coach"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.12 }}
-              className="h-full w-full max-w-4xl mx-auto p-3 sm:p-5"
-            >
-              <AICoachChat
-                currentSong={selectedSong}
-                currentTempoPercent={tempoPercent}
-                onApplyRecommendedTempo={(newTempo) => {
-                  setTempoPercent(newTempo);
-                  setCurrentView('stage');
-                }}
-              />
-            </motion.div>
-          )}
-
-          {currentView === 'menu' && (
-            <motion.div
-              key="menu"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.12 }}
-              className="h-full w-full"
-            >
-              <SongMenu
-                onSelectSong={handleSelectSong}
-                onImportSong={handleImportSong}
-                importedSongs={importedSongs}
-                onBackToStage={() => setCurrentView('stage')}
-              />
-            </motion.div>
-          )}
-
-          {currentView === 'tuner' && (
-            <motion.div
-              key="tuner"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.12 }}
-              className="h-full w-full"
-            >
-              <StudioTuner
-                currentPitch={tunerPitch.pitch}
-                frequencyHz={tunerPitch.frequency}
-                centsOffset={tunerPitch.cents}
-                inTune={tunerPitch.inTune}
-                isListening={isListeningMic}
-                volumeRms={volumeRms}
-                onToggleMic={handleToggleMic}
-                onClose={() => setCurrentView('stage')}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-    </div>
+  if (screen === 'practice' && song) return (
+    <PlayingStage song={song} withAudio={withAudio} tempoPercent={tempoPercent} initialLoopRange={practiceFocus} onTempoPercentChange={setTempoPercent}
+      onFinish={(session) => { micDetector.stopListening(); setPracticeFocus(null); setWeakSection(session.hadAudio ? findWeakSection(song, session.notes) : null); setResult(session); setScreen('result'); }} />
   );
+
+  if (screen === 'result' && song && result) return (
+    <PracticeResult songTitle={song.title} result={result} weakSection={weakSection} isStarting={busy} error={error}
+      onPracticeWeakSection={() => {
+        if (!weakSection) return;
+        setPracticeFocus({ startBar: weakSection.startBar, endBar: weakSection.endBar });
+        setTempoPercent(tempoPercent >= 90 ? 80 : tempoPercent >= 80 ? 70 : tempoPercent >= 70 ? 50 : 50);
+        void startPractice(withAudio);
+      }} onReplay={() => { setPracticeFocus(null); void startPractice(withAudio); }} onLoadAnother={reset} />
+  );
+
+  return <StartScreen song={song} loading={loading} busy={busy} error={error} devices={devices} deviceId={deviceId}
+    onDeviceChange={setDeviceId} onFindInputs={() => { void findInputs(); }} onFile={(file) => { void loadFile(file); }}
+    onDemo={() => { setSong(demoSong()); setTempoPercent(100); setError(null); }} onStart={(useAudio) => { void startPractice(useAudio); }} onReset={reset} />;
 }
