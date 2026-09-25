@@ -8,6 +8,12 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     this.filled = 0;
     this.samplesSinceLastSnapshot = 0;
     this.pendingOnset = false;
+    this.quickOnsetWindowSize = 256;
+    this.quickOnsetSamples = 0;
+    this.quickOnsetSquares = 0;
+    this.previousQuickOnsetRms = 0;
+    this.lastQuickOnsetFrame = -99999;
+    this.quickOnsetRefractoryFrames = Math.round(sampleRate * 0.04);
     this.blockCounter = 0;
     this.noiseThreshold = options.processorOptions?.noiseThreshold || 0.002;
     this.mutedUntilFrame = 0;
@@ -49,6 +55,31 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       this.filled = Math.min(this.bufferSize, this.filled + 1);
       this.samplesSinceLastSnapshot++;
       sumSquares += sample * sample;
+      this.quickOnsetSquares += sample * sample;
+      this.quickOnsetSamples++;
+
+      if (this.quickOnsetSamples === this.quickOnsetWindowSize) {
+        const quickRms = Math.sqrt(this.quickOnsetSquares / this.quickOnsetWindowSize);
+        const quickOnsetFrame = currentFrame + i + 1;
+        const isQuickOnset =
+          quickOnsetFrame >= this.mutedUntilFrame &&
+          quickOnsetFrame - this.lastQuickOnsetFrame >= this.quickOnsetRefractoryFrames &&
+          quickRms > this.noiseThreshold &&
+          quickRms > this.previousQuickOnsetRms * 2.5;
+
+        if (isQuickOnset) {
+          this.lastQuickOnsetFrame = quickOnsetFrame;
+          this.port.postMessage({
+            type: 'ONSET_TRIGGERED',
+            rms: quickRms,
+            audioTimeMs: (quickOnsetFrame / sampleRate) * 1000,
+          });
+        }
+
+        this.previousQuickOnsetRms = quickRms;
+        this.quickOnsetSquares = 0;
+        this.quickOnsetSamples = 0;
+      }
 
       if (i > 0) {
         const diff = sample - channel[i - 1];
