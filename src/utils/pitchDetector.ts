@@ -271,7 +271,11 @@ export class MicrophonePitchDetector {
       return true;
     } catch (error) {
       this.clearNativeListeners();
-      this.errorMessage = error instanceof Error ? error.message : 'We can’t open that native audio input.';
+      this.errorMessage = error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+        ? error
+        : 'We can’t open that native audio input.';
       this.stopListening();
       return false;
     }
