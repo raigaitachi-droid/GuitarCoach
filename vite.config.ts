@@ -20,7 +20,7 @@ export default defineConfig(() => {
         process.env.DISABLE_HMR === 'true'
           ? null
           : {
-              ignored: ['**/src-tauri/target/**'],
+              ignored: ['**/src-tauri/target/**', '**/src-tauri/gen/**'],
             },
     },
   };
