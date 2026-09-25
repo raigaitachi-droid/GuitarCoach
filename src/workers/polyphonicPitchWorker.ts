@@ -10,6 +10,9 @@ type IncomingMessage =
 const MODEL_SAMPLE_RATE = 22050;
 const WINDOW_SAMPLES = MODEL_SAMPLE_RATE * 2;
 const ANALYSIS_EVERY_MS = 750;
+const REALTIME_ONSET_THRESHOLD = 0.25;
+const REALTIME_FRAME_THRESHOLD = 0.2;
+const REALTIME_MINIMUM_NOTE_DURATION_MS = 30;
 let model: BasicPitch | null = null;
 let rolling = new Float32Array(0);
 let lastAnalysisAt = -Infinity;
@@ -44,7 +47,13 @@ async function analyse(audioTimeMs: number) {
       frames.push(...nextFrames);
       onsets.push(...nextOnsets);
     }, () => undefined);
-    const notes = outputToNotesPoly(frames, onsets, 0.25, 0.25, 5);
+    const notes = outputToNotesPoly(
+      frames,
+      onsets,
+      REALTIME_ONSET_THRESHOLD,
+      REALTIME_FRAME_THRESHOLD,
+      REALTIME_MINIMUM_NOTE_DURATION_MS
+    );
     const recentFrame = Math.max(0, frames.length - 28);
     const midiNumbers = [...new Set(notes
       .filter((note) => note.startFrame + note.durationFrames >= recentFrame)
