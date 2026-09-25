@@ -396,7 +396,7 @@ export class MicrophonePitchDetector {
 
     const isSpeechVocalRange = frequency >= 85 && frequency <= 250;
     const isSpeechLikeVowel =
-      !onset && isSpeechVocalRange && crestFactor < 1.72 && bestCorrelation < 0.78;
+      !onset && isSpeechVocalRange && crestFactor < 1.45 && bestCorrelation < 0.62;
     const isVocalJitter = !onset && centsJitter > 26;
 
     const isVoiceLike = Boolean(!onset && (isSpeechLikeVowel || isVocalJitter));
