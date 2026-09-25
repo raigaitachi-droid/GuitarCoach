@@ -28,7 +28,11 @@ test('pitch judgement applies latency, timing windows, and cents tolerance consi
   expect(judgeDetectedPitch({ ...base, playbackMs: 910 })).toMatchObject({ kind: 'correct', timing: 'early', timingOffsetMs: -120 });
   expect(judgeDetectedPitch({ ...base, playbackMs: 1130 })).toMatchObject({ kind: 'correct', timing: 'late', timingOffsetMs: 100 });
   expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 41, cents: 0 } })).toMatchObject({ kind: 'wrong', expected: target });
+  expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 41, cents: 0, onset: true } })).toMatchObject({ kind: 'correct', note: target });
+  expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 42, cents: 0, onset: true } })).toMatchObject({ kind: 'wrong', expected: target });
   expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 40, cents: 50 } })).toMatchObject({ kind: 'correct', note: target });
+  expect(judgeDetectedPitch({ ...base, playbackMs: 1510 })).toMatchObject({ kind: 'correct', timing: 'late', timingOffsetMs: 480 });
+  expect(judgeDetectedPitch({ ...base, playbackMs: 1511 })).toMatchObject({ kind: 'ignored' });
 });
 
 test('guitar pitches use the same MIDI-to-Hz map as the imported Guitar Pro notes', () => {
@@ -42,9 +46,9 @@ test('guitar pitches use the same MIDI-to-Hz map as the imported Guitar Pro note
 test('misses are only assigned after the scaled timing deadline', () => {
   const target: TabNote = { id: 'target', string: 6, fret: 0, timestampMs: 1000, durationMs: 500 };
   const scorableIds = new Set(['target']);
-  expect([...missedNoteIds([target], scorableIds, 1360, 1)]).toEqual([]);
-  expect([...missedNoteIds([target], scorableIds, 1361, 1)]).toEqual(['target']);
-  expect([...missedNoteIds([target], scorableIds, 1181, 0.5)]).toEqual(['target']);
+  expect([...missedNoteIds([target], scorableIds, 1480, 1)]).toEqual([]);
+  expect([...missedNoteIds([target], scorableIds, 1481, 1)]).toEqual(['target']);
+  expect([...missedNoteIds([target], scorableIds, 1241, 0.5)]).toEqual(['target']);
 });
 
 test('wait mode stops on the first unresolved single note and releases only after it is hit', () => {
