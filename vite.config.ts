@@ -5,7 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/',
+    // GitHub Pages publishes this project below /GuitarCoach/, not at the domain root.
+    base: '/GuitarCoach/',
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {
