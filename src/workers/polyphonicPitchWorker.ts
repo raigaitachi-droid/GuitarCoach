@@ -2,6 +2,7 @@
 
 import { BasicPitch, outputToNotesPoly } from '@spotify/basic-pitch';
 import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-backend-wasm';
 
 type IncomingMessage =
   | { type: 'init'; modelUrl: string }
@@ -20,6 +21,22 @@ let model: BasicPitch | null = null;
 let rolling = new Float32Array(WINDOW_SAMPLES);
 let lastAnalysisAt = -Infinity;
 let busy = false;
+
+async function initialiseTensorFlow() {
+  try {
+    const webglEnabled = await tf.setBackend('webgl');
+    if (!webglEnabled) throw new Error('WebGL is unavailable in this worker.');
+    await tf.ready();
+    console.info('TF.js running on WebGL');
+  } catch (error) {
+    const wasmEnabled = await tf.setBackend('wasm');
+    if (!wasmEnabled) throw error;
+    await tf.ready();
+    console.warn('TF.js WebGL unavailable; using WASM instead.');
+  }
+}
+
+const tensorflowReady = initialiseTensorFlow();
 
 function appendSamples(samples: Float32Array, sampleRate: number) {
   const targetLength = Math.max(1, Math.round(samples.length * MODEL_SAMPLE_RATE / sampleRate));
@@ -72,10 +89,7 @@ async function analyse(audioTimeMs: number) {
 }
 
 async function initialise(modelUrl: string) {
-  // Prefer hardware acceleration for Basic Pitch inference so fast passages do
-  // not stall behind the TensorFlow.js CPU backend.
-  await tf.setBackend('webgl');
-  await tf.ready();
+  await tensorflowReady;
   model = new BasicPitch(modelUrl);
   self.postMessage({ type: 'ready' });
 }
