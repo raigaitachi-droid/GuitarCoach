@@ -73,14 +73,14 @@ test('minimal start, demo, pause, result, replay, and new tab', async ({ page })
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('Paused');
   const progress = await page.getByRole('progressbar').getAttribute('value');
-  await page.getByLabel('Tempo').selectOption('70');
+  await page.getByLabel('Tempo', { exact: true }).fill('84');
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', progress!);
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByRole('heading', { name: 'Practice complete' })).toBeVisible();
   await expect(page.getByText('Connect your guitar input to get feedback.')).toBeVisible();
   await page.getByRole('button', { name: 'Play again' }).click();
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
-  await expect(page.getByLabel('Tempo')).toHaveValue('70');
+  await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('84');
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await page.getByRole('button', { name: 'Load another tab' }).click();
   await expect(page.getByRole('button', { name: 'Drop Guitar Pro file', exact: false })).toBeVisible();
@@ -112,7 +112,7 @@ test('selected audio input, wait gate, zero score for silence, and cleanup', asy
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for', { timeout: 5000 });
   const position = await page.getByRole('progressbar').getAttribute('value');
-  await page.getByLabel('Tempo').selectOption('80');
+  await page.getByLabel('Tempo', { exact: true }).fill('96');
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', position!);
   expect(await page.evaluate(() => (window as any).testGuitar.constraints.audio.deviceId.exact)).toBe('usb-guitar');
   await page.getByRole('button', { name: 'Wait Mode On' }).click();
@@ -120,7 +120,7 @@ test('selected audio input, wait gate, zero score for silence, and cleanup', asy
   await expect(page.getByText('Weakest section:')).toBeVisible();
   await page.getByRole('button', { name: 'Practice weak section' }).click();
   await expect(page.getByRole('button', { name: 'Loop On' })).toBeVisible();
-  await expect(page.getByLabel('Tempo')).toHaveValue('70');
+  await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('84');
   await page.getByRole('button', { name: 'Finish practice' }).click();
   expect(await page.evaluate(() => (window as any).testGuitar.active)).toBe(0);
   await page.getByRole('button', { name: 'Play again' }).click();
@@ -195,6 +195,18 @@ test('a quiet guitar-input signal can still release Wait Mode', async ({ page })
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.006));
   await expect(page.getByRole('status')).toContainText('Correct note');
+});
+
+test('Coach Mode turns on a bar loop and keeps BPM directly adjustable', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await page.getByRole('button', { name: 'Coach Mode Off' }).click();
+  await expect(page.getByRole('button', { name: 'Coach Mode On' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Loop On' })).toBeVisible();
+  await page.getByRole('button', { name: 'Increase tempo' }).click();
+  await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('125');
 });
 
 test('the background polyphonic preview reports a played chord without touching score state', async ({ page }) => {

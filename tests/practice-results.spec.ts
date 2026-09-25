@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { advanceLoop, applyWaitGate, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
 
 const notes: TabNote[] = [
@@ -72,6 +72,18 @@ test('loop uses exact bar boundaries and resets only its selected pass', () => {
   expect(reset.find((note) => note.id === 'hit')?.hitState).toBe('hit');
   expect(reset.find((note) => note.id === 'miss')?.hitState).toBeUndefined();
   expect(reset.find((note) => note.id === 'future')?.hitState).toBeUndefined();
+});
+
+test('coach mode bases tempo decisions only on judged single notes in the loop', () => {
+  const boundaries = { startMs: 1000, endMs: 2000 };
+  const loopNotes: TabNote[] = [
+    { id: 'first', string: 6, fret: 0, timestampMs: 1100, durationMs: 50, hitState: 'hit' },
+    { id: 'second', string: 5, fret: 0, timestampMs: 1500, durationMs: 50, hitState: 'hit' },
+    { id: 'missed', string: 4, fret: 0, timestampMs: 1800, durationMs: 50, hitState: 'miss' },
+    { id: 'outside', string: 3, fret: 0, timestampMs: 2100, durationMs: 50, hitState: 'miss' },
+  ];
+  expect(assessLoopPass(loopNotes, new Set(['first', 'second', 'missed', 'outside']), boundaries)).toEqual({ attempted: 3, correct: 2, accuracy: 67 });
+  expect(assessLoopPass(loopNotes, new Set(['first', 'second']), boundaries)).toEqual({ attempted: 2, correct: 2, accuracy: 100 });
 });
 
 test('weak section needs meaningful played evidence and chooses the densest error cluster', () => {

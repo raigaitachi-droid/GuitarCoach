@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector, PitchResult } from '../utils/pitchDetector';
-import { advanceLoop, applyWaitGate, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, normalizeLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, normalizeLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
@@ -54,6 +54,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const [loopRange, setLoopRange] = useState<PracticeLoopRange>(startingRange);
   const loopRangeRef = useRef<PracticeLoopRange>(startingRange);
   const tempoRef = useRef(tempoPercent / 100);
+  const [coachMode, setCoachMode] = useState(false);
+  const coachModeRef = useRef(false);
+  const [coachStreak, setCoachStreak] = useState(0);
+  const coachStreakRef = useRef(0);
+  const [coachMessage, setCoachMessage] = useState<string | null>(null);
   const completedRef = useRef(false);
   const onFinishRef = useRef(onFinish);
   const lastConsumedPluck = useRef(-1);
@@ -112,6 +117,50 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     loopRangeRef.current = nextRange;
     setLoopRange(nextRange);
     if (loopEnabledRef.current) restartLoop(nextRange);
+  };
+  const setTempoBpm = (bpm: number) => {
+    const bounded = Math.min(300, Math.max(20, Math.round(bpm)));
+    const nextPercent = bounded / Math.max(1, song.tempo) * 100;
+    tempoRef.current = nextPercent / 100;
+    onTempoPercentChange(nextPercent);
+  };
+  const recordCoachPass = (boundaries: NonNullable<ReturnType<typeof loopBoundaries>>) => {
+    const pass = assessLoopPass(notesRef.current, scorableIds, boundaries);
+    const clean = pass.accuracy !== null && pass.attempted > 0 && pass.accuracy >= 90;
+    if (!clean) {
+      coachStreakRef.current = 0;
+      setCoachStreak(0);
+      setCoachMessage(pass.accuracy === null ? 'Play the loop through to set a tempo.' : `${pass.accuracy}% this pass · repeat it cleanly.`);
+      return;
+    }
+    const nextStreak = coachStreakRef.current + 1;
+    if (nextStreak < 2) {
+      coachStreakRef.current = nextStreak;
+      setCoachStreak(nextStreak);
+      setCoachMessage(`${pass.accuracy}% this pass · one more clean loop.`);
+      return;
+    }
+    coachStreakRef.current = 0;
+    setCoachStreak(0);
+    const nextBpm = Math.min(300, Math.round(song.tempo * tempoRef.current * 100) / 100 + 5);
+    setTempoBpm(nextBpm);
+    setCoachMessage(nextBpm >= 300 ? '300 BPM reached · keep it clean.' : `Two clean loops · tempo ${nextBpm} BPM.`);
+  };
+  const changeCoachMode = () => {
+    const nextEnabled = !coachModeRef.current;
+    coachModeRef.current = nextEnabled;
+    setCoachMode(nextEnabled);
+    coachStreakRef.current = 0;
+    setCoachStreak(0);
+    setCoachMessage(nextEnabled ? 'Two loops at 90% raises tempo by 5 BPM.' : null);
+    if (!nextEnabled || loopEnabledRef.current) return;
+    const activeBar = barAt(bars, playbackRef.current)?.index || 1;
+    const range = { startBar: activeBar, endBar: activeBar };
+    loopEnabledRef.current = true;
+    setLoopEnabled(true);
+    loopRangeRef.current = range;
+    setLoopRange(range);
+    restartLoop(range);
   };
   const finish = () => {
     if (completedRef.current) return;
@@ -199,7 +248,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         const loopAdvance = activeLoop && advanceLoop(next, activeLoop);
         const wrapped = loopAdvance?.wrapped || false;
         if (loopAdvance) next = loopAdvance.playbackMs;
-        if (wrapped && activeLoop) clearLoopPass(activeLoop);
+        if (wrapped && activeLoop) {
+          if (coachModeRef.current && withAudio) recordCoachPass(activeLoop);
+          clearLoopPass(activeLoop);
+        }
         if (waitModeRef.current && withAudio) {
           const gated = applyWaitGate(notesRef.current, scorableIds, next);
           next = gated.playbackMs;
@@ -255,12 +307,18 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       </header>
       <div className="practice-controls" aria-label="Playback controls">
         <button className="primary-button play-button" onClick={() => setTransport(!playingRef.current)} disabled={Boolean(inputError)}>{playing ? 'Pause' : 'Play'}</button>
-        <label className="tempo-control">Tempo<select aria-label="Tempo" value={tempoPercent} onChange={(event) => onTempoPercentChange(Number(event.target.value))}>{[50, 70, 80, 90, 100].map((percent) => <option key={percent} value={percent}>{percent}%</option>)}</select></label>
+        <div className="tempo-control"><span>Tempo</span>
+          <button className="tempo-step" aria-label="Decrease tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current - 5)} disabled={Boolean(inputError)}>−</button>
+          <input aria-label="Tempo" type="number" min="20" max="300" value={Math.round(song.tempo * tempoPercent / 100)} onChange={(event) => setTempoBpm(Number(event.target.value))} disabled={Boolean(inputError)} />
+          <span>BPM</span>
+          <button className="tempo-step" aria-label="Increase tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current + 5)} disabled={Boolean(inputError)}>+</button>
+        </div>
         <button className="toggle-button" aria-pressed={loopEnabled} onClick={changeLoop} disabled={Boolean(inputError)}>Loop <span>{loopEnabled ? 'On' : 'Off'}</span></button>
         {loopEnabled && <div className="loop-range" aria-label="Loop range">
           <label>From bar<select aria-label="Loop from bar" value={loopRange.startBar} onChange={(event) => changeLoopRange({ startBar: Number(event.target.value), endBar: loopRange.endBar })}>{bars.map((bar) => <option key={bar.index} value={bar.index}>{bar.index}</option>)}</select></label>
           <label>To bar<select aria-label="Loop to bar" value={loopRange.endBar} onChange={(event) => changeLoopRange({ startBar: loopRange.startBar, endBar: Number(event.target.value) })}>{bars.map((bar) => <option key={bar.index} value={bar.index}>{bar.index}</option>)}</select></label>
         </div>}
+        {withAudio && <button className="toggle-button" aria-pressed={coachMode} onClick={changeCoachMode} disabled={Boolean(inputError)} title="Raise tempo after two clean loop passes">Coach Mode <span>{coachMode ? 'On' : 'Off'}</span></button>}
         {withAudio && <button className="toggle-button" aria-pressed={waitMode} onClick={changeWaitMode} disabled={Boolean(inputError)} title="Wait for each correct note before continuing">Wait Mode <span>{waitMode ? 'On' : 'Off'}</span></button>}
         <span className="bar-position">{loopEnabled ? `Loop ${loopRange.startBar}–${loopRange.endBar}` : `Bar ${currentBar} / ${bars.length}`}</span>
       </div>
@@ -273,6 +331,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {withAudio && heardPitch && <span className="detector-readout">Heard {heardPitch.noteName} · {heardPitch.frequency.toFixed(1)} Hz · {Math.round(heardPitch.confidence * 100)}%</span>}
           {withAudio && heardChord.length > 1 && <span className="detector-readout">Chord preview: {heardChord.map(midiName).join(' ')}</span>}
           {withAudio && polyphonicError && <span className="detector-readout">Chord preview unavailable: {polyphonicError}</span>}
+          {coachMode && <span className="detector-readout">{coachMessage || `Coach: ${coachStreak}/2 clean loops`}</span>}
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>

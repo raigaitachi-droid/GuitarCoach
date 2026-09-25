@@ -148,6 +148,12 @@ export interface PracticeLoopRange {
   endBar: number;
 }
 
+export interface LoopPass {
+  attempted: number;
+  correct: number;
+  accuracy: number | null;
+}
+
 export interface LoopBoundaries {
   startMs: number;
   endMs: number;
@@ -197,6 +203,19 @@ export function resetLoopPass(notes: TabNote[], boundaries: LoopBoundaries): Tab
     ? { ...note, hitState: undefined, timingOffsetMs: undefined, mistakeCount: undefined }
     : note
   );
+}
+
+// Coach Mode needs one small, explainable signal: did this completed pass have
+// enough evidence, and was it accurate enough to earn a tempo increase?
+export function assessLoopPass(notes: TabNote[], scorableIds: Set<string>, boundaries: LoopBoundaries): LoopPass {
+  const selected = notes.filter((note) =>
+    scorableIds.has(note.id) &&
+    note.timestampMs >= boundaries.startMs &&
+    note.timestampMs < boundaries.endMs
+  );
+  const attempted = selected.filter((note) => (note.hitState && note.hitState !== 'unhit') || note.mistakeCount).length;
+  const correct = selected.filter((note) => note.hitState === 'hit' || note.hitState === 'close').length;
+  return { accuracy: attempted ? Math.round(correct / attempted * 100) : null, attempted, correct };
 }
 
 // This deliberately stays small and explainable: scan up to three adjacent
