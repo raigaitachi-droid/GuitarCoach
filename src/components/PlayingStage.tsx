@@ -30,7 +30,6 @@ import {
   Check,
   ZoomIn,
   ZoomOut,
-  MoreHorizontal,
 } from 'lucide-react';
 import { TabNote, SongMetadata, FeedbackData, SongSection, CoachEvaluation, SongAnalysis } from '../types';
 import { GuitarTuner } from './GuitarTuner';
@@ -228,8 +227,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
   const [waitForMeMode, setWaitForMeMode] = useState(false);
   const [isFrozenWaiting, setIsFrozenWaiting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // Preserve the app's familiar whole-song repeat behavior, but expose it as a practice control.
-  const [isLoopEnabled, setIsLoopEnabled] = useState(true);
 
   // Auto-Demo vs Practice mode toggle
   const [isAutoDemo, setIsAutoDemo] = useState(false);
@@ -401,7 +398,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
     change: number;
   } | null>(null);
   const [isCustomTempoOpen, setIsCustomTempoOpen] = useState(false);
-  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const lastRunEvaluatedAtRef = useRef<number>(0);
   const tempoFactorRef = useRef<number>(tempoFactor);
   const statsRef = useRef(stats);
@@ -669,12 +665,6 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               evaluatePerformanceAndAdaptTempo({ ...statsRef.current, streak: streakRef.current }, tempoFactorRef.current, 'loop_completion');
             }
 
-            if (!isLoopEnabled) {
-              playbackMsRef.current = noteSequenceDurationMs;
-              setIsPlaying(false);
-              return noteSequenceDurationMs;
-            }
-
             // Keep playback running so the note highway auto-scrolls from the beginning.
             playbackMsRef.current = 0;
             setNotes(activeTabList.map((n) => ({ ...n })));
@@ -701,7 +691,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
 
     frameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frameId);
-  }, [isPlaying, tempoFactor, isFrozenWaiting, noteSequenceDurationMs, activeSong.id, isLoopEnabled]);
+  }, [isPlaying, tempoFactor, isFrozenWaiting, noteSequenceDurationMs, activeSong.id]);
 
   // Handle Wait-For-Me freezing and active target note detection
   useEffect(() => {
@@ -2889,7 +2879,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
       {/* Bottom Practice Toolbar & Controls */}
       <footer
         id="guitar-footer-controls"
-        className="h-14 bg-[#05070B] border-t border-white/5 px-3 sm:px-6 flex items-center justify-between shrink-0 z-20 relative"
+        className="h-14 bg-[#05070B] border-t border-white/5 px-6 flex items-center justify-between shrink-0 z-20"
       >
         {/* Play / Pause / Restart */}
         <div className="flex items-center gap-2.5">
@@ -2898,9 +2888,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.94 }}
             onClick={togglePlayback}
-            className="order-2 w-10 h-10 rounded-full bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] flex items-center justify-center font-black transition-colors cursor-pointer"
+            className="w-10 h-10 rounded-full bg-[#00E5BE] hover:bg-[#00E5BE]/90 text-[#070B12] flex items-center justify-center font-black transition-colors cursor-pointer"
             title="Space: Play / Pause"
-            aria-label={isPlaying ? 'Пауза' : 'Пусни'}
           >
             {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
           </motion.button>
@@ -2912,6 +2901,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               setIsPlaying(true);
               setPlaybackMs(0);
               setNotes(activeTabList.map((n) => ({ ...n })));
+              setWaitForMeMode(false);
               setIsFrozenWaiting(false);
               setActiveTargetNote(null);
               setFeedback(null);
@@ -2926,9 +2916,8 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
               lastConsumedPluckIdRef.current = -1;
               lastHitEventRef.current = null;
             }}
-            className="order-1 w-9 h-9 rounded-full bg-white/[0.03] hover:bg-white/[0.07] text-[#9FB0C4] hover:text-white flex items-center justify-center border border-white/10 transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white/[0.03] hover:bg-white/[0.07] text-[#9FB0C4] hover:text-white flex items-center justify-center border border-white/10 transition-colors cursor-pointer"
             title="Рестартирай песента от началото"
-            aria-label="Рестартирай песента от началото"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </motion.button>
@@ -2945,33 +2934,19 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 setActiveTargetNote(null);
               }
             }}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-2 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border hidden md:flex items-center gap-2 transition-colors cursor-pointer ${
               waitForMeMode
                 ? 'bg-[#F59E0B] text-[#080C12] border-[#F59E0B]'
                 : 'bg-white/[0.03] text-[#8EA1B8] border-white/10 hover:text-white'
             }`}
             title="Wait for me: автоматично спира на всяка нота, докато не я изсвирите правилно"
-            aria-pressed={waitForMeMode}
           >
-            {waitForMeMode && <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-[#080C12]" />}
-            <span>WAIT</span>
-          </motion.button>
-
-          <motion.button
-            id="btn-loop-toggle"
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setIsLoopEnabled((enabled) => !enabled)}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 transition-colors cursor-pointer ${
-              isLoopEnabled
-                ? 'bg-[#00E5BE]/15 text-[#00E5BE] border-[#00E5BE]/40'
-                : 'bg-white/[0.03] text-[#8EA1B8] border-white/10 hover:text-white'
-            }`}
-            title="Повтаря текущата песен след края ѝ"
-            aria-label="Повтаря текущата песен"
-            aria-pressed={isLoopEnabled}
-          >
-            {isLoopEnabled && <span aria-hidden="true" className="text-[#00E5BE]">●</span>}
-            <span>LOOP</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                waitForMeMode ? 'bg-[#080C12] animate-ping' : 'bg-[#586A7E]'
+              }`}
+            />
+            <span>Wait For Me {waitForMeMode ? 'ON' : 'OFF'}</span>
           </motion.button>
 
           {/* Auto-Demo Toggle */}
@@ -2986,7 +2961,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
                 if (!isPlaying) setIsPlaying(true);
               }
             }}
-            className={`hidden px-3 py-1.5 rounded-full text-xs font-semibold border items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border hidden md:flex items-center gap-1.5 transition-colors cursor-pointer ${
               isAutoDemo
                 ? 'bg-[#8B5CF6] text-white border-[#8B5CF6]'
                 : 'bg-white/[0.03] text-[#8EA1B8] border-white/10 hover:text-white'
@@ -3002,7 +2977,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             id="btn-speaker-sound-toggle"
             whileTap={{ scale: 0.95 }}
             onClick={() => setSynthSoundWithMic(!synthSoundWithMic)}
-            className={`hidden px-3 py-1.5 rounded-full text-xs font-semibold border items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border hidden lg:flex items-center gap-1.5 transition-colors cursor-pointer ${
               synthSoundWithMic
                 ? 'bg-white/[0.03] text-[#00E5BE] border-[#00E5BE]/30'
                 : 'bg-white/[0.03] text-[#8EA1B8] border-white/10 hover:text-white'
@@ -3030,23 +3005,40 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         {/* Dynamic Continuous Tempo Controller (0% - 200% in 1% increments) & AI Coach Controls */}
         <div className="flex items-center gap-2 bg-white/[0.03] border border-white/10 p-1.5 rounded-full relative">
           <div className="flex items-center gap-1.5">
+            <span className="text-xs text-[#63768D] font-mono font-medium pl-1 hidden sm:inline">Скорост:</span>
             
             {/* Step Down 1% */}
             <button
-              onClick={() => changeTempoPercent(currentTempoPercent - 5)}
-              className="order-1 w-7 h-7 rounded-full bg-transparent hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-[#00E5BE] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-              title="Намали темпото с 5%"
-              aria-label="Намали темпото с 5%"
+              onClick={() => changeTempoPercent(currentTempoPercent - 1)}
+              className="w-6 h-6 rounded-full bg-transparent hover:bg-white/[0.06] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
+              title="Намали темпото с 1%"
+              aria-label="Намали темпото с 1%"
             >
               <Minus className="w-3 h-3" />
             </button>
 
+            {/* Fine-grained slider control for tempoPercent (0% to 200% in 1% increments) */}
+            <div className="flex items-center gap-2 px-1">
+              <input
+                id="tempo-percent-slider"
+                type="range"
+                min="0"
+                max="200"
+                step="1"
+                value={currentTempoPercent}
+                onChange={(e) => changeTempoPercent(parseInt(e.target.value, 10))}
+                className="w-24 sm:w-32 md:w-36 lg:w-44 h-1.5 bg-[#1B293E] rounded-lg appearance-none cursor-pointer accent-[#00E5BE] hover:accent-[#00FAD0] transition-all"
+                title={`Скорост: ${currentTempoPercent}% (0% - 200%, стъпка 1%)`}
+                aria-label="Фино регулиране на темпото от 0% до 200%"
+              />
+            </div>
+
             {/* Step Up 1% */}
             <button
-              onClick={() => changeTempoPercent(currentTempoPercent + 5)}
-              className="order-3 w-7 h-7 rounded-full bg-transparent hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-[#00E5BE] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-              title="Увеличи темпото с 5%"
-              aria-label="Увеличи темпото с 5%"
+              onClick={() => changeTempoPercent(currentTempoPercent + 1)}
+              className="w-6 h-6 rounded-full bg-transparent hover:bg-white/[0.06] text-[#93A6BD] hover:text-white flex items-center justify-center transition-colors cursor-pointer text-xs"
+              title="Увеличи темпото с 1%"
+              aria-label="Увеличи темпото с 1%"
             >
               <Plus className="w-3 h-3" />
             </button>
@@ -3054,19 +3046,25 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
             {/* Clickable Current Tempo & BPM Badge */}
             <button
               onClick={() => setIsCustomTempoOpen(!isCustomTempoOpen)}
-              className={`order-2 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
                 isCustomTempoOpen
                   ? 'bg-[#00E5BE] text-[#070A10]'
                   : 'bg-transparent hover:bg-white/[0.06] text-[#00E5BE] border border-white/10'
               }`}
               title="Отвори меню за бързи пресети и прецизен контрол"
             >
+              <Gauge className="w-3.5 h-3.5" />
               <span>{currentTempoPercent}%</span>
+              {activeSong.tempo && (
+                <span className="text-[10px] opacity-75 font-normal hidden lg:inline">
+                  ({Math.round((activeSong.tempo || 120) * (currentTempoPercent / 100))} BPM)
+                </span>
+              )}
             </button>
           </div>
 
           {/* Quick Preset Buttons */}
-          <div className="hidden items-center gap-1 pl-1 border-l border-white/10">
+          <div className="hidden 2xl:flex items-center gap-1 pl-1 border-l border-white/10">
             {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => {
               const targetPct = Math.round(rate * 100);
               const isActive = currentTempoPercent === targetPct;
@@ -3158,7 +3156,7 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         </div>
 
         {/* AI Coach Adaptive Tempo Trigger & Actions */}
-        <div className="hidden items-center gap-1.5">
+        <div className="flex items-center gap-1.5">
           {/* Adaptive Auto-Coach Toggle Button */}
           <button
             onClick={() => toggleAutoAdapt(!isAdaptiveCoachOn)}
@@ -3204,105 +3202,28 @@ export const PlayingStage: React.FC<PlayingStageProps> = ({
         </div>
 
         {/* Fullscreen & Keyboard Hints */}
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              id="btn-practice-more"
-              onClick={() => setIsMoreMenuOpen((open) => !open)}
-              className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-[#00E5BE] ${
-                isMoreMenuOpen
-                  ? 'bg-[#00E5BE]/15 text-[#00E5BE] border-[#00E5BE]/40'
-                  : 'bg-[#101724] text-[#9FB0C4] border-[#1E2B3E] hover:text-white hover:border-[#00E5BE]/40'
-              }`}
-              title="Още practice контроли"
-              aria-label="Още practice контроли"
-              aria-expanded={isMoreMenuOpen}
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-
-            <AnimatePresence>
-              {isMoreMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                  className="absolute bottom-12 right-0 z-50 w-56 rounded-2xl border border-[#1E2E46] bg-[#0C1322] p-2 shadow-2xl backdrop-blur-xl"
-                >
-                  <p className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-[#647890]">Още</p>
-                  <button
-                    onClick={() => {
-                      const next = !isAutoDemo;
-                      setIsAutoDemo(next);
-                      if (next) {
-                        setIsFrozenWaiting(false);
-                        if (!isPlaying) setIsPlaying(true);
-                      }
-                    }}
-                    className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-[#C9D6E5] hover:bg-white/[0.06]"
-                  >
-                    <Headphones className="w-3.5 h-3.5 text-[#A78BFA]" /> Демо {isAutoDemo ? 'активно' : ''}
-                  </button>
-                  <button
-                    onClick={() => setSynthSoundWithMic(!synthSoundWithMic)}
-                    className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-[#C9D6E5] hover:bg-white/[0.06]"
-                  >
-                    {synthSoundWithMic ? <Volume2 className="w-3.5 h-3.5 text-[#00E5BE]" /> : <VolumeX className="w-3.5 h-3.5 text-[#F59E0B]" />}
-                    {synthSoundWithMic ? 'Колонки включени' : 'Без ехо'}
-                  </button>
-                  <button
-                    onClick={() => toggleAutoAdapt(!isAdaptiveCoachOn)}
-                    className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-[#C9D6E5] hover:bg-white/[0.06]"
-                  >
-                    <Bot className="w-3.5 h-3.5 text-[#00E5BE]" /> AI Adaptive {isAdaptiveCoachOn ? 'активно' : ''}
-                  </button>
-                  <button
-                    onClick={handleManualCoachEvaluation}
-                    disabled={isEvaluatingCoach}
-                    className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-[#C9D6E5] hover:bg-white/[0.06] disabled:opacity-50"
-                  >
-                    <Zap className={`w-3.5 h-3.5 text-[#F59E0B] ${isEvaluatingCoach ? 'animate-spin' : ''}`} /> Оцени дубъл
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsMoreMenuOpen(false);
-                      if (onOpenCoachChat) onOpenCoachChat();
-                      else setShowCoachChatDrawer(true);
-                    }}
-                    className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-[#C9D6E5] hover:bg-white/[0.06]"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 text-[#00E5BE]" /> AI Чат
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsMoreMenuOpen(false);
-                      setShowAudioSettings(true);
-                    }}
-                    className="w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-[#C9D6E5] hover:bg-white/[0.06]"
-                  >
-                    <Sliders className="w-3.5 h-3.5 text-[#8EA1B8]" /> Аудио настройки
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
+        <div className="flex items-center gap-3">
           <motion.button
             id="btn-fullscreen-toggle"
             whileTap={{ scale: 0.95 }}
             onClick={toggleFullscreen}
-            className="w-9 h-9 rounded-full text-xs font-semibold border bg-[#101724] text-white border-[#1E2B3E] hover:border-[#00E5BE]/40 hover:bg-[#162132] focus-visible:ring-2 focus-visible:ring-[#00E5BE] flex items-center justify-center transition-colors cursor-pointer"
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold border bg-[#101724] text-white border-[#1E2B3E] hover:border-[#00E5BE]/40 hover:bg-[#162132] flex items-center gap-1.5 transition-colors cursor-pointer"
             title="Преглед на цял екран"
-            aria-label={isFullscreen ? 'Изход от цял екран' : 'Цял екран'}
           >
             {isFullscreen ? (
-              <Minimize2 className="w-3.5 h-3.5 text-[#00E5BE]" />
+              <>
+                <Minimize2 className="w-3.5 h-3.5 text-[#00E5BE]" />
+                <span>Изход</span>
+              </>
             ) : (
-              <Maximize2 className="w-3.5 h-3.5 text-[#00E5BE]" />
+              <>
+                <Maximize2 className="w-3.5 h-3.5 text-[#00E5BE]" />
+                <span>Цял екран</span>
+              </>
             )}
           </motion.button>
 
-          <span className="text-xs text-[#526377] hidden font-mono">
+          <span className="text-xs text-[#526377] hidden lg:inline font-mono">
             Клавиши <kbd className="px-1.5 py-0.5 bg-[#101724] border border-[#1E2B3E] rounded text-[#CBD5E1]">1-6</kbd>
           </span>
         </div>
