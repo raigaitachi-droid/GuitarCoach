@@ -2,12 +2,13 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.bufferSize = 2048;
+    this.hopSize = this.bufferSize / 2;
     this.buffer = new Float32Array(this.bufferSize);
     this.writeIndex = 0;
     this.filled = 0;
+    this.samplesSinceLastSnapshot = 0;
+    this.pendingOnset = false;
     this.blockCounter = 0;
-    // Keep sustained-note analysis below roughly 50 Hz. Onsets still run immediately.
-    this.analysisIntervalBlocks = Math.max(4, Math.round(sampleRate / 128 / 45));
     this.noiseThreshold = options.processorOptions?.noiseThreshold || 0.002;
     this.mutedUntilFrame = 0;
 
@@ -46,6 +47,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       this.buffer[this.writeIndex] = sample;
       this.writeIndex = (this.writeIndex + 1) % this.bufferSize;
       this.filled = Math.min(this.bufferSize, this.filled + 1);
+      this.samplesSinceLastSnapshot++;
       sumSquares += sample * sample;
 
       if (i > 0) {
@@ -96,6 +98,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       this.pluckCount++;
       this.lastOnsetFrame = currentFrame;
       this.decayRms = Math.max(this.decayRms, rms);
+      if (currentFrame >= this.mutedUntilFrame) this.pendingOnset = true;
     }
 
     this.blockCounter++;
@@ -104,7 +107,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       currentFrame >= this.mutedUntilFrame &&
       this.filled === this.bufferSize &&
       rms >= this.noiseThreshold &&
-      (onset || this.blockCounter % this.analysisIntervalBlocks === 0)
+      this.samplesSinceLastSnapshot >= this.hopSize
     ) {
       const snapshot = new Float32Array(this.bufferSize);
       const tail = this.bufferSize - this.writeIndex;
@@ -118,12 +121,14 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
           rms,
           peak: blockPeak,
           crestFactor,
-          onset,
+          onset: this.pendingOnset,
           pluckId: this.pluckCount,
           audioTimeMs: (currentFrame / sampleRate) * 1000,
         },
         [snapshot.buffer]
       );
+      this.samplesSinceLastSnapshot %= this.hopSize;
+      this.pendingOnset = false;
     } else if (this.blockCounter % 8 === 0) {
       this.port.postMessage({ type: 'level', rms });
     }
