@@ -177,15 +177,16 @@ export class MicrophonePitchDetector {
 
         this.lastRms = message.rms;
         const samples = message.samples as Float32Array;
-        // The worklet snapshot is overlapping. The newest 1024 samples form a
-        // continuous, low-overhead stream for the background polyphonic worker.
-        const newestSamples = samples.slice(-1024);
+        // The worklet emits a 2048-sample window every 1024 samples. Preserve
+        // the overlap for the worker while declaring the new hop explicitly.
+        const polyphonicSamples = samples.slice();
         this.polyphonicWorker?.postMessage({
           type: 'samples',
-          samples: newestSamples,
+          samples: polyphonicSamples,
+          hopSamples: polyphonicSamples.length / 2,
           sampleRate: this.audioContext!.sampleRate,
           audioTimeMs: message.audioTimeMs,
-        }, [newestSamples.buffer]);
+        }, [polyphonicSamples.buffer]);
         const result = this.analysePitch(
           samples,
           this.audioContext!.sampleRate,
