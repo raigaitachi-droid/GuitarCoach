@@ -68,6 +68,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const [coachStreak, setCoachStreak] = useState(0);
   const coachStreakRef = useRef(0);
   const [coachMessage, setCoachMessage] = useState<string | null>(null);
+  const [isTempoOpen, setIsTempoOpen] = useState(false);
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const completedRef = useRef(false);
   const onFinishRef = useRef(onFinish);
   const lastConsumedPluck = useRef(-1);
@@ -151,6 +154,34 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     tempoRef.current = nextPercent / 100;
     onTempoPercentChange(nextPercent);
   };
+  const setTempoPercent = (percent: number) => {
+    const nextPercent = Math.min(200, Math.max(25, Math.round(percent)));
+    tempoRef.current = nextPercent / 100;
+    onTempoPercentChange(nextPercent);
+  };
+  const restartPractice = () => {
+    const activeLoop = loopEnabledRef.current && loopRangeRef.current
+      ? noteLoopBoundaries(song.notes, loopRangeRef.current)
+      : null;
+    const startMs = activeLoop?.startMs || 0;
+    updateNotes(song.notes.map((note) => ({ ...note, hitState: undefined, mistakeCount: undefined, timingOffsetMs: undefined })));
+    playbackRef.current = startMs;
+    setPlaybackMs(startMs);
+    completedRef.current = false;
+    waitingRef.current = null;
+    setWaiting(null);
+    setFeedback(null);
+    lastConsumedPluck.current = -1;
+    lastFeedbackPluck.current = -1;
+    lastHitNote.current = null;
+    guitarSynth.stop();
+    setTransport(true);
+  };
+  const toggleFullscreen = () => {
+    const target = document.documentElement;
+    const action = document.fullscreenElement ? document.exitFullscreen() : target.requestFullscreen?.();
+    void action?.catch(() => undefined);
+  };
   const recordCoachPass = (boundaries: NonNullable<ReturnType<typeof noteLoopBoundaries>>) => {
     const pass = assessLoopPass(notesRef.current, scorableIds, boundaries);
     const clean = pass.accuracy !== null && pass.attempted > 0 && pass.accuracy >= 90;
@@ -199,6 +230,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
 
   useEffect(() => { tempoRef.current = tempoPercent / 100; }, [tempoPercent]);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
 
   useEffect(() => {
     if (!withAudio) return;
@@ -335,22 +371,38 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         <div><span className="wordmark">GuitarCoach</span><h1 id="practice-heading">{song.title}</h1></div>
         <button className="text-button" onClick={finish}>Finish practice</button>
       </header>
-      <div className="practice-controls" aria-label="Playback controls">
-        <button className="primary-button play-button" onClick={() => setTransport(!playingRef.current)} disabled={Boolean(inputError)}>{playing ? 'Pause' : 'Play'}</button>
-        <div className="tempo-control"><span>Tempo</span>
-          <button className="tempo-step" aria-label="Decrease tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current - 5)} disabled={Boolean(inputError)}>−</button>
-          <input aria-label="Tempo" type="number" min="20" max="300" value={Math.round(song.tempo * tempoPercent / 100)} onChange={(event) => setTempoBpm(Number(event.target.value))} disabled={Boolean(inputError)} />
-          <span>BPM</span>
-          <button className="tempo-step" aria-label="Increase tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current + 5)} disabled={Boolean(inputError)}>+</button>
+      <div className="practice-controls" aria-label="Practice controls">
+        <button className="toolbar-icon-button" onClick={restartPractice} disabled={Boolean(inputError)} aria-label="Restart practice" title="Restart practice">↺</button>
+        <button className="primary-button play-button" onClick={() => setTransport(!playingRef.current)} disabled={Boolean(inputError)} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'}>{playing ? 'Ⅱ' : '▶'}</button>
+        <span className="toolbar-divider" aria-hidden="true" />
+        <button className="toolbar-mode-button" aria-pressed={waitMode} onClick={changeWaitMode} disabled={!withAudio || Boolean(inputError)} title={withAudio ? 'Wait for each correct note before continuing' : 'Connect an input to use Wait Mode'}>
+          <span aria-hidden="true" className="mode-indicator">{waitMode ? '●' : ''}</span>WAIT
+        </button>
+        <button className="toolbar-mode-button" aria-pressed={loopEnabled} onClick={changeLoop} disabled={Boolean(inputError)} title={loopEnabled ? 'Turn loop off' : 'Choose notes to loop'}>
+          <span aria-hidden="true" className="mode-indicator">{loopEnabled ? '●' : ''}</span>LOOP
+        </button>
+        <span className="toolbar-divider" aria-hidden="true" />
+        <div className="tempo-control">
+          <button className="tempo-step" aria-label="Decrease tempo by 5%" title="Decrease tempo by 5%" onClick={() => setTempoPercent(tempoPercent - 5)} disabled={Boolean(inputError)}>−</button>
+          <button className="tempo-value" aria-expanded={isTempoOpen} aria-haspopup="dialog" onClick={() => { setIsTempoOpen(!isTempoOpen); setIsMoreOpen(false); }} title="Open tempo controls">{Math.round(tempoPercent)}%</button>
+          <button className="tempo-step" aria-label="Increase tempo by 5%" title="Increase tempo by 5%" onClick={() => setTempoPercent(tempoPercent + 5)} disabled={Boolean(inputError)}>+</button>
+          {isTempoOpen && <div className="toolbar-popover tempo-popover" role="dialog" aria-label="Tempo controls">
+            <span className="popover-label">Speed</span>
+            <div className="tempo-presets">{[50, 60, 70, 80, 90, 100].map((percent) => <button key={percent} aria-pressed={Math.round(tempoPercent) === percent} onClick={() => { setTempoPercent(percent); setIsTempoOpen(false); }}>{percent}%</button>)}</div>
+            <input aria-label="Exact tempo percentage" type="range" min="25" max="200" step="1" value={Math.round(tempoPercent)} onChange={(event) => setTempoPercent(Number(event.target.value))} />
+            <div className="tempo-exact"><span>{Math.round(tempoPercent)}%</span><span>{Math.round(song.tempo * tempoPercent / 100)} BPM</span></div>
+          </div>}
         </div>
-        <button className="toggle-button" aria-pressed={loopEnabled} onClick={changeLoop} disabled={Boolean(inputError)}>Loop <span>{loopEnabled ? 'On' : 'Off'}</span></button>
-        {loopEnabled && <div className="loop-range" aria-label="Loop range">
-          <button className="text-button" onClick={beginLoopSelection}>{selectingLoop ? 'Drag across notes' : 'Select notes'}</button>
-          {!selectingLoop && loopRange && <span>{loopNoteLabel(song.notes, loopRange.startNoteId)} → {loopNoteLabel(song.notes, loopRange.endNoteId)}</span>}
-        </div>}
-        {withAudio && <button className="toggle-button" aria-pressed={coachMode} onClick={changeCoachMode} disabled={Boolean(inputError)} title="Raise tempo after two clean loop passes">Coach Mode <span>{coachMode ? 'On' : 'Off'}</span></button>}
-        {withAudio && <button className="toggle-button" aria-pressed={waitMode} onClick={changeWaitMode} disabled={Boolean(inputError)} title="Wait for each correct note before continuing">Wait Mode <span>{waitMode ? 'On' : 'Off'}</span></button>}
-        <span className="bar-position">{loopEnabled ? selectingLoop ? 'Drag from first note to last note' : loopRange ? `Loop ${loopNoteLabel(song.notes, loopRange.startNoteId)}–${loopNoteLabel(song.notes, loopRange.endNoteId)}` : 'Select loop notes' : `Bar ${currentBar} / ${bars.length}`}</span>
+        <div className="more-control">
+          <button className="toolbar-icon-button" onClick={() => { setIsMoreOpen(!isMoreOpen); setIsTempoOpen(false); }} aria-expanded={isMoreOpen} aria-haspopup="menu" aria-label="More practice controls" title="More practice controls">⋯</button>
+          {isMoreOpen && <div className="toolbar-popover more-popover" role="menu">
+            <span className="popover-label">Practice</span>
+            <button role="menuitem" onClick={() => { if (!loopEnabled) changeLoop(); else beginLoopSelection(); setIsMoreOpen(false); }}>{selectingLoop ? 'Drag across notes' : 'Select loop notes'}</button>
+            {loopRange && !selectingLoop && <span className="popover-detail">{loopNoteLabel(song.notes, loopRange.startNoteId)} → {loopNoteLabel(song.notes, loopRange.endNoteId)}</span>}
+            {withAudio && <button role="menuitem" aria-pressed={coachMode} onClick={() => { changeCoachMode(); setIsMoreOpen(false); }}>Coach Mode {coachMode ? 'active' : ''}</button>}
+          </div>}
+        </div>
+        <button className="toolbar-icon-button" onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>{isFullscreen ? '⛶' : '⛶'}</button>
       </div>
       <div className="practice-status">
         <p className={inputError ? 'error-message' : recentFeedback?.kind || ''} role="status">
