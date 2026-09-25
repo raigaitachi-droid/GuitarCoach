@@ -1,19 +1,9 @@
 import * as alphaTab from '@coderline/alphatab';
-import { ImportedSong, SongBar, TabNote } from '../types';
+import { ImportedSong, SongSection, TabNote } from '../types';
+import { analyzeTechniqueMap } from './musicAnalysis/arpeggioAnalyzer';
+import { buildPracticeFlowAssignment } from './musicAnalysis/practiceFlowRules';
 
 const SUPPORTED_EXTENSIONS = ['.gp', '.gpx', '.gp3', '.gp4', '.gp5', '.gp7', '.gp8'];
-const INTRO_LEAD_IN_MS = 1000;
-
-interface PlaybackTempoChange {
-  tick: number;
-  tempo: number;
-}
-
-interface PlaybackBar {
-  startTick: number;
-  endTick: number;
-  sourceMeasureIndex: number;
-}
 
 function hasMeaningfulHarmonicProperty(value: unknown, depth = 0): boolean {
   if (!value || typeof value !== 'object' || depth > 2) return false;
@@ -161,51 +151,188 @@ export function isSupportedGuitarProFile(file: File): boolean {
   return SUPPORTED_EXTENSIONS.some((extension) => name.endsWith(extension));
 }
 
-function selectGuitarTrack(score: alphaTab.model.Score) {
-  const playable = score.tracks.filter((candidate) => !candidate.isPercussion && candidate.staves.some((staff) => staff.tuning.length >= 4));
-  return playable.find((candidate) => candidate.staves.some((staff) => staff.tuning.length === 6)) || playable[0] || null;
+interface MeasureSummary {
+  measureIndex: number;
+  startMs: number;
+  endMs: number;
+  noteCount: number;
+  uniqueFrets: number;
+  patternHash: string;
 }
 
-function buildPlaybackTimeline(score: alphaTab.model.Score): { bars: PlaybackBar[]; tempoChanges: PlaybackTempoChange[] } {
-  // alphaTab's generator expands repeats and exposes the same timeline it uses for playback.
-  const handler = new Proxy({}, { get: () => () => undefined }) as alphaTab.midi.IMidiFileHandler;
-  const generator = new alphaTab.midi.MidiFileGenerator(score, new alphaTab.Settings(), handler);
-  generator.generate();
+function normalizeSectionName(rawName: string): string {
+  const name = rawName.trim();
+  if (!name) return 'Section';
 
-  const bars = generator.tickLookup.masterBars.map((bar) => ({
-    startTick: bar.start,
-    endTick: bar.end,
-    sourceMeasureIndex: bar.masterBar.index + 1,
-  }));
-  const tempoChanges = generator.tickLookup.masterBars.flatMap((bar) =>
-    bar.tempoChanges.map((change) => ({ tick: change.tick, tempo: change.tempo }))
-  ).filter((change) => Number.isFinite(change.tempo) && change.tempo > 0)
-    .sort((a, b) => a.tick - b.tick)
-    .filter((change, index, all) => index === 0 || change.tick !== all[index - 1].tick || change.tempo !== all[index - 1].tempo);
+  const lower = name.toLowerCase();
+  if (lower.includes('intro')) return 'Intro';
+  if (lower.includes('verse') || lower.includes('куплет')) return 'Verse';
+  if (lower.includes('pre') && lower.includes('chorus')) return 'Pre-Chorus';
+  if (lower.includes('chorus') || lower.includes('припев')) return 'Chorus';
+  if (lower.includes('bridge')) return 'Bridge';
+  if (lower.includes('solo')) return 'Solo';
+  if (lower.includes('outro') || lower.includes('coda')) return 'Outro';
 
-  return {
-    bars,
-    tempoChanges: tempoChanges.length > 0 ? tempoChanges : [{ tick: 0, tempo: Math.max(1, score.tempo || 120) }],
-  };
+  return name.length > 18 ? `${name.slice(0, 18)}…` : name;
 }
 
-function millisecondsAtTick(tick: number, tempoChanges: PlaybackTempoChange[]): number {
-  let elapsedMs = 0;
-  let previousTick = 0;
-  let tempo = tempoChanges[0]?.tempo || 120;
+function getMasterBarSectionName(masterBar: unknown): string | null {
+  const bar = masterBar as Record<string, unknown>;
+  const candidates = [
+    bar.section,
+    bar.marker,
+    bar.sectionName,
+    bar.markerName,
+    bar.alternateEndings,
+  ];
 
-  for (const change of tempoChanges) {
-    if (change.tick > tick) break;
-    elapsedMs += Math.max(0, change.tick - previousTick) * 60000 / (tempo * 960);
-    previousTick = change.tick;
-    tempo = change.tempo;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return normalizeSectionName(candidate);
+    }
+    if (typeof candidate === 'object') {
+      const obj = candidate as Record<string, unknown>;
+      const text =
+        obj.text ||
+        obj.title ||
+        obj.name ||
+        obj.marker ||
+        obj.section ||
+        obj.value;
+      if (typeof text === 'string' && text.trim()) {
+        return normalizeSectionName(text);
+      }
+    }
   }
 
-  return elapsedMs + Math.max(0, tick - previousTick) * 60000 / (tempo * 960);
+  return null;
 }
 
-function sourceBarFor(track: alphaTab.model.Track, sourceMeasureIndex: number) {
-  return track.staves.find((staff) => staff.tuning.length >= 4)?.bars[sourceMeasureIndex - 1] || null;
+function buildMeasureSummaries(
+  notes: TabNote[],
+  measureCount: number,
+  fallbackDurationMs: number
+): MeasureSummary[] {
+  const safeMeasureCount = Math.max(1, measureCount);
+  const averageMeasureMs = Math.max(1200, fallbackDurationMs / safeMeasureCount);
+
+  return Array.from({ length: safeMeasureCount }, (_, index) => {
+    const measureIndex = index + 1;
+    const measureNotes = notes.filter((note) => note.measureIndex === measureIndex);
+    const firstNote = measureNotes[0];
+    const lastNote = measureNotes[measureNotes.length - 1];
+    const startMs = firstNote?.timestampMs ?? 1000 + index * averageMeasureMs;
+    const endMs =
+      lastNote?.timestampMs && lastNote?.durationMs
+        ? lastNote.timestampMs + lastNote.durationMs
+        : 1000 + (index + 1) * averageMeasureMs;
+    const compactPattern = measureNotes
+      .slice(0, 12)
+      .map((note) => `${note.string}:${note.fret}`)
+      .join('|');
+
+    return {
+      measureIndex,
+      startMs: Math.round(startMs),
+      endMs: Math.round(Math.max(endMs, startMs + averageMeasureMs * 0.5)),
+      noteCount: measureNotes.length,
+      uniqueFrets: new Set(measureNotes.map((note) => `${note.string}:${note.fret}`)).size,
+      patternHash: compactPattern || 'rest',
+    };
+  });
+}
+
+function closeSection(
+  sections: SongSection[],
+  name: string,
+  startMeasure: number,
+  endMeasure: number,
+  summaries: MeasureSummary[],
+  confidence: 'marker' | 'auto'
+) {
+  const first = summaries[startMeasure - 1];
+  const last = summaries[endMeasure - 1] || first;
+  if (!first || !last || endMeasure < startMeasure) return;
+
+  sections.push({
+    id: `${confidence}-${sections.length}-${startMeasure}`,
+    name,
+    startMeasure,
+    endMeasure,
+    startMs: first.startMs,
+    endMs: last.endMs,
+    confidence,
+  });
+}
+
+function detectMarkerSections(score: alphaTab.model.Score, summaries: MeasureSummary[]): SongSection[] {
+  const markerStarts: Array<{ measure: number; name: string }> = [];
+
+  score.masterBars.forEach((masterBar, index) => {
+    const name = getMasterBarSectionName(masterBar);
+    if (name) {
+      markerStarts.push({ measure: index + 1, name });
+    }
+  });
+
+  if (markerStarts.length === 0) return [];
+
+  const sections: SongSection[] = [];
+  markerStarts.forEach((marker, index) => {
+    const next = markerStarts[index + 1];
+    closeSection(
+      sections,
+      marker.name,
+      marker.measure,
+      next ? next.measure - 1 : summaries.length,
+      summaries,
+      'marker'
+    );
+  });
+
+  return sections;
+}
+
+function detectAutoSections(summaries: MeasureSummary[]): SongSection[] {
+  if (summaries.length === 0) return [];
+  if (summaries.length <= 4) {
+    const sections: SongSection[] = [];
+    closeSection(sections, 'Intro', 1, summaries.length, summaries, 'auto');
+    return sections;
+  }
+
+  const blockSize = summaries.length >= 32 ? 8 : 4;
+  const sections: SongSection[] = [];
+  const blockPatterns = new Map<string, number>();
+  const totalNotes = summaries.reduce((sum, item) => sum + item.noteCount, 0);
+  const avgNotes = totalNotes / summaries.length;
+
+  for (let start = 1; start <= summaries.length; start += blockSize) {
+    const end = Math.min(summaries.length, start + blockSize - 1);
+    const block = summaries.slice(start - 1, end);
+    const signature = block.map((item) => item.patternHash).join('~');
+    const previousCount = blockPatterns.get(signature) || 0;
+    blockPatterns.set(signature, previousCount + 1);
+
+    const density = block.reduce((sum, item) => sum + item.noteCount, 0) / block.length;
+    const uniqueFrets = block.reduce((sum, item) => sum + item.uniqueFrets, 0) / block.length;
+    const isLastBlock = end === summaries.length;
+    const isDenseLeadLike = density > avgNotes * 1.35 && uniqueFrets > 5;
+
+    let name = `Riff ${String.fromCharCode(65 + Math.min(sections.length, 5))}`;
+    if (start === 1) name = 'Intro';
+    else if (isLastBlock && density < avgNotes * 0.75) name = 'Outro';
+    else if (isLastBlock && isDenseLeadLike) name = 'Solo';
+    else if (isDenseLeadLike && start > summaries.length * 0.45) name = 'Solo';
+    else if (previousCount > 0) name = 'Chorus';
+    else if (sections.length % 2 === 1) name = 'Verse';
+    else name = 'Chorus';
+
+    closeSection(sections, name, start, end, summaries, 'auto');
+  }
+
+  return sections;
 }
 
 export async function importGuitarProFile(file: File): Promise<ImportedSong> {
@@ -219,53 +346,59 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
     new alphaTab.Settings()
   );
 
-  const track = selectGuitarTrack(score);
+  const track =
+    score.tracks.find((candidate) =>
+      candidate.staves.some((staff) => staff.tuning.length >= 4)
+    ) || score.tracks[0];
 
   if (!track) {
     throw new Error('This file does not contain a playable guitar track.');
   }
 
   const tempo = Math.max(1, Math.round(score.tempo || 120));
-  const playback = buildPlaybackTimeline(score);
+  const quarterNoteMs = 60000 / tempo;
+  const ticksPerQuarter = 960;
   const notes: TabNote[] = [];
   let noteIndex = 0;
 
-  for (const [playbackIndex, playbackBar] of playback.bars.entries()) {
-    const bar = sourceBarFor(track, playbackBar.sourceMeasureIndex);
-    if (!bar) continue;
-    const stringCount = bar.staff.tuning.length || 6;
-    const sourceStartTick = bar.masterBar?.start || 0;
+  for (const staff of track.staves) {
+    const stringCount = staff.tuning.length || 6;
+    for (const bar of staff.bars) {
+      const measureIndex = (bar.masterBar?.index ?? staff.bars.indexOf(bar)) + 1;
+      for (const voice of bar.voices) {
+        for (const beat of voice.beats) {
+          if (beat.isRest) continue;
 
-    for (const voice of bar.voices) {
-      for (const beat of voice.beats) {
-        if (beat.isRest) continue;
-        const relativeTick = beat.absolutePlaybackStart - sourceStartTick;
-        const startTick = playbackBar.startTick + relativeTick;
-        const endTick = startTick + beat.playbackDuration;
-        const timestampMs = INTRO_LEAD_IN_MS + millisecondsAtTick(startTick, playback.tempoChanges);
-        const durationMs = Math.max(60, Math.round(millisecondsAtTick(endTick, playback.tempoChanges) - millisecondsAtTick(startTick, playback.tempoChanges)));
+          const timestampMs =
+            1000 + (beat.absolutePlaybackStart / ticksPerQuarter) * quarterNoteMs;
+          const durationValue = Number(beat.duration) || 4;
+          const durationMs = Math.max(
+            100,
+            Math.round((quarterNoteMs * 4) / Math.max(1, durationValue))
+          );
 
-        for (const note of beat.notes) {
-          if (note.fret < 0 || note.string < 1) continue;
-          const harmonicInfo = getHarmonicInfo(note);
-          const hammerPullInfo = getHammerPullInfo(note);
+          for (const note of beat.notes) {
+            if (note.fret < 0 || note.string < 1) continue;
+            const harmonicInfo = getHarmonicInfo(note);
+            const hammerPullInfo = getHammerPullInfo(note);
 
-          // alphaTab numbers string 1 from the lowest string; GuitarCoach
-          // numbers string 1 from the highest string.
-          const guitarCoachString = stringCount - note.string + 1;
-          if (guitarCoachString < 1 || guitarCoachString > 6) continue;
+            // alphaTab numbers string 1 from the lowest string; GuitarCoach
+            // numbers string 1 from the highest string.
+            const guitarCoachString = stringCount - note.string + 1;
+            if (guitarCoachString < 1 || guitarCoachString > 6) continue;
 
-          notes.push({
-            id: `import-${noteIndex++}`,
-            string: guitarCoachString,
-            fret: Math.round(note.fret),
-            timestampMs: Math.round(timestampMs),
-            durationMs,
-            expectedMidi: note.realValue,
-            ...harmonicInfo,
-            ...hammerPullInfo,
-            measureIndex: playbackIndex + 1,
-          });
+            notes.push({
+              id: `import-${noteIndex++}`,
+              string: guitarCoachString,
+              fret: Math.round(note.fret),
+              timestampMs: Math.round(timestampMs),
+              durationMs,
+              expectedMidi: note.realValue,
+              ...harmonicInfo,
+              ...hammerPullInfo,
+              measureIndex,
+            });
+          }
         }
       }
     }
@@ -292,17 +425,16 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
   }
 
   const lastNote = notes[notes.length - 1];
-  const bars: SongBar[] = playback.bars.map((bar, index) => {
-    const source = score.masterBars[bar.sourceMeasureIndex - 1];
-    return {
-      index: index + 1,
-      sourceMeasureIndex: bar.sourceMeasureIndex,
-      startMs: Math.round(INTRO_LEAD_IN_MS + millisecondsAtTick(bar.startTick, playback.tempoChanges)),
-      endMs: Math.round(INTRO_LEAD_IN_MS + millisecondsAtTick(bar.endTick, playback.tempoChanges)),
-      timeSignature: `${source?.timeSignatureNumerator || 4}/${source?.timeSignatureDenominator || 4}`,
-    };
-  });
-  const scoreEndMs = bars.length > 0 ? bars[bars.length - 1].endMs : lastNote.timestampMs + lastNote.durationMs;
+  const measureSummaries = buildMeasureSummaries(
+    notes,
+    score.masterBars.length,
+    lastNote.timestampMs + lastNote.durationMs
+  );
+  const markerSections = detectMarkerSections(score, measureSummaries);
+  const sections =
+    markerSections.length > 0 ? markerSections : detectAutoSections(measureSummaries);
+  const detectedTechniques = analyzeTechniqueMap(notes, tempo);
+  const practiceFlow = buildPracticeFlowAssignment(detectedTechniques, tempo);
   const fileTitle = file.name.replace(/\.(gp|gpx|gp3|gp4|gp5|gp7|gp8)$/i, '');
   const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -311,15 +443,20 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
     title: score.title?.trim() || fileTitle,
     artist: score.artist?.trim() || '',
     tempo,
-    durationMs: Math.max(scoreEndMs, lastNote.timestampMs + lastNote.durationMs) + 500,
+    durationMs: lastNote.timestampMs + lastNote.durationMs + 500,
     difficulty: 'Intermediate',
     tuning: track.staves[0]?.tuningName || 'Guitar Pro tuning',
     key: 'Imported',
     attempts: 0,
     bestAccuracy: 0,
-    measures: bars.length || score.masterBars.length,
+    measures: score.masterBars.length,
     notes,
-    bars,
+    sections,
     sourceFileName: file.name,
+    analysis: {
+      techniques: detectedTechniques,
+      primaryFocus: detectedTechniques[0],
+      practiceFlow,
+    },
   };
 }

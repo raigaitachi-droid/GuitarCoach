@@ -14,9 +14,6 @@ export interface PitchResult {
   isVoiceLike?: boolean;
   stringIndex?: number;
   fret?: number;
-  /** Experimental Basic Pitch preview; never used to award a score yet. */
-  polyphonicMidiNumbers?: number[];
-  polyphonicError?: string;
 }
 
 type PitchListener = (result: PitchResult | null) => void;
@@ -30,9 +27,7 @@ export class MicrophonePitchDetector {
   private workletNode: AudioWorkletNode | null = null;
   private silentGain: GainNode | null = null;
   private isListening = false;
-  // USB interfaces often expose a much quieter DI signal than a laptop mic.
-  // The score-aware matcher below still guards against accepting room noise.
-  private noiseThreshold = 0.002;
+  private noiseThreshold = 0.005;
   private lastRms = 0;
   private latestResult: PitchResult | null = null;
   private listeners = new Set<PitchListener>();
@@ -40,8 +35,6 @@ export class MicrophonePitchDetector {
   private activeDeviceId = '';
   private requestId = 0;
   private errorMessage: string | null = null;
-  private polyphonicWorker: Worker | null = null;
-  private polyphonicError: string | null = null;
 
   getErrorMessage(): string | null {
     return this.errorMessage;
@@ -53,7 +46,7 @@ export class MicrophonePitchDetector {
   private lastPitchTimeMs = 0;
 
   setNoiseThreshold(threshold: number) {
-    this.noiseThreshold = Math.max(0.0005, Math.min(0.05, threshold));
+    this.noiseThreshold = Math.max(0.001, Math.min(0.05, threshold));
     this.workletNode?.port.postMessage({
       type: 'threshold',
       value: this.noiseThreshold,
@@ -176,18 +169,8 @@ export class MicrophonePitchDetector {
         if (message?.type !== 'samples') return;
 
         this.lastRms = message.rms;
-        const samples = message.samples as Float32Array;
-        // The worklet snapshot is overlapping. The newest 1024 samples form a
-        // continuous, low-overhead stream for the background polyphonic worker.
-        const newestSamples = samples.slice(-1024);
-        this.polyphonicWorker?.postMessage({
-          type: 'samples',
-          samples: newestSamples,
-          sampleRate: this.audioContext!.sampleRate,
-          audioTimeMs: message.audioTimeMs,
-        }, [newestSamples.buffer]);
         const result = this.analysePitch(
-          samples,
+          message.samples as Float32Array,
           this.audioContext!.sampleRate,
           message.rms,
           message.audioTimeMs,
@@ -198,8 +181,6 @@ export class MicrophonePitchDetector {
         this.latestResult = result;
         this.emit(result);
       };
-
-      this.startPolyphonicPreview();
 
       this.isListening = true;
       this.activeDeviceId = deviceId;
@@ -247,50 +228,10 @@ export class MicrophonePitchDetector {
     this.lastRms = 0;
     this.lastMidi = -1;
     this.lastPitchTimeMs = 0;
-    this.polyphonicWorker?.terminate();
-    this.polyphonicWorker = null;
-    this.polyphonicError = null;
   }
 
   getIsListening(): boolean {
     return this.isListening;
-  }
-
-  private startPolyphonicPreview() {
-    this.polyphonicWorker?.terminate();
-    this.polyphonicError = null;
-    this.polyphonicWorker = new Worker(new URL('../workers/polyphonicPitchWorker.ts', import.meta.url), { type: 'module' });
-    this.polyphonicWorker.onmessage = (event: MessageEvent<{ type: string; midiNumbers?: number[]; message?: string; audioTimeMs?: number }>) => {
-      if (event.data.type === 'error') {
-        this.polyphonicError = event.data.message || 'Polyphonic preview could not start.';
-        this.emit({
-          frequency: 0, noteName: '', midiNumber: 0, cents: 0, volumeRms: this.lastRms,
-          inTune: false, audioTimeMs: 0, onset: false, pluckId: 0, confidence: 0,
-          polyphonicError: this.polyphonicError,
-        });
-        return;
-      }
-      if (event.data.type !== 'polyphonic' || !event.data.midiNumbers?.length) return;
-      const midiNumber = event.data.midiNumbers[0];
-      const noteIndex = ((midiNumber % 12) + 12) % 12;
-      const octave = Math.floor(midiNumber / 12) - 1;
-      const result: PitchResult = {
-        frequency: 440 * Math.pow(2, (midiNumber - 69) / 12),
-        noteName: `${NOTE_NAMES[noteIndex]}${octave}`,
-        midiNumber,
-        cents: 0,
-        volumeRms: this.lastRms,
-        inTune: true,
-        audioTimeMs: event.data.audioTimeMs || 0,
-        onset: false,
-        pluckId: 0,
-        confidence: 1,
-        polyphonicMidiNumbers: event.data.midiNumbers,
-      };
-      this.emit(result);
-    };
-    const modelUrl = new URL(`${import.meta.env.BASE_URL}basic-pitch/model.json`, window.location.href).href;
-    this.polyphonicWorker.postMessage({ type: 'init', modelUrl });
   }
 
   // Kept for compatibility with tuner code; event subscribers are preferred.
@@ -346,10 +287,7 @@ export class MicrophonePitchDetector {
     }
 
     // Require clean periodicity. Spoken room noise and low-clarity chatter are filtered here.
-    // The first 40–80 ms of a guitar note has a noisy pick transient. Keep a
-    // usable pitch candidate through that transient; PlayingStage only accepts
-    // it when it matches the note currently due in the tab.
-    const minRequiredCorrelation = onset ? 0.50 : 0.56;
+    const minRequiredCorrelation = onset ? 0.58 : 0.64;
     if (bestPeriod < 0 || bestCorrelation < minRequiredCorrelation) return null;
 
     let adjustedPeriod = bestPeriod;

@@ -6,9 +6,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     this.writeIndex = 0;
     this.filled = 0;
     this.blockCounter = 0;
-    // Keep sustained-note analysis below roughly 50 Hz. Onsets still run immediately.
-    this.analysisIntervalBlocks = Math.max(4, Math.round(sampleRate / 128 / 45));
-    this.noiseThreshold = options.processorOptions?.noiseThreshold || 0.002;
+    this.noiseThreshold = options.processorOptions?.noiseThreshold || 0.005;
     this.mutedUntilFrame = 0;
 
     // Advanced guitar attack & re-pluck tracking
@@ -104,7 +102,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       currentFrame >= this.mutedUntilFrame &&
       this.filled === this.bufferSize &&
       rms >= this.noiseThreshold &&
-      (onset || this.blockCounter % this.analysisIntervalBlocks === 0)
+      (onset || this.blockCounter % 4 === 0)
     ) {
       const snapshot = new Float32Array(this.bufferSize);
       const tail = this.bufferSize - this.writeIndex;
