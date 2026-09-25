@@ -5,17 +5,19 @@ import * as tf from '@tensorflow/tfjs';
 
 type IncomingMessage =
   | { type: 'init'; modelUrl: string }
-  | { type: 'samples'; samples: Float32Array; sampleRate: number; audioTimeMs: number };
+  | { type: 'samples'; samples: Float32Array; hopSamples: number; sampleRate: number; audioTimeMs: number };
 
 const MODEL_SAMPLE_RATE = 22050;
 const WINDOW_SAMPLES = MODEL_SAMPLE_RATE * 2;
-const ANALYSIS_EVERY_MS = 750;
+const ANALYSIS_EVERY_MS = 20;
 const REALTIME_ONSET_THRESHOLD = 0.25;
 const REALTIME_FRAME_THRESHOLD = 0.15;
 const REALTIME_MINIMUM_NOTE_LENGTH_FRAMES = 3;
 const REALTIME_INFER_ONSETS = true;
 let model: BasicPitch | null = null;
-let rolling = new Float32Array(0);
+// Basic Pitch uses a two-second receptive field. Leading zeroes let the first
+// short notes be evaluated without waiting for a full window of microphone data.
+let rolling = new Float32Array(WINDOW_SAMPLES);
 let lastAnalysisAt = -Infinity;
 let busy = false;
 
@@ -36,7 +38,7 @@ function appendSamples(samples: Float32Array, sampleRate: number) {
 }
 
 async function analyse(audioTimeMs: number) {
-  if (!model || busy || rolling.length < WINDOW_SAMPLES) return;
+  if (!model || busy) return;
   busy = true;
   try {
     // Basic Pitch is batch-oriented, so this is deliberately a rolling preview,
@@ -86,7 +88,11 @@ self.onmessage = (event: MessageEvent<IncomingMessage>) => {
     });
     return;
   }
-  appendSamples(message.samples, message.sampleRate);
+  const hopSamples = Math.min(
+    message.samples.length,
+    Math.max(1, Math.trunc(message.hopSamples))
+  );
+  appendSamples(message.samples.subarray(-hopSamples), message.sampleRate);
   if (message.audioTimeMs - lastAnalysisAt >= ANALYSIS_EVERY_MS) {
     lastAnalysisAt = message.audioTimeMs;
     void analyse(message.audioTimeMs);
