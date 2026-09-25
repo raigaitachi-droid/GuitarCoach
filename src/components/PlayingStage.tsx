@@ -20,6 +20,10 @@ function noteName(note: TabNote) {
   return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
+function midiName(midi: number) {
+  return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+}
+
 function barAt(bars: ReturnType<typeof practiceBars>, playbackMs: number) {
   return bars.find((bar) => playbackMs >= bar.startMs && playbackMs < bar.endMs) || bars.at(-1);
 }
@@ -42,6 +46,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const waitingRef = useRef<TabNote | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; kind: 'correct' | 'wrong'; timing?: string; at: number } | null>(null);
   const [heardPitch, setHeardPitch] = useState<Pick<PitchResult, 'noteName' | 'frequency' | 'confidence'> | null>(null);
+  const [heardChord, setHeardChord] = useState<number[]>([]);
+  const [polyphonicError, setPolyphonicError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const [loopEnabled, setLoopEnabled] = useState(Boolean(initialLoopRange));
   const loopEnabledRef = useRef(Boolean(initialLoopRange));
@@ -127,6 +133,14 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         return;
       }
       if (!result || !playingRef.current || completedRef.current) return;
+      if (result.polyphonicError) {
+        setPolyphonicError(result.polyphonicError);
+        return;
+      }
+      if (result.polyphonicMidiNumbers) {
+        setHeardChord(result.polyphonicMidiNumbers);
+        return;
+      }
       // A small live readout makes hardware issues observable without adding a
       // separate tuner or diagnostic screen. Throttle re-renders to 8 Hz.
       if (performance.now() - lastHeardPitchUpdate.current >= 125) {
@@ -257,6 +271,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         </p>
         <div className="status-detail">
           {withAudio && heardPitch && <span className="detector-readout">Heard {heardPitch.noteName} · {heardPitch.frequency.toFixed(1)} Hz · {Math.round(heardPitch.confidence * 100)}%</span>}
+          {withAudio && heardChord.length > 1 && <span className="detector-readout">Chord preview: {heardChord.map(midiName).join(' ')}</span>}
+          {withAudio && polyphonicError && <span className="detector-readout">Chord preview unavailable: {polyphonicError}</span>}
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>

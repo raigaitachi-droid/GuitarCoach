@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -32,6 +32,17 @@ async function silentGuitar(page: Page) {
         oscillator.connect(gain).connect(destination);
         oscillator.start();
         oscillator.stop(context.currentTime + 0.3);
+      };
+      state.chord = (midis) => {
+        for (const midi of midis) {
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+          gain.gain.value = 0.08;
+          oscillator.connect(gain).connect(destination);
+          oscillator.start();
+          oscillator.stop(context.currentTime + 2.8);
+        }
       };
       const stream = destination.stream;
       const track = stream.getAudioTracks()[0];
@@ -184,4 +195,13 @@ test('a quiet guitar-input signal can still release Wait Mode', async ({ page })
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.006));
   await expect(page.getByRole('status')).toContainText('Correct note');
+});
+
+test('the background polyphonic preview reports a played chord without touching score state', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await page.evaluate(() => (window as any).testGuitar.chord([40, 47, 52]));
+  await expect(page.getByText(/Chord preview:/)).toBeVisible({ timeout: 40_000 });
 });
