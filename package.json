@@ -8,6 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "vite --host 0.0.0.0",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "playwright test"
@@ -15,6 +18,7 @@
   "dependencies": {
     "@coderline/alphatab": "^1.8.4",
     "@spotify/basic-pitch": "^1.0.1",
+    "@tauri-apps/api": "^2.11.1",
     "@tensorflow/tfjs": "3.2.0",
     "@tensorflow/tfjs-backend-wasm": "^3.2.0",
     "@vitejs/plugin-react": "^6.1.1",
@@ -24,6 +28,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@tauri-apps/cli": "^2.11.5",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
