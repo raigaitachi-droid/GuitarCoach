@@ -50,6 +50,25 @@ npm run preview
 The default development command runs Vite only. There is no server-side AI
 service, account system, or practice-data upload.
 
+## Native low-latency desktop build
+
+The browser build keeps using `getUserMedia` and the AudioWorklet. When opened
+through Tauri, GuitarCoach automatically switches only its capture path to the
+native `cpal` stream; pitch analysis, scoring, and the practice UI remain in
+TypeScript.
+
+Install the Rust toolchain and the platform prerequisites listed by Tauri, then:
+
+```sh
+npm ci
+npm run tauri:dev
+```
+
+Create an installer with `npm run tauri:build`. The native capture commands
+select a low-latency input stream when available and fall back to the device's
+default stream configuration. The GitHub Pages build remains a standalone web
+target.
+
 ## Verify
 
 ```sh
