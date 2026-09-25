@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import { ImportedSong } from '../types';
+import { AudioInputDevice } from '../utils/pitchDetector';
 
 interface Props {
   song: ImportedSong | null;
   loading: boolean;
   busy: boolean;
   error: string | null;
-  devices: MediaDeviceInfo[];
+  devices: AudioInputDevice[];
   deviceId: string;
   onDeviceChange: (id: string) => void;
   onFindInputs: () => void;
