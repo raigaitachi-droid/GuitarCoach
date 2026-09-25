@@ -17,6 +17,8 @@ export interface PitchResult {
   /** Experimental Basic Pitch preview; never used to award a score yet. */
   polyphonicMidiNumbers?: number[];
   polyphonicError?: string;
+  /** Fast RMS attack marker; it intentionally has no pitch estimate yet. */
+  quickOnset?: boolean;
 }
 
 type PitchListener = (result: PitchResult | null) => void;
@@ -171,6 +173,15 @@ export class MicrophonePitchDetector {
         const message = event.data;
         if (message?.type === 'level') {
           this.lastRms = message.rms;
+          return;
+        }
+        if (message?.type === 'ONSET_TRIGGERED') {
+          this.lastRms = message.rms;
+          this.emit({
+            frequency: 0, noteName: '', midiNumber: 0, cents: 0, volumeRms: message.rms,
+            inTune: false, audioTimeMs: message.audioTimeMs, onset: false, pluckId: 0,
+            confidence: 0, quickOnset: true,
+          });
           return;
         }
         if (message?.type !== 'samples') return;
