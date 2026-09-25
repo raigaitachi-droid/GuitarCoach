@@ -114,7 +114,9 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       const loopStart = draggedNote.current || (loopStartId ? notes.find((note) => note.id === loopStartId) : undefined);
       const loopEnd = draggedEndNote.current || (loopEndId ? notes.find((note) => note.id === loopEndId) : undefined);
       if (loopStart && loopEnd) {
-        const startX = xAt(loopStart.timestampMs);
+        // Leave a small visual lead-in before the first selected fret so the
+        // left boundary reads as a bracket, rather than crossing the note box.
+        const startX = Math.max(44, xAt(loopStart.timestampMs) - 24);
         const endX = xAt(loopEnd.timestampMs + loopEnd.durationMs);
         const left = Math.min(startX, endX);
         const right = Math.max(startX, endX);
