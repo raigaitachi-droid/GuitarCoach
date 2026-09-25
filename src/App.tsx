@@ -3,7 +3,7 @@ import { PlayingStage } from './components/PlayingStage';
 import { StartScreen } from './components/StartScreen';
 import { PracticeResult } from './components/PracticeResult';
 import { ImportedSong } from './types';
-import { micDetector } from './utils/pitchDetector';
+import { AudioInputDevice, micDetector } from './utils/pitchDetector';
 import { guitarSynth } from './utils/guitarSynth';
 import { findWeakSection, PracticeLoopRange, PracticeResult as SessionResult, WeakSection } from './utils/practiceSession';
 import { SONG_CATALOG, SONG_TABS } from './data/songTabs';
@@ -24,7 +24,7 @@ export default function App() {
   const [tempoPercent, setTempoPercent] = useState(100);
   const [weakSection, setWeakSection] = useState<WeakSection | null>(null);
   const [practiceFocus, setPracticeFocus] = useState<PracticeLoopRange | null>(null);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [devices, setDevices] = useState<AudioInputDevice[]>([]);
   const [deviceId, setDeviceId] = useState('');
   const [withAudio, setWithAudio] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,15 +35,15 @@ export default function App() {
 
   const refreshInputs = async () => {
     try {
-      const available = await navigator.mediaDevices?.enumerateDevices();
-      if (mounted.current) setDevices((available || []).filter((device) => device.kind === 'audioinput'));
+      const available = await micDetector.listInputDevices();
+      if (mounted.current) setDevices(available);
     } catch { /* Input permission remains recoverable through Start Practice. */ }
   };
 
   useEffect(() => {
     mounted.current = true;
     void refreshInputs();
-    navigator.mediaDevices?.addEventListener('devicechange', refreshInputs);
+    if (!micDetector.isNativeCaptureAvailable()) navigator.mediaDevices?.addEventListener('devicechange', refreshInputs);
     return () => {
       mounted.current = false;
       micDetector.stopListening();
@@ -82,6 +82,10 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
+      if (micDetector.isNativeCaptureAvailable()) {
+        await refreshInputs();
+        return;
+      }
       const connected = await micDetector.startListening();
       if (!mounted.current) return;
       if (connected) await refreshInputs();
