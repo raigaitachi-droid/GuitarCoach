@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+  sync::{mpsc, Arc, Mutex},
+  thread,
+};
 
 use cpal::{
   traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -54,6 +57,12 @@ enum CaptureEvent {
   Level(LevelPayload),
   Onset(OnsetPayload),
   Samples(SamplesPayload),
+}
+
+enum CaptureControl {
+  Stop,
+  SetNoiseThreshold(f32),
+  MuteOutput(u32),
 }
 
 struct AudioProcessor {
@@ -241,8 +250,8 @@ impl AudioProcessor {
 
 #[derive(Default)]
 struct CaptureController {
-  stream: Option<Stream>,
-  processor: Option<Arc<Mutex<AudioProcessor>>>,
+  control_tx: Option<mpsc::Sender<CaptureControl>>,
+  thread: Option<thread::JoinHandle<()>>,
 }
 
 #[derive(Default)]
@@ -266,6 +275,15 @@ fn emit_events(app: &AppHandle, events: Vec<CaptureEvent>) {
 fn process_input(samples: Vec<f32>, processor: &Arc<Mutex<AudioProcessor>>, app: &AppHandle) {
   let events = processor.lock().map(|mut processor| processor.ingest(&samples)).unwrap_or_default();
   emit_events(app, events);
+}
+
+fn stop_controller(controller: &mut CaptureController) {
+  if let Some(control_tx) = controller.control_tx.take() {
+    let _ = control_tx.send(CaptureControl::Stop);
+  }
+  if let Some(thread) = controller.thread.take() {
+    let _ = thread.join();
+  }
 }
 
 fn build_stream(
@@ -343,48 +361,88 @@ fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
   Ok(devices)
 }
 
+fn run_capture_thread(
+  app: AppHandle,
+  device_id: Option<String>,
+  control_rx: mpsc::Receiver<CaptureControl>,
+  started_tx: mpsc::Sender<Result<u32, String>>,
+) {
+  let result = (|| {
+    let device = select_device(device_id.as_deref())?;
+    let (default_config, sample_format) = preferred_input_config(&device)?;
+    let mut low_latency_config = default_config.clone();
+    low_latency_config.buffer_size = BufferSize::Fixed(BLOCK_SIZE as u32);
+    let processor = Arc::new(Mutex::new(AudioProcessor::new(default_config.sample_rate.0)));
+    let stream = build_stream(&device, &low_latency_config, sample_format, processor.clone(), app.clone())
+      .or_else(|_| build_stream(&device, &default_config, sample_format, processor.clone(), app))?;
+    stream.play().map_err(|error| error.to_string())?;
+
+    let sample_rate = default_config.sample_rate.0;
+    started_tx.send(Ok(sample_rate)).map_err(|error| error.to_string())?;
+
+    while let Ok(control) = control_rx.recv() {
+      match control {
+        CaptureControl::Stop => break,
+        CaptureControl::SetNoiseThreshold(value) => {
+          if let Ok(mut processor) = processor.lock() {
+            processor.set_noise_threshold(value);
+          }
+        }
+        CaptureControl::MuteOutput(duration_ms) => {
+          if let Ok(mut processor) = processor.lock() {
+            processor.mute(duration_ms);
+          }
+        }
+      }
+    }
+
+    drop(stream);
+    Ok(())
+  })();
+
+  if let Err(error) = result {
+    let _ = started_tx.send(Err(error));
+  }
+}
+
 #[tauri::command]
 fn start_native_capture(
   app: AppHandle,
   state: State<CaptureState>,
   device_id: Option<String>,
 ) -> Result<CaptureStarted, String> {
-  let device = select_device(device_id.as_deref())?;
-  let (default_config, sample_format) = preferred_input_config(&device)?;
-  let mut low_latency_config = default_config.clone();
-  low_latency_config.buffer_size = BufferSize::Fixed(BLOCK_SIZE as u32);
-  let processor = Arc::new(Mutex::new(AudioProcessor::new(default_config.sample_rate.0)));
-  let stream = build_stream(&device, &low_latency_config, sample_format, processor.clone(), app.clone())
-    .or_else(|_| build_stream(&device, &default_config, sample_format, processor.clone(), app))?;
-  stream.play().map_err(|error| error.to_string())?;
-
   let mut controller = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?;
-  controller.stream.take();
-  controller.processor = Some(processor);
-  controller.stream = Some(stream);
-  Ok(CaptureStarted { sample_rate: default_config.sample_rate.0 })
+  stop_controller(&mut controller);
+
+  let (control_tx, control_rx) = mpsc::channel();
+  let (started_tx, started_rx) = mpsc::channel();
+  let thread = thread::spawn(move || run_capture_thread(app, device_id, control_rx, started_tx));
+  let sample_rate = started_rx.recv().map_err(|error| error.to_string())??;
+
+  controller.control_tx = Some(control_tx);
+  controller.thread = Some(thread);
+  Ok(CaptureStarted { sample_rate })
 }
 
 #[tauri::command]
 fn stop_native_capture(state: State<CaptureState>) -> Result<(), String> {
   let mut controller = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?;
-  controller.stream.take();
-  controller.processor.take();
+  stop_controller(&mut controller);
   Ok(())
 }
 
 #[tauri::command]
 fn set_noise_threshold(state: State<CaptureState>, value: f32) -> Result<(), String> {
-  if let Some(processor) = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?.processor.as_ref() {
-    processor.lock().map_err(|_| "Native capture processor is unavailable.".to_string())?.set_noise_threshold(value);
+  if let Some(control_tx) = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?.control_tx.as_ref() {
+    let _ = control_tx.send(CaptureControl::SetNoiseThreshold(value));
   }
   Ok(())
 }
 
 #[tauri::command]
 fn mute_output(state: State<CaptureState>, duration_ms: u32) -> Result<(), String> {
-  if let Some(processor) = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?.processor.as_ref() {
-    processor.lock().map_err(|_| "Native capture processor is unavailable.".to_string())?.mute(duration_ms);
+  if let Some(control_tx) = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?.control_tx.as_ref() {
+    let _ = control_tx.send(CaptureControl::MuteOutput(duration_ms));
   }
   Ok(())
 }
