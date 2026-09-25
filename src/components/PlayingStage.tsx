@@ -52,6 +52,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const [waiting, setWaiting] = useState<TabNote | null>(null);
   const waitingRef = useRef<TabNote | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; kind: 'correct' | 'wrong'; timing?: string; at: number } | null>(null);
+  const [quickOnsetVisible, setQuickOnsetVisible] = useState(false);
   const [heardPitch, setHeardPitch] = useState<Pick<PitchResult, 'noteName' | 'frequency' | 'confidence'> | null>(null);
   const [heardChord, setHeardChord] = useState<number[]>([]);
   const [polyphonicError, setPolyphonicError] = useState<string | null>(null);
@@ -74,6 +75,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastFeedbackPluck = useRef(-1);
   const lastHitNote = useRef<TabNote | null>(null);
   const lastHeardPitchUpdate = useRef(0);
+  const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
   const hasChords = scorableIds.size !== song.notes.length;
   const duration = Math.max(song.durationMs, ...song.notes.map((note) => note.timestampMs + Math.max(note.durationMs, TIMING_WINDOW_MS + 100)));
@@ -210,6 +212,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         return;
       }
       if (!result || !playingRef.current || completedRef.current) return;
+      if (result.quickOnset) {
+        setQuickOnsetVisible(true);
+        if (quickOnsetTimer.current) window.clearTimeout(quickOnsetTimer.current);
+        quickOnsetTimer.current = window.setTimeout(() => setQuickOnsetVisible(false), 180);
+        return;
+      }
       if (result.polyphonicError) {
         setPolyphonicError(result.polyphonicError);
         return;
@@ -262,6 +270,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       setFeedback({ text: 'Correct note', kind: 'correct', timing: judgement.timing === 'on-time' ? undefined : judgement.timing.toUpperCase(), at: performance.now() });
     });
   }, [withAudio, scorableIds]);
+
+  useEffect(() => () => {
+    if (quickOnsetTimer.current) window.clearTimeout(quickOnsetTimer.current);
+  }, []);
 
   useEffect(() => {
     let frame = 0;
@@ -359,6 +371,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         </p>
         <div className="status-detail">
           {withAudio && heardPitch && <span className="detector-readout">Heard {heardPitch.noteName} · {heardPitch.frequency.toFixed(1)} Hz · {Math.round(heardPitch.confidence * 100)}%</span>}
+          {withAudio && quickOnsetVisible && <span className="detector-readout onset-marker">Note attack detected</span>}
           {withAudio && heardChord.length > 1 && <span className="detector-readout">Chord preview: {heardChord.map(midiName).join(' ')}</span>}
           {withAudio && polyphonicError && <span className="detector-readout">Chord preview unavailable: {polyphonicError}</span>}
           {coachMode && <span className="detector-readout">{coachMessage || `Coach: ${coachStreak}/2 clean loops`}</span>}
