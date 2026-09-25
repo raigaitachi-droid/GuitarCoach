@@ -148,6 +148,11 @@ export interface PracticeLoopRange {
   endBar: number;
 }
 
+export interface NoteLoopRange {
+  startNoteId: string;
+  endNoteId: string;
+}
+
 export interface LoopPass {
   attempted: number;
   correct: number;
@@ -186,6 +191,32 @@ export function loopBoundaries(bars: SongBar[], range: PracticeLoopRange): LoopB
   const normalized = normalizeLoopRange(range, bars.length);
   const selected = bars.slice(normalized.startBar - 1, normalized.endBar);
   return { startMs: selected[0].startMs, endMs: selected.at(-1)!.endMs };
+}
+
+export function normalizeNoteLoopRange(notes: TabNote[], range: NoteLoopRange): NoteLoopRange | null {
+  const start = notes.find((note) => note.id === range.startNoteId);
+  const end = notes.find((note) => note.id === range.endNoteId);
+  if (!start || !end) return null;
+  return start.timestampMs <= end.timestampMs
+    ? range
+    : { startNoteId: end.id, endNoteId: start.id };
+}
+
+// A practice loop starts exactly on the selected first note and ends after the
+// selected last note's sustain, so it never rounds a guitarist's choice to a bar.
+export function noteLoopBoundaries(notes: TabNote[], range: NoteLoopRange): LoopBoundaries | null {
+  const normalized = normalizeNoteLoopRange(notes, range);
+  if (!normalized) return null;
+  const start = notes.find((note) => note.id === normalized.startNoteId)!;
+  const end = notes.find((note) => note.id === normalized.endNoteId)!;
+  return { startMs: start.timestampMs, endMs: Math.max(end.timestampMs + end.durationMs, start.timestampMs + 1) };
+}
+
+export function noteLoopRangeForBars(notes: TabNote[], boundaries: LoopBoundaries): NoteLoopRange | null {
+  const selected = notes
+    .filter((note) => note.timestampMs >= boundaries.startMs && note.timestampMs < boundaries.endMs)
+    .sort((a, b) => a.timestampMs - b.timestampMs || a.string - b.string);
+  return selected.length ? { startNoteId: selected[0].id, endNoteId: selected.at(-1)!.id } : null;
 }
 
 // Wrapping is calculated from absolute bar boundaries, so repeated passes do

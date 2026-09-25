@@ -209,6 +209,35 @@ test('Coach Mode turns on a bar loop and keeps BPM directly adjustable', async (
   await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('125');
 });
 
+test('a loop can be selected by clicking its first and last tab notes', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await page.getByRole('button', { name: 'Loop Off' }).click();
+  await expect(page.getByText('Click start note')).toBeVisible();
+  const tab = page.locator('canvas');
+  const box = await tab.boundingBox();
+  if (!box) throw new Error('Tab canvas is not visible');
+  let first: { x: number; y: number } | null = null;
+  for (let x = 60; x < box.width - 20 && !first; x += 25) {
+    for (let y = 45; y < box.height - 25 && !first; y += 35) {
+      await tab.click({ position: { x, y } });
+      if (await page.getByText('Click end note').count()) first = { x, y };
+    }
+  }
+  if (!first) throw new Error('No rendered tab note could be selected');
+  await expect(page.getByText('Click end note')).toBeVisible();
+  let completed = false;
+  for (let x = first.x + 40; x < box.width - 20 && !completed; x += 25) {
+    for (let y = 45; y < box.height - 25 && !completed; y += 35) {
+      await tab.click({ position: { x, y } });
+      completed = await page.getByText('Select notes').count() > 0;
+    }
+  }
+  await expect(page.getByText(/Loop Note/)).toBeVisible();
+});
+
 test('the background polyphonic preview reports a played chord without touching score state', async ({ page }) => {
   await silentGuitar(page);
   await page.goto('/');

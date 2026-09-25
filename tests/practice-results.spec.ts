@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
 
 const notes: TabNote[] = [
@@ -72,6 +72,16 @@ test('loop uses exact bar boundaries and resets only its selected pass', () => {
   expect(reset.find((note) => note.id === 'hit')?.hitState).toBe('hit');
   expect(reset.find((note) => note.id === 'miss')?.hitState).toBeUndefined();
   expect(reset.find((note) => note.id === 'future')?.hitState).toBeUndefined();
+});
+
+test('a note-selected loop follows the exact clicked notes rather than bar boundaries', () => {
+  const selected: TabNote[] = [
+    { id: 'start', string: 6, fret: 3, timestampMs: 1125, durationMs: 240 },
+    { id: 'middle', string: 5, fret: 5, timestampMs: 1575, durationMs: 180 },
+    { id: 'end', string: 4, fret: 7, timestampMs: 1910, durationMs: 320 },
+  ];
+  expect(noteLoopBoundaries(selected, { startNoteId: 'start', endNoteId: 'end' })).toEqual({ startMs: 1125, endMs: 2230 });
+  expect(normalizeNoteLoopRange(selected, { startNoteId: 'end', endNoteId: 'start' })).toEqual({ startNoteId: 'start', endNoteId: 'end' });
 });
 
 test('coach mode bases tempo decisions only on judged single notes in the loop', () => {

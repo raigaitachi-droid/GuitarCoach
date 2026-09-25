@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector, PitchResult } from '../utils/pitchDetector';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, normalizeLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
@@ -28,16 +28,23 @@ function barAt(bars: ReturnType<typeof practiceBars>, playbackMs: number) {
   return bars.find((bar) => playbackMs >= bar.startMs && playbackMs < bar.endMs) || bars.at(-1);
 }
 
+function loopNoteLabel(notes: TabNote[], noteId: string | undefined) {
+  const index = notes.findIndex((note) => note.id === noteId);
+  return index < 0 ? '—' : `Note ${index + 1}`;
+}
+
 export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, onTempoPercentChange, onFinish }: Props) {
   const bars = useMemo(() => practiceBars(song), [song]);
   const startingRange = normalizeLoopRange(initialLoopRange || { startBar: 1, endBar: 1 }, bars.length);
   const startingBoundaries = initialLoopRange ? loopBoundaries(bars, startingRange) : null;
+  const startingNoteRange = startingBoundaries ? noteLoopRangeForBars(song.notes, startingBoundaries) : null;
+  const initialNoteBoundaries = startingNoteRange ? noteLoopBoundaries(song.notes, startingNoteRange) : null;
   const [notes, setNotes] = useState<TabNote[]>(() => song.notes.map((note) => ({ ...note, hitState: undefined, mistakeCount: undefined })));
   const notesRef = useRef<TabNote[]>(notes);
   const [playing, setPlaying] = useState(true);
   const playingRef = useRef(true);
-  const [playbackMs, setPlaybackMs] = useState(() => startingBoundaries?.startMs || 0);
-  const playbackRef = useRef(startingBoundaries?.startMs || 0);
+  const [playbackMs, setPlaybackMs] = useState(() => initialNoteBoundaries?.startMs || 0);
+  const playbackRef = useRef(initialNoteBoundaries?.startMs || 0);
   // For live input, waiting is the safer default: browser/device latency should
   // never turn an otherwise playable note into an immediate missed note.
   const [waitMode, setWaitMode] = useState(withAudio);
@@ -49,10 +56,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const [heardChord, setHeardChord] = useState<number[]>([]);
   const [polyphonicError, setPolyphonicError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
-  const [loopEnabled, setLoopEnabled] = useState(Boolean(initialLoopRange));
-  const loopEnabledRef = useRef(Boolean(initialLoopRange));
-  const [loopRange, setLoopRange] = useState<PracticeLoopRange>(startingRange);
-  const loopRangeRef = useRef<PracticeLoopRange>(startingRange);
+  const [loopEnabled, setLoopEnabled] = useState(Boolean(startingNoteRange));
+  const loopEnabledRef = useRef(Boolean(startingNoteRange));
+  const [loopRange, setLoopRange] = useState<NoteLoopRange | null>(startingNoteRange);
+  const loopRangeRef = useRef<NoteLoopRange | null>(startingNoteRange);
+  const [selectingLoop, setSelectingLoop] = useState<'start' | 'end' | null>(null);
+  const selectingLoopRef = useRef<'start' | 'end' | null>(null);
   const tempoRef = useRef(tempoPercent / 100);
   const [coachMode, setCoachMode] = useState(false);
   const coachModeRef = useRef(false);
@@ -94,8 +103,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setFeedback(null);
     guitarSynth.stop();
   };
-  const restartLoop = (range: PracticeLoopRange) => {
-    const boundaries = loopBoundaries(bars, range);
+  const restartLoop = (range: NoteLoopRange) => {
+    const boundaries = noteLoopBoundaries(song.notes, range);
     if (!boundaries) return;
     clearLoopPass(boundaries);
     playbackRef.current = boundaries.startMs;
@@ -105,18 +114,42 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     const nextEnabled = !loopEnabledRef.current;
     loopEnabledRef.current = nextEnabled;
     setLoopEnabled(nextEnabled);
-    if (!nextEnabled) return;
-    const activeBar = barAt(bars, playbackRef.current)?.index || 1;
-    const range = { startBar: activeBar, endBar: activeBar };
+    if (!nextEnabled) {
+      selectingLoopRef.current = null;
+      setSelectingLoop(null);
+      return;
+    }
+    loopRangeRef.current = null;
+    setLoopRange(null);
+    selectingLoopRef.current = 'start';
+    setSelectingLoop('start');
+  };
+  const beginLoopSelection = () => {
+    if (!loopEnabledRef.current) return;
+    loopRangeRef.current = null;
+    setLoopRange(null);
+    selectingLoopRef.current = 'start';
+    setSelectingLoop('start');
+  };
+  const selectLoopNote = (note: TabNote) => {
+    if (!loopEnabledRef.current || !selectingLoopRef.current) return;
+    if (selectingLoopRef.current === 'start') {
+      loopRangeRef.current = { startNoteId: note.id, endNoteId: note.id };
+      setLoopRange(loopRangeRef.current);
+      selectingLoopRef.current = 'end';
+      setSelectingLoop('end');
+      return;
+    }
+    const startNoteId = loopRangeRef.current?.startNoteId || note.id;
+    const range = normalizeNoteLoopRange(song.notes, { startNoteId, endNoteId: note.id });
+    if (!range) return;
+    const boundaries = noteLoopBoundaries(song.notes, range);
+    if (!boundaries) return;
     loopRangeRef.current = range;
     setLoopRange(range);
+    selectingLoopRef.current = null;
+    setSelectingLoop(null);
     restartLoop(range);
-  };
-  const changeLoopRange = (range: PracticeLoopRange) => {
-    const nextRange = normalizeLoopRange(range, bars.length);
-    loopRangeRef.current = nextRange;
-    setLoopRange(nextRange);
-    if (loopEnabledRef.current) restartLoop(nextRange);
   };
   const setTempoBpm = (bpm: number) => {
     const bounded = Math.min(300, Math.max(20, Math.round(bpm)));
@@ -124,7 +157,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     tempoRef.current = nextPercent / 100;
     onTempoPercentChange(nextPercent);
   };
-  const recordCoachPass = (boundaries: NonNullable<ReturnType<typeof loopBoundaries>>) => {
+  const recordCoachPass = (boundaries: NonNullable<ReturnType<typeof noteLoopBoundaries>>) => {
     const pass = assessLoopPass(notesRef.current, scorableIds, boundaries);
     const clean = pass.accuracy !== null && pass.attempted > 0 && pass.accuracy >= 90;
     if (!clean) {
@@ -154,13 +187,13 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setCoachStreak(0);
     setCoachMessage(nextEnabled ? 'Two loops at 90% raises tempo by 5 BPM.' : null);
     if (!nextEnabled || loopEnabledRef.current) return;
-    const activeBar = barAt(bars, playbackRef.current)?.index || 1;
-    const range = { startBar: activeBar, endBar: activeBar };
     loopEnabledRef.current = true;
     setLoopEnabled(true);
-    loopRangeRef.current = range;
-    setLoopRange(range);
-    restartLoop(range);
+    loopRangeRef.current = null;
+    setLoopRange(null);
+    selectingLoopRef.current = 'start';
+    setSelectingLoop('start');
+    setCoachMessage('Click the first and last note of the loop.');
   };
   const finish = () => {
     if (completedRef.current) return;
@@ -244,7 +277,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (playingRef.current && !completedRef.current) {
         const previous = playbackRef.current;
         let next = Math.min(duration, previous + elapsed * tempoRef.current);
-        const activeLoop = loopEnabledRef.current ? loopBoundaries(bars, loopRangeRef.current) : null;
+        const activeLoop = loopEnabledRef.current && !selectingLoopRef.current && loopRangeRef.current
+          ? noteLoopBoundaries(song.notes, loopRangeRef.current)
+          : null;
         const loopAdvance = activeLoop && advanceLoop(next, activeLoop);
         const wrapped = loopAdvance?.wrapped || false;
         if (loopAdvance) next = loopAdvance.playbackMs;
@@ -315,12 +350,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         </div>
         <button className="toggle-button" aria-pressed={loopEnabled} onClick={changeLoop} disabled={Boolean(inputError)}>Loop <span>{loopEnabled ? 'On' : 'Off'}</span></button>
         {loopEnabled && <div className="loop-range" aria-label="Loop range">
-          <label>From bar<select aria-label="Loop from bar" value={loopRange.startBar} onChange={(event) => changeLoopRange({ startBar: Number(event.target.value), endBar: loopRange.endBar })}>{bars.map((bar) => <option key={bar.index} value={bar.index}>{bar.index}</option>)}</select></label>
-          <label>To bar<select aria-label="Loop to bar" value={loopRange.endBar} onChange={(event) => changeLoopRange({ startBar: loopRange.startBar, endBar: Number(event.target.value) })}>{bars.map((bar) => <option key={bar.index} value={bar.index}>{bar.index}</option>)}</select></label>
+          <button className="text-button" onClick={beginLoopSelection}>{selectingLoop ? `Click ${selectingLoop} note` : 'Select notes'}</button>
+          {!selectingLoop && loopRange && <span>{loopNoteLabel(song.notes, loopRange.startNoteId)} → {loopNoteLabel(song.notes, loopRange.endNoteId)}</span>}
         </div>}
         {withAudio && <button className="toggle-button" aria-pressed={coachMode} onClick={changeCoachMode} disabled={Boolean(inputError)} title="Raise tempo after two clean loop passes">Coach Mode <span>{coachMode ? 'On' : 'Off'}</span></button>}
         {withAudio && <button className="toggle-button" aria-pressed={waitMode} onClick={changeWaitMode} disabled={Boolean(inputError)} title="Wait for each correct note before continuing">Wait Mode <span>{waitMode ? 'On' : 'Off'}</span></button>}
-        <span className="bar-position">{loopEnabled ? `Loop ${loopRange.startBar}–${loopRange.endBar}` : `Bar ${currentBar} / ${bars.length}`}</span>
+        <span className="bar-position">{loopEnabled ? selectingLoop ? `Select ${selectingLoop} note` : loopRange ? `Loop ${loopNoteLabel(song.notes, loopRange.startNoteId)}–${loopNoteLabel(song.notes, loopRange.endNoteId)}` : 'Select loop notes' : `Bar ${currentBar} / ${bars.length}`}</span>
       </div>
       <div className="practice-status">
         <p className={inputError ? 'error-message' : recentFeedback?.kind || ''} role="status">
@@ -335,7 +370,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>
-      <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} />
+      <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onNoteClick={selectLoopNote} />
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
       <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>Single-note feedback only · chords are not scored.</span>}</footer>
     </main>

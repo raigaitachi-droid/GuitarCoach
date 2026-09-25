@@ -1,15 +1,24 @@
-import { useEffect, useRef } from 'react';
+import { MouseEvent, useEffect, useRef } from 'react';
 import { TabNote } from '../types';
 
-interface Props { notes: TabNote[]; playbackMs: number; tempo: number; waitingId?: string }
+interface Props {
+  notes: TabNote[];
+  playbackMs: number;
+  tempo: number;
+  waitingId?: string;
+  loopStartId?: string;
+  loopEndId?: string;
+  selectingLoop?: 'start' | 'end' | null;
+  onNoteClick?: (note: TabNote) => void;
+}
 const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
 
 // Retains the existing scrolling tab geometry, fret labels, sustain lengths,
 // and legato marks. Decorative effects and game overlays are removed.
-export function TabCanvas({ notes, playbackMs, tempo, waitingId }: Props) {
+export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onNoteClick }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const view = useRef({ notes, playbackMs, tempo, waitingId });
-  view.current = { notes, playbackMs, tempo, waitingId };
+  const view = useRef({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onNoteClick });
+  view.current = { notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onNoteClick };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -27,7 +36,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId }: Props) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = '#15191b';
       ctx.fillRect(0, 0, rect.width, rect.height);
-      const { notes, playbackMs: now, waitingId } = view.current;
+      const { notes, playbackMs: now, waitingId, loopStartId, loopEndId, selectingLoop } = view.current;
       const hitX = rect.width * 0.18;
       const visibleWindowMs = 4500;
       const laneHeight = (rect.height - 80) / 6;
@@ -77,6 +86,12 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId }: Props) {
           ctx.strokeStyle = '#99b9a5';
           ctx.strokeRect(x - radius - 4, y - 19, radius * 2 + 8, 38);
         }
+        if (note.id === loopStartId || note.id === loopEndId) {
+          ctx.strokeStyle = note.id === loopStartId ? '#8ecfb0' : '#d9bd82';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x - radius - 7, y - 22, radius * 2 + 14, 44);
+          ctx.lineWidth = 1;
+        }
         ctx.fillStyle = color;
         ctx.font = '600 20px ui-monospace, monospace';
         ctx.textAlign = 'center';
@@ -97,5 +112,27 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId }: Props) {
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  return <div className="tab-surface"><canvas ref={canvasRef} role="img" aria-label="Scrolling guitar tablature. Fret numbers appear on six strings; correct notes turn green and missed notes turn red." /></div>;
+  const selectNote = (event: MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !view.current.onNoteClick) return;
+    const rect = canvas.getBoundingClientRect();
+    const hitX = rect.width * 0.18;
+    const visibleWindowMs = 4500;
+    const laneHeight = (rect.height - 80) / 6;
+    const xAt = (time: number) => hitX + (time - view.current.playbackMs) / visibleWindowMs * (rect.width - hitX);
+    const yAt = (string: number) => 40 + laneHeight * (string - 0.5);
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const candidate = view.current.notes
+      .filter((note) => xAt(note.timestampMs) >= 48 && xAt(note.timestampMs) <= rect.width + 24)
+      .map((note) => ({ note, distance: Math.hypot(xAt(note.timestampMs) - x, yAt(note.string) - y) }))
+      .filter((entry) => entry.distance <= 30)
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (candidate) view.current.onNoteClick(candidate.note);
+  };
+
+  const selecting = Boolean(selectingLoop);
+  return <div className={selecting ? 'tab-surface is-selecting-loop' : 'tab-surface'}>
+    <canvas ref={canvasRef} onClick={selectNote} role="img" aria-label={selecting ? `Click a note to set loop ${selectingLoop}` : 'Scrolling guitar tablature. Fret numbers appear on six strings; correct notes turn green and missed notes turn red.'} />
+  </div>;
 }
