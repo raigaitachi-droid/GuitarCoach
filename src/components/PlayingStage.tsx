@@ -123,6 +123,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setLoopRange(null);
     selectingLoopRef.current = true;
     setSelectingLoop(true);
+    setTransport(false);
   };
   const beginLoopSelection = () => {
     if (!loopEnabledRef.current) return;
@@ -130,6 +131,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setLoopRange(null);
     selectingLoopRef.current = true;
     setSelectingLoop(true);
+    setTransport(false);
   };
   const selectLoopNotes = (start: TabNote, end: TabNote) => {
     if (!loopEnabledRef.current || !selectingLoopRef.current) return;
@@ -185,6 +187,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setLoopRange(null);
     selectingLoopRef.current = true;
     setSelectingLoop(true);
+    setTransport(false);
     setCoachMessage('Drag from the first note to the last note.');
   };
   const finish = () => {

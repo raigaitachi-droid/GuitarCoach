@@ -19,6 +19,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const view = useRef({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect });
   const draggedNote = useRef<TabNote | null>(null);
+  const draggedEndNote = useRef<TabNote | null>(null);
   view.current = { notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect };
 
   useEffect(() => {
@@ -107,8 +108,9 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
           ctx.fillText(note.isHarmonic ? '◇' : note.isHammerOn ? 'H' : 'P', x, y - 24);
         }
       }
-      const loopStart = loopStartId ? notes.find((note) => note.id === loopStartId) : undefined;
-      const loopEnd = loopEndId ? notes.find((note) => note.id === loopEndId) : undefined;
+      const isDragging = Boolean(draggedNote.current && draggedEndNote.current);
+      const loopStart = draggedNote.current || (loopStartId ? notes.find((note) => note.id === loopStartId) : undefined);
+      const loopEnd = draggedEndNote.current || (loopEndId ? notes.find((note) => note.id === loopEndId) : undefined);
       if (loopStart && loopEnd) {
         const startX = xAt(loopStart.timestampMs);
         const endX = xAt(loopEnd.timestampMs + loopEnd.durationMs);
@@ -116,15 +118,15 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         const right = Math.max(startX, endX);
         // Dim the unselected timeline so the chosen musical phrase remains the
         // only visually dominant part of the tab.
-        ctx.fillStyle = 'rgba(5, 8, 9, 0.56)';
+        ctx.fillStyle = isDragging ? 'rgba(5, 8, 9, 0.44)' : 'rgba(5, 8, 9, 0.56)';
         ctx.fillRect(0, 0, Math.max(0, left), rect.height);
         ctx.fillRect(Math.min(rect.width, right), 0, Math.max(0, rect.width - right), rect.height);
-        ctx.strokeStyle = '#8ecfb0';
+        ctx.strokeStyle = isDragging ? '#b8a8e5' : '#8ecfb0';
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(startX, 32); ctx.lineTo(startX, rect.height - 26); ctx.stroke();
         // The right-hand vertical boundary makes the exact end of the loop
         // legible even when the final note has a long sustain.
-        ctx.strokeStyle = '#d9bd82';
+        ctx.strokeStyle = isDragging ? '#b8a8e5' : '#d9bd82';
         ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(endX, 32); ctx.lineTo(endX, rect.height - 26); ctx.stroke();
         ctx.lineWidth = 1;
@@ -159,18 +161,28 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
     const note = noteAtPointer(event);
     if (!note) return;
     draggedNote.current = note;
+    draggedEndNote.current = note;
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
   const finishDrag = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!draggedNote.current || !view.current.onLoopSelect) return;
     const start = draggedNote.current;
+    const end = noteAtPointer(event) || draggedEndNote.current;
     draggedNote.current = null;
-    const end = noteAtPointer(event);
+    draggedEndNote.current = null;
     if (end) view.current.onLoopSelect(start, end);
     event.preventDefault();
   };
+  const previewDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (!draggedNote.current) return;
+    draggedEndNote.current = noteAtPointer(event);
+  };
+  const cancelDrag = () => {
+    draggedNote.current = null;
+    draggedEndNote.current = null;
+  };
   return <div className={selecting ? 'tab-surface is-selecting-loop' : 'tab-surface'}>
-    <canvas ref={canvasRef} onPointerDown={startDrag} onPointerUp={finishDrag} role="img" aria-label={selecting ? 'Drag from the first note to the last note to set the loop' : 'Scrolling guitar tablature. Fret numbers appear on six strings; correct notes turn green and missed notes turn red.'} />
+    <canvas ref={canvasRef} onPointerDown={startDrag} onPointerMove={previewDrag} onPointerUp={finishDrag} onPointerCancel={cancelDrag} role="img" aria-label={selecting ? 'Drag from the first note to the last note to set the loop' : 'Scrolling guitar tablature. Fret numbers appear on six strings; correct notes turn green and missed notes turn red.'} />
   </div>;
 }
