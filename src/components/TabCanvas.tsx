@@ -1,4 +1,4 @@
-import { MouseEvent, useEffect, useRef } from 'react';
+import { PointerEvent, useEffect, useRef } from 'react';
 import { TabNote } from '../types';
 
 interface Props {
@@ -8,17 +8,18 @@ interface Props {
   waitingId?: string;
   loopStartId?: string;
   loopEndId?: string;
-  selectingLoop?: 'start' | 'end' | null;
-  onNoteClick?: (note: TabNote) => void;
+  selectingLoop?: boolean;
+  onLoopSelect?: (start: TabNote, end: TabNote) => void;
 }
 const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
 
 // Retains the existing scrolling tab geometry, fret labels, sustain lengths,
 // and legato marks. Decorative effects and game overlays are removed.
-export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onNoteClick }: Props) {
+export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const view = useRef({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onNoteClick });
-  view.current = { notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onNoteClick };
+  const view = useRef({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect });
+  const draggedNote = useRef<TabNote | null>(null);
+  view.current = { notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -112,9 +113,9 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const selectNote = (event: MouseEvent<HTMLCanvasElement>) => {
+  const noteAtPointer = (event: PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas || !view.current.onNoteClick) return;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const hitX = rect.width * 0.18;
     const visibleWindowMs = 4500;
@@ -128,11 +129,27 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       .map((note) => ({ note, distance: Math.hypot(xAt(note.timestampMs) - x, yAt(note.string) - y) }))
       .filter((entry) => entry.distance <= 30)
       .sort((a, b) => a.distance - b.distance)[0];
-    if (candidate) view.current.onNoteClick(candidate.note);
+    return candidate?.note || null;
   };
 
   const selecting = Boolean(selectingLoop);
+  const startDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (!selecting || !view.current.onLoopSelect) return;
+    const note = noteAtPointer(event);
+    if (!note) return;
+    draggedNote.current = note;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+  const finishDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (!draggedNote.current || !view.current.onLoopSelect) return;
+    const start = draggedNote.current;
+    draggedNote.current = null;
+    const end = noteAtPointer(event);
+    if (end) view.current.onLoopSelect(start, end);
+    event.preventDefault();
+  };
   return <div className={selecting ? 'tab-surface is-selecting-loop' : 'tab-surface'}>
-    <canvas ref={canvasRef} onClick={selectNote} role="img" aria-label={selecting ? `Click a note to set loop ${selectingLoop}` : 'Scrolling guitar tablature. Fret numbers appear on six strings; correct notes turn green and missed notes turn red.'} />
+    <canvas ref={canvasRef} onPointerDown={startDrag} onPointerUp={finishDrag} role="img" aria-label={selecting ? 'Drag from the first note to the last note to set the loop' : 'Scrolling guitar tablature. Fret numbers appear on six strings; correct notes turn green and missed notes turn red.'} />
   </div>;
 }

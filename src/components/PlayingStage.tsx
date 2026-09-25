@@ -60,8 +60,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const loopEnabledRef = useRef(Boolean(startingNoteRange));
   const [loopRange, setLoopRange] = useState<NoteLoopRange | null>(startingNoteRange);
   const loopRangeRef = useRef<NoteLoopRange | null>(startingNoteRange);
-  const [selectingLoop, setSelectingLoop] = useState<'start' | 'end' | null>(null);
-  const selectingLoopRef = useRef<'start' | 'end' | null>(null);
+  const [selectingLoop, setSelectingLoop] = useState(false);
+  const selectingLoopRef = useRef(false);
   const tempoRef = useRef(tempoPercent / 100);
   const [coachMode, setCoachMode] = useState(false);
   const coachModeRef = useRef(false);
@@ -115,40 +115,32 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     loopEnabledRef.current = nextEnabled;
     setLoopEnabled(nextEnabled);
     if (!nextEnabled) {
-      selectingLoopRef.current = null;
-      setSelectingLoop(null);
+      selectingLoopRef.current = false;
+      setSelectingLoop(false);
       return;
     }
     loopRangeRef.current = null;
     setLoopRange(null);
-    selectingLoopRef.current = 'start';
-    setSelectingLoop('start');
+    selectingLoopRef.current = true;
+    setSelectingLoop(true);
   };
   const beginLoopSelection = () => {
     if (!loopEnabledRef.current) return;
     loopRangeRef.current = null;
     setLoopRange(null);
-    selectingLoopRef.current = 'start';
-    setSelectingLoop('start');
+    selectingLoopRef.current = true;
+    setSelectingLoop(true);
   };
-  const selectLoopNote = (note: TabNote) => {
+  const selectLoopNotes = (start: TabNote, end: TabNote) => {
     if (!loopEnabledRef.current || !selectingLoopRef.current) return;
-    if (selectingLoopRef.current === 'start') {
-      loopRangeRef.current = { startNoteId: note.id, endNoteId: note.id };
-      setLoopRange(loopRangeRef.current);
-      selectingLoopRef.current = 'end';
-      setSelectingLoop('end');
-      return;
-    }
-    const startNoteId = loopRangeRef.current?.startNoteId || note.id;
-    const range = normalizeNoteLoopRange(song.notes, { startNoteId, endNoteId: note.id });
+    const range = normalizeNoteLoopRange(song.notes, { startNoteId: start.id, endNoteId: end.id });
     if (!range) return;
     const boundaries = noteLoopBoundaries(song.notes, range);
     if (!boundaries) return;
     loopRangeRef.current = range;
     setLoopRange(range);
-    selectingLoopRef.current = null;
-    setSelectingLoop(null);
+    selectingLoopRef.current = false;
+    setSelectingLoop(false);
     restartLoop(range);
   };
   const setTempoBpm = (bpm: number) => {
@@ -191,9 +183,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setLoopEnabled(true);
     loopRangeRef.current = null;
     setLoopRange(null);
-    selectingLoopRef.current = 'start';
-    setSelectingLoop('start');
-    setCoachMessage('Click the first and last note of the loop.');
+    selectingLoopRef.current = true;
+    setSelectingLoop(true);
+    setCoachMessage('Drag from the first note to the last note.');
   };
   const finish = () => {
     if (completedRef.current) return;
@@ -350,12 +342,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         </div>
         <button className="toggle-button" aria-pressed={loopEnabled} onClick={changeLoop} disabled={Boolean(inputError)}>Loop <span>{loopEnabled ? 'On' : 'Off'}</span></button>
         {loopEnabled && <div className="loop-range" aria-label="Loop range">
-          <button className="text-button" onClick={beginLoopSelection}>{selectingLoop ? `Click ${selectingLoop} note` : 'Select notes'}</button>
+          <button className="text-button" onClick={beginLoopSelection}>{selectingLoop ? 'Drag across notes' : 'Select notes'}</button>
           {!selectingLoop && loopRange && <span>{loopNoteLabel(song.notes, loopRange.startNoteId)} → {loopNoteLabel(song.notes, loopRange.endNoteId)}</span>}
         </div>}
         {withAudio && <button className="toggle-button" aria-pressed={coachMode} onClick={changeCoachMode} disabled={Boolean(inputError)} title="Raise tempo after two clean loop passes">Coach Mode <span>{coachMode ? 'On' : 'Off'}</span></button>}
         {withAudio && <button className="toggle-button" aria-pressed={waitMode} onClick={changeWaitMode} disabled={Boolean(inputError)} title="Wait for each correct note before continuing">Wait Mode <span>{waitMode ? 'On' : 'Off'}</span></button>}
-        <span className="bar-position">{loopEnabled ? selectingLoop ? `Select ${selectingLoop} note` : loopRange ? `Loop ${loopNoteLabel(song.notes, loopRange.startNoteId)}–${loopNoteLabel(song.notes, loopRange.endNoteId)}` : 'Select loop notes' : `Bar ${currentBar} / ${bars.length}`}</span>
+        <span className="bar-position">{loopEnabled ? selectingLoop ? 'Drag from first note to last note' : loopRange ? `Loop ${loopNoteLabel(song.notes, loopRange.startNoteId)}–${loopNoteLabel(song.notes, loopRange.endNoteId)}` : 'Select loop notes' : `Bar ${currentBar} / ${bars.length}`}</span>
       </div>
       <div className="practice-status">
         <p className={inputError ? 'error-message' : recentFeedback?.kind || ''} role="status">
@@ -370,7 +362,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>
-      <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onNoteClick={selectLoopNote} />
+      <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
       <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>Single-note feedback only · chords are not scored.</span>}</footer>
     </main>
