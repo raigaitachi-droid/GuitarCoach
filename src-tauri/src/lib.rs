@@ -330,6 +330,12 @@ fn build_stream(
 fn select_device(device_id: Option<&str>) -> Result<Device, String> {
   let host = cpal::default_host();
   if let Some(device_id) = device_id.filter(|id| !id.is_empty()) {
+    if let Ok(index) = device_id.parse::<usize>() {
+      return host.input_devices()
+        .map_err(|error| error.to_string())?
+        .nth(index)
+        .ok_or_else(|| "Selected audio input is not available.".to_string());
+    }
     return host.input_devices()
       .map_err(|error| error.to_string())?
       .find(|device| device.name().map(|name| name == device_id).unwrap_or(false))
@@ -355,8 +361,9 @@ fn preferred_input_config(device: &Device) -> Result<(StreamConfig, SampleFormat
 fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
   let devices = cpal::default_host().input_devices()
     .map_err(|error| error.to_string())?
-    .filter_map(|device| device.name().ok())
-    .map(|name| AudioDevice { id: name.clone(), label: name })
+    .enumerate()
+    .filter_map(|(index, device)| device.name().ok().map(|name| (index, name)))
+    .map(|(index, name)| AudioDevice { id: index.to_string(), label: name })
     .collect::<Vec<_>>();
   Ok(devices)
 }
