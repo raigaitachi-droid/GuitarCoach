@@ -107,6 +107,28 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
           ctx.fillText(note.isHarmonic ? '◇' : note.isHammerOn ? 'H' : 'P', x, y - 24);
         }
       }
+      const loopStart = loopStartId ? notes.find((note) => note.id === loopStartId) : undefined;
+      const loopEnd = loopEndId ? notes.find((note) => note.id === loopEndId) : undefined;
+      if (loopStart && loopEnd) {
+        const startX = xAt(loopStart.timestampMs);
+        const endX = xAt(loopEnd.timestampMs + loopEnd.durationMs);
+        const left = Math.min(startX, endX);
+        const right = Math.max(startX, endX);
+        // Dim the unselected timeline so the chosen musical phrase remains the
+        // only visually dominant part of the tab.
+        ctx.fillStyle = 'rgba(5, 8, 9, 0.56)';
+        ctx.fillRect(0, 0, Math.max(0, left), rect.height);
+        ctx.fillRect(Math.min(rect.width, right), 0, Math.max(0, rect.width - right), rect.height);
+        ctx.strokeStyle = '#8ecfb0';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(startX, 32); ctx.lineTo(startX, rect.height - 26); ctx.stroke();
+        // The right-hand vertical boundary makes the exact end of the loop
+        // legible even when the final note has a long sustain.
+        ctx.strokeStyle = '#d9bd82';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(endX, 32); ctx.lineTo(endX, rect.height - 26); ctx.stroke();
+        ctx.lineWidth = 1;
+      }
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
@@ -119,16 +141,15 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
     const rect = canvas.getBoundingClientRect();
     const hitX = rect.width * 0.18;
     const visibleWindowMs = 4500;
-    const laneHeight = (rect.height - 80) / 6;
     const xAt = (time: number) => hitX + (time - view.current.playbackMs) / visibleWindowMs * (rect.width - hitX);
-    const yAt = (string: number) => 40 + laneHeight * (string - 0.5);
     const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
     const candidate = view.current.notes
       .filter((note) => xAt(note.timestampMs) >= 48 && xAt(note.timestampMs) <= rect.width + 24)
-      .map((note) => ({ note, distance: Math.hypot(xAt(note.timestampMs) - x, yAt(note.string) - y) }))
-      .filter((entry) => entry.distance <= 30)
-      .sort((a, b) => a.distance - b.distance)[0];
+      // Snap by horizontal timeline position. This means the guitarist can
+      // begin/end a drag in the empty space between strings and still select
+      // the musically nearest note.
+      .map((note) => ({ note, distance: Math.abs(xAt(note.timestampMs) - x) }))
+      .sort((a, b) => a.distance - b.distance || a.note.string - b.note.string)[0];
     return candidate?.note || null;
   };
 
