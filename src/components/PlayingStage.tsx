@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector, PitchResult } from '../utils/pitchDetector';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice, SUSTAINED_PITCH_COOLDOWN_MS, TIMING_WINDOW_MS } from '../utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedChord, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice, SUSTAINED_PITCH_COOLDOWN_MS, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
@@ -89,7 +89,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastHitNote = useRef<TabNote | null>(null);
   const pendingAttackAudioTime = useRef<number | null>(null);
   const sustainedPitchCooldownUntil = useRef(-Infinity);
-  const pendingChordAttack = useRef<{ audioTimeMs: number; expectedTimestampMs: number } | null>(null);
+  const pendingChordAttack = useRef<{ audioTimeMs: number; expectedTimestampMs: number; timingOffsetMs: number } | null>(null);
   const lastHeardPitchUpdate = useRef(0);
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
@@ -246,7 +246,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         pendingAttackAudioTime.current = result.audioTimeMs;
         const expectedTimestampMs = nearestChordTimestamp(notesRef.current, playbackRef.current);
         pendingChordAttack.current = expectedTimestampMs !== null && Math.abs(expectedTimestampMs - playbackRef.current) <= TIMING_WINDOW_MS
-          ? { audioTimeMs: result.audioTimeMs, expectedTimestampMs }
+          ? {
+              audioTimeMs: result.audioTimeMs,
+              expectedTimestampMs,
+              timingOffsetMs: Math.round(playbackRef.current - expectedTimestampMs),
+            }
           : null;
         lastHitNote.current = null;
         setHeardPitch(null);
@@ -263,7 +267,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (result.polyphonicMidiNumbers) {
         setHeardChord(result.polyphonicMidiNumbers);
         const pending = pendingChordAttack.current;
-        // Ignore a late result whose audio belongs to before this attack.
+        // A Basic Pitch result can finish after a newer pick even though its
+        // audio belongs to the previous analysis window. Do not count it as
+        // usable chord timing for the new attack.
         if (pending && result.audioTimeMs >= pending.audioTimeMs) {
           const timing = {
             expectedToReadingMs: Math.round(playbackRef.current - pending.expectedTimestampMs),
@@ -272,6 +278,29 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           };
           setChordTiming(timing);
           console.info('[GuitarCoach chord timing]', { ...timing, midiNumbers: result.polyphonicMidiNumbers });
+          const chord = judgeDetectedChord(
+            notesRef.current,
+            pending.expectedTimestampMs,
+            result.polyphonicMidiNumbers
+          );
+          if (chord.kind === 'resolved') {
+            const hitIds = new Set(chord.matched.map((note) => note.id));
+            const chordIds = new Set(chord.expected.map((note) => note.id));
+            updateNotes(notesRef.current.map((note) => {
+              if (!chordIds.has(note.id)) return note;
+              return hitIds.has(note.id)
+                ? { ...note, hitState: 'hit', timingOffsetMs: pending.timingOffsetMs }
+                : { ...note, hitState: 'miss' };
+            }));
+            micDetector.clearPitchHistory();
+            setFeedback({
+              text: chord.passed
+                ? `Correct chord · ${chord.matched.length}/${chord.expected.length}`
+                : `Incomplete chord · ${chord.matched.length}/${chord.expected.length} · need ${chord.requiredHits}`,
+              kind: chord.passed ? 'correct' : 'wrong',
+              at: performance.now(),
+            });
+          }
           pendingChordAttack.current = null;
         }
         return;
@@ -444,7 +473,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       </div>
       <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
-      <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>Single-note feedback only · chords are not scored.</span>}</footer>
+      <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>{polyphonicError ? 'Single-note feedback only · chord preview is unavailable.' : 'Chord scoring: at least 50% of expected tones.'}</span>}</footer>
     </main>
   );
 }
