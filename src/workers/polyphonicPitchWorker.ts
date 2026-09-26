@@ -6,7 +6,7 @@ import '@tensorflow/tfjs-backend-wasm';
 
 type IncomingMessage =
   | { type: 'init'; modelUrl: string }
-  | { type: 'samples'; samples: Float32Array; hopSamples: number; sampleRate: number; audioTimeMs: number };
+  | { type: 'samples'; samples: Float32Array; hopSamples: number; sampleRate: number; audioTimeMs: number; requestedAtMs: number };
 
 const MODEL_SAMPLE_RATE = 22050;
 const WINDOW_SAMPLES = MODEL_SAMPLE_RATE * 2;
@@ -54,9 +54,10 @@ function appendSamples(samples: Float32Array, sampleRate: number) {
   rolling = next;
 }
 
-async function analyse(audioTimeMs: number) {
+async function analyse(audioTimeMs: number, requestedAtMs: number) {
   if (!model || busy) return;
   busy = true;
+  const startedAtMs = performance.now();
   try {
     // Basic Pitch is batch-oriented, so this is deliberately a rolling preview,
     // not yet the authoritative score engine. Only notes active near the newest
@@ -80,7 +81,13 @@ async function analyse(audioTimeMs: number) {
       .filter((note) => note.startFrame + note.durationFrames >= recentFrame)
       .map((note) => note.pitchMidi)
     )].sort((a, b) => a - b);
-    self.postMessage({ type: 'polyphonic', midiNumbers, audioTimeMs });
+    self.postMessage({
+      type: 'polyphonic',
+      midiNumbers,
+      audioTimeMs,
+      requestedAtMs,
+      workerDurationMs: performance.now() - startedAtMs,
+    });
   } catch (error) {
     self.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'Polyphonic preview could not start.' });
   } finally {
@@ -109,7 +116,7 @@ self.onmessage = (event: MessageEvent<IncomingMessage>) => {
   appendSamples(message.samples.subarray(-hopSamples), message.sampleRate);
   if (message.audioTimeMs - lastAnalysisAt >= ANALYSIS_EVERY_MS) {
     lastAnalysisAt = message.audioTimeMs;
-    void analyse(message.audioTimeMs);
+    void analyse(message.audioTimeMs, message.requestedAtMs);
   }
 };
 
