@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, shouldSuppressStalePitchAfterAttack, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
 
 const notes: TabNote[] = [
@@ -41,6 +41,12 @@ test('a fresh attack expires stale pitch reads until the onset estimate arrives'
   expect(shouldSuppressStalePitchAfterAttack(100, 120, true)).toBe(false);
   expect(shouldSuppressStalePitchAfterAttack(100, 250, false)).toBe(false);
   expect(shouldSuppressStalePitchAfterAttack(100, 90, false)).toBe(true);
+});
+
+test('the post-hit cooldown rejects only held pitches, never a new attack', () => {
+  expect(shouldSuppressSustainedPitchDuringCooldown(280, 200, false)).toBe(true);
+  expect(shouldSuppressSustainedPitchDuringCooldown(280, 200, true)).toBe(false);
+  expect(shouldSuppressSustainedPitchDuringCooldown(280, 280, false)).toBe(false);
 });
 
 test('guitar pitches use the same MIDI-to-Hz map as the imported Guitar Pro notes', () => {
