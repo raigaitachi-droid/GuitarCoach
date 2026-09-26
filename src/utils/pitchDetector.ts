@@ -433,7 +433,7 @@ export class MicrophonePitchDetector {
       this.emit(result);
     };
     const modelUrl = new URL(`${import.meta.env.BASE_URL}basic-pitch/model.json`, window.location.href).href;
-    this.polyphonicWorker.postMessage({ type: 'init', modelUrl });
+    this.polyphonicWorker.postMessage({ type: 'init', modelUrl, preferWasm: isTauri() });
   }
 
   // Kept for compatibility with tuner code; event subscribers are preferred.
