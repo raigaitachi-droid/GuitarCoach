@@ -13,11 +13,12 @@ interface Props {
   onFindInputs: () => void;
   onFile: (file: File) => void;
   onDemo: () => void;
+  onChordTest: () => void;
   onStart: (withAudio: boolean) => void;
   onReset: () => void;
 }
 
-export function StartScreen({ song, loading, busy, error, devices, deviceId, onDeviceChange, onFindInputs, onFile, onDemo, onStart, onReset }: Props) {
+export function StartScreen({ song, loading, busy, error, devices, deviceId, onDeviceChange, onFindInputs, onFile, onDemo, onChordTest, onStart, onReset }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const disabled = loading || busy;
@@ -39,6 +40,7 @@ export function StartScreen({ song, loading, busy, error, devices, deviceId, onD
               <span className="muted">or click to choose a file</span>
             </button>
             <button className="text-button demo-button" disabled={disabled} onClick={onDemo}>Try demo song</button>
+            <button className="text-button demo-button" disabled={disabled} onClick={onChordTest}>Try open chords test</button>
           </>
         ) : (
           <section className="input-setup" aria-label="Prepare practice">
