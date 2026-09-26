@@ -39,6 +39,8 @@ export interface PitchResult {
   fret?: number;
   /** Experimental Basic Pitch preview; never used to award a score yet. */
   polyphonicMidiNumbers?: number[];
+  polyphonicWorkerMs?: number;
+  polyphonicRoundTripMs?: number;
   polyphonicError?: string;
   /** Fast RMS attack marker; it intentionally has no pitch estimate yet. */
   quickOnset?: boolean;
@@ -283,6 +285,7 @@ export class MicrophonePitchDetector {
       this.nativeSampleRate = started.sampleRate;
       this.nativeCapture = true;
       void invoke('set_expected_string', { stringNumber: this.expectedString }).catch(() => undefined);
+      this.startPolyphonicPreview();
       if (requestId !== this.requestId) {
         this.stopListening();
         return false;
@@ -332,6 +335,7 @@ export class MicrophonePitchDetector {
       hopSamples: polyphonicSamples.length / 2,
       sampleRate,
       audioTimeMs: message.audioTimeMs || 0,
+      requestedAtMs: performance.now(),
     }, [polyphonicSamples.buffer]);
     const result = this.analysePitch(
       samples,
@@ -387,7 +391,7 @@ export class MicrophonePitchDetector {
     this.polyphonicWorker?.terminate();
     this.polyphonicError = null;
     this.polyphonicWorker = new Worker(new URL('../workers/polyphonicPitchWorker.ts', import.meta.url), { type: 'module' });
-    this.polyphonicWorker.onmessage = (event: MessageEvent<{ type: string; midiNumbers?: number[]; message?: string; audioTimeMs?: number }>) => {
+    this.polyphonicWorker.onmessage = (event: MessageEvent<{ type: string; midiNumbers?: number[]; message?: string; audioTimeMs?: number; requestedAtMs?: number; workerDurationMs?: number }>) => {
       if (event.data.type === 'error') {
         this.polyphonicError = event.data.message || 'Polyphonic preview could not start.';
         this.emit({
@@ -413,6 +417,10 @@ export class MicrophonePitchDetector {
         pluckId: 0,
         confidence: 1,
         polyphonicMidiNumbers: event.data.midiNumbers,
+        polyphonicWorkerMs: event.data.workerDurationMs,
+        polyphonicRoundTripMs: event.data.requestedAtMs === undefined
+          ? undefined
+          : performance.now() - event.data.requestedAtMs,
       };
       this.emit(result);
     };
