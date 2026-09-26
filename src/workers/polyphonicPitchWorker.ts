@@ -6,11 +6,11 @@ import '@tensorflow/tfjs-backend-wasm';
 
 type IncomingMessage =
   | { type: 'init'; modelUrl: string }
-  | { type: 'samples'; samples: Float32Array; hopSamples: number; sampleRate: number; audioTimeMs: number; requestedAtMs: number };
+  | { type: 'samples'; samples: Float32Array; hopSamples: number; sampleRate: number; audioTimeMs: number; requestedAtMs: number; onset?: boolean };
 
 const MODEL_SAMPLE_RATE = 22050;
 const WINDOW_SAMPLES = MODEL_SAMPLE_RATE * 2;
-const ANALYSIS_EVERY_MS = 250;
+const MIN_ONSET_ANALYSIS_GAP_MS = 90;
 const REALTIME_ONSET_THRESHOLD = 0.25;
 const REALTIME_FRAME_THRESHOLD = 0.15;
 const REALTIME_MINIMUM_NOTE_LENGTH_FRAMES = 3;
@@ -19,8 +19,9 @@ let model: BasicPitch | null = null;
 // Basic Pitch uses a two-second receptive field. Leading zeroes let the first
 // short notes be evaluated without waiting for a full window of microphone data.
 let rolling = new Float32Array(WINDOW_SAMPLES);
-let lastAnalysisAt = -Infinity;
+let lastOnsetAnalysisAt = -Infinity;
 let busy = false;
+let pendingAnalysis: { audioTimeMs: number; requestedAtMs: number } | null = null;
 
 async function initialiseTensorFlow() {
   try {
@@ -54,8 +55,12 @@ function appendSamples(samples: Float32Array, sampleRate: number) {
   rolling = next;
 }
 
-async function analyse(audioTimeMs: number, requestedAtMs: number) {
-  if (!model || busy) return;
+async function analysePending() {
+  if (!model || busy || !pendingAnalysis) return;
+  // Retain only the newest onset while the model is busy. Processing an old
+  // window after the player has moved on is both laggy and misleading.
+  const { audioTimeMs, requestedAtMs } = pendingAnalysis;
+  pendingAnalysis = null;
   busy = true;
   const startedAtMs = performance.now();
   try {
@@ -92,6 +97,7 @@ async function analyse(audioTimeMs: number, requestedAtMs: number) {
     self.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'Polyphonic preview could not start.' });
   } finally {
     busy = false;
+    if (pendingAnalysis) void analysePending();
   }
 }
 
@@ -114,9 +120,17 @@ self.onmessage = (event: MessageEvent<IncomingMessage>) => {
     Math.max(1, Math.trunc(message.hopSamples))
   );
   appendSamples(message.samples.subarray(-hopSamples), message.sampleRate);
-  if (message.audioTimeMs - lastAnalysisAt >= ANALYSIS_EVERY_MS) {
-    lastAnalysisAt = message.audioTimeMs;
-    void analyse(message.audioTimeMs, message.requestedAtMs);
+  // Basic Pitch is an expensive, two-second model. Running it continuously
+  // makes the native UI feel delayed even though it is only a chord preview.
+  // The capture layer marks a snapshot after a real pluck and after the
+  // 2048-sample window is clean; that is the only time preview needs a run.
+  if (message.onset && message.audioTimeMs - lastOnsetAnalysisAt >= MIN_ONSET_ANALYSIS_GAP_MS) {
+    lastOnsetAnalysisAt = message.audioTimeMs;
+    pendingAnalysis = {
+      audioTimeMs: message.audioTimeMs,
+      requestedAtMs: message.requestedAtMs,
+    };
+    void analysePending();
   }
 };
 
