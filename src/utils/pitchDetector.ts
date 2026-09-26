@@ -428,26 +428,22 @@ export class MicrophonePitchDetector {
     let bestPeriod = -1;
     const correlations = new Float32Array(maxPeriod + 2);
     const windowLength = buffer.length;
-    // A re-pluck can overlap a still-ringing previous string. On onset,
-    // keep only the newest slice so the fresh note wins the correlation search.
-    const recentWindowSamples = onset
-      ? Math.min(windowLength, Math.round(maxPeriod * 2.5))
-      : windowLength;
-    const analysisStart = windowLength - recentWindowSamples;
 
     for (let period = minPeriod; period <= maxPeriod; period++) {
       let sumProd = 0;
       let energy1 = 0;
       let energy2 = 0;
       const length = buffer.length - period;
-      const start = Math.max(0, analysisStart);
 
-      for (let i = start; i < length; i += 2) {
+      for (let i = 0; i < length; i += 2) {
         const x1 = buffer[i];
         const x2 = buffer[i + period];
-        sumProd += x1 * x2;
-        energy1 += x1 * x1;
-        energy2 += x2 * x2;
+        // Prefer recent samples after a re-pluck without starving low notes
+        // of the period history needed for a stable correlation.
+        const weight = onset ? 0.15 + 0.85 * (i / (windowLength - 1)) : 1;
+        sumProd += weight * x1 * x2;
+        energy1 += weight * x1 * x1;
+        energy2 += weight * x2 * x2;
       }
 
       const denominator = Math.sqrt(energy1 * energy2);
