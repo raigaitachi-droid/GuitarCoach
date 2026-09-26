@@ -7,6 +7,8 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     this.writeIndex = 0;
     this.filled = 0;
     this.samplesSinceLastSnapshot = 0;
+    // Do not analyse a ring buffer that still contains the previous note.
+    this.samplesSinceOnset = Infinity;
     this.pendingOnset = false;
     this.quickOnsetWindowSize = 256;
     this.quickOnsetSamples = 0;
@@ -54,6 +56,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       this.writeIndex = (this.writeIndex + 1) % this.bufferSize;
       this.filled = Math.min(this.bufferSize, this.filled + 1);
       this.samplesSinceLastSnapshot++;
+      this.samplesSinceOnset++;
       sumSquares += sample * sample;
       this.quickOnsetSquares += sample * sample;
       this.quickOnsetSamples++;
@@ -129,7 +132,10 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       this.pluckCount++;
       this.lastOnsetFrame = currentFrame;
       this.decayRms = Math.max(this.decayRms, rms);
-      if (currentFrame >= this.mutedUntilFrame) this.pendingOnset = true;
+      if (currentFrame >= this.mutedUntilFrame) {
+        this.pendingOnset = true;
+        this.samplesSinceOnset = 0;
+      }
     }
 
     this.blockCounter++;
@@ -138,7 +144,8 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       currentFrame >= this.mutedUntilFrame &&
       this.filled === this.bufferSize &&
       rms >= this.noiseThreshold &&
-      this.samplesSinceLastSnapshot >= this.hopSize
+      this.samplesSinceLastSnapshot >= this.hopSize &&
+      this.samplesSinceOnset >= this.bufferSize
     ) {
       const snapshot = new Float32Array(this.bufferSize);
       const tail = this.bufferSize - this.writeIndex;
