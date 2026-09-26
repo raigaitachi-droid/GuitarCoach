@@ -92,6 +92,59 @@ export interface DetectedPitch {
   onset?: boolean;
 }
 
+export const CHORD_MATCH_SEMITONE_TOLERANCE = 1;
+export const CHORD_MINIMUM_MATCH_RATIO = 0.5;
+
+export type ChordJudgement =
+  | { kind: 'ignored' }
+  | {
+      kind: 'resolved';
+      expected: TabNote[];
+      matched: TabNote[];
+      missed: TabNote[];
+      requiredHits: number;
+      passed: boolean;
+    };
+
+/**
+ * Matches a Basic Pitch set to one chord group. A detected pitch can only
+ * satisfy one expected string, so duplicate/unison pitches cannot inflate a
+ * chord score. Extra detected pitches are ignored: ringing guitar strings and
+ * sympathetic resonance are normal.
+ */
+export function judgeDetectedChord(
+  notes: TabNote[],
+  expectedTimestampMs: number,
+  detectedMidiNumbers: number[]
+): ChordJudgement {
+  const expected = notes.filter((note) =>
+    note.timestampMs === expectedTimestampMs && !note.hitState
+  );
+  if (expected.length < 2 || detectedMidiNumbers.length === 0) return { kind: 'ignored' };
+
+  const unmatchedDetected = [...detectedMidiNumbers];
+  const matched: TabNote[] = [];
+  for (const note of expected) {
+    const target = expectedMidi(note);
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+    for (let index = 0; index < unmatchedDetected.length; index++) {
+      const distance = Math.abs(unmatchedDetected[index] - target);
+      if (distance <= CHORD_MATCH_SEMITONE_TOLERANCE && distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+    if (bestIndex >= 0) {
+      unmatchedDetected.splice(bestIndex, 1);
+      matched.push(note);
+    }
+  }
+  const missed = expected.filter((note) => !matched.some((hit) => hit.id === note.id));
+  const requiredHits = Math.ceil(expected.length * CHORD_MINIMUM_MATCH_RATIO);
+  return { kind: 'resolved', expected, matched, missed, requiredHits, passed: matched.length >= requiredHits };
+}
+
 export type PitchJudgement =
   | { kind: 'ignored' }
   | { kind: 'wrong'; expected: TabNote }
