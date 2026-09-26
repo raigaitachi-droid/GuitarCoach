@@ -343,6 +343,7 @@ export class MicrophonePitchDetector {
       sampleRate,
       audioTimeMs: message.audioTimeMs || 0,
       requestedAtMs: performance.now(),
+      onset: Boolean(message.onset),
     }, [polyphonicSamples.buffer]);
     const result = this.analysePitch(
       samples,
