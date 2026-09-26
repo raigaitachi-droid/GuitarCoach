@@ -9,10 +9,10 @@ type IncomingMessage =
   | { type: 'samples'; samples: Float32Array; hopSamples: number; sampleRate: number; audioTimeMs: number; requestedAtMs: number; onset?: boolean };
 
 const MODEL_SAMPLE_RATE = 22050;
-// Basic Pitch accepts shorter input windows. 800 ms still contains many cycles
+// Basic Pitch accepts shorter input windows. 600 ms still contains many cycles
 // of the low E string, while avoiding the UI/GPU hitch of a full two-second
 // inference for a realtime chord preview.
-const WINDOW_SAMPLES = Math.round(MODEL_SAMPLE_RATE * 0.8);
+const WINDOW_SAMPLES = Math.round(MODEL_SAMPLE_RATE * 0.6);
 const MIN_ONSET_ANALYSIS_GAP_MS = 90;
 const REALTIME_ONSET_THRESHOLD = 0.25;
 const REALTIME_FRAME_THRESHOLD = 0.15;
