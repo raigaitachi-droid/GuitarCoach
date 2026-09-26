@@ -33,6 +33,18 @@ function loopNoteLabel(notes: TabNote[], noteId: string | undefined) {
   return index < 0 ? '—' : `Note ${index + 1}`;
 }
 
+function nearestChordTimestamp(notes: TabNote[], playbackMs: number): number | null {
+  const counts = new Map<number, number>();
+  for (const note of notes) counts.set(note.timestampMs, (counts.get(note.timestampMs) || 0) + 1);
+  const timestamps = [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([timestampMs]) => timestampMs);
+  if (timestamps.length === 0) return null;
+  return timestamps.reduce((nearest, timestampMs) =>
+    Math.abs(timestampMs - playbackMs) < Math.abs(nearest - playbackMs) ? timestampMs : nearest
+  );
+}
+
 export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, onTempoPercentChange, onFinish }: Props) {
   const bars = useMemo(() => practiceBars(song), [song]);
   const startingRange = normalizeLoopRange(initialLoopRange || { startBar: 1, endBar: 1 }, bars.length);
@@ -56,6 +68,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const [heardPitch, setHeardPitch] = useState<Pick<PitchResult, 'noteName' | 'frequency' | 'confidence'> | null>(null);
   const [heardChord, setHeardChord] = useState<number[]>([]);
   const [polyphonicError, setPolyphonicError] = useState<string | null>(null);
+  const [chordTiming, setChordTiming] = useState<{ expectedToReadingMs: number; attackToReadingMs: number; workerMs: number | null } | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const [loopEnabled, setLoopEnabled] = useState(Boolean(startingNoteRange));
   const loopEnabledRef = useRef(Boolean(startingNoteRange));
@@ -76,6 +89,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastHitNote = useRef<TabNote | null>(null);
   const pendingAttackAudioTime = useRef<number | null>(null);
   const sustainedPitchCooldownUntil = useRef(-Infinity);
+  const pendingChordAttack = useRef<{ audioTimeMs: number; expectedTimestampMs: number } | null>(null);
   const lastHeardPitchUpdate = useRef(0);
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
@@ -230,6 +244,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (!result || !playingRef.current || completedRef.current) return;
       if (result.quickOnset) {
         pendingAttackAudioTime.current = result.audioTimeMs;
+        const expectedTimestampMs = nearestChordTimestamp(notesRef.current, playbackRef.current);
+        pendingChordAttack.current = expectedTimestampMs !== null && Math.abs(expectedTimestampMs - playbackRef.current) <= TIMING_WINDOW_MS
+          ? { audioTimeMs: result.audioTimeMs, expectedTimestampMs }
+          : null;
         lastHitNote.current = null;
         setHeardPitch(null);
         setHeardChord([]);
@@ -244,6 +262,17 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       }
       if (result.polyphonicMidiNumbers) {
         setHeardChord(result.polyphonicMidiNumbers);
+        const pending = pendingChordAttack.current;
+        if (pending) {
+          const timing = {
+            expectedToReadingMs: Math.round(playbackRef.current - pending.expectedTimestampMs),
+            attackToReadingMs: Math.round(result.audioTimeMs - pending.audioTimeMs),
+            workerMs: result.polyphonicRoundTripMs === undefined ? null : Math.round(result.polyphonicRoundTripMs),
+          };
+          setChordTiming(timing);
+          console.info('[GuitarCoach chord timing]', { ...timing, midiNumbers: result.polyphonicMidiNumbers });
+          pendingChordAttack.current = null;
+        }
         return;
       }
       if (shouldSuppressStalePitchAfterAttack(
@@ -406,6 +435,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {withAudio && heardPitch && <span className="detector-readout">Heard {heardPitch.noteName} · {heardPitch.frequency.toFixed(1)} Hz · {Math.round(heardPitch.confidence * 100)}%</span>}
           {withAudio && quickOnsetVisible && <span className="detector-readout onset-marker">Note attack detected</span>}
           {withAudio && heardChord.length > 1 && <span className="detector-readout">Chord preview: {heardChord.map(midiName).join(' ')}</span>}
+          {import.meta.env.DEV && chordTiming && <span className="detector-readout">Chord timing: {chordTiming.expectedToReadingMs >= 0 ? '+' : ''}{chordTiming.expectedToReadingMs} ms from tab · {chordTiming.attackToReadingMs} ms from attack · {chordTiming.workerMs ?? '—'} ms worker</span>}
           {withAudio && polyphonicError && <span className="detector-readout">Chord preview unavailable: {polyphonicError}</span>}
           {coachMode && <span className="detector-readout">{coachMessage || `Coach: ${coachStreak}/2 clean loops`}</span>}
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
