@@ -92,6 +92,19 @@ export class MicrophonePitchDetector {
     });
   }
 
+  setExpectedString(stringNumber: number | null) {
+    const normalized = Number.isInteger(stringNumber) && stringNumber! >= 1 && stringNumber! <= 6
+      ? stringNumber
+      : null;
+    if (normalized === this.expectedString) return;
+    this.expectedString = normalized;
+    if (this.nativeCapture) {
+      void invoke('set_expected_string', { stringNumber: normalized }).catch(() => undefined);
+      return;
+    }
+    this.workletNode?.port.postMessage({ type: 'expected-string', value: normalized });
+  }
+
   getNoiseThreshold(): number {
     return this.noiseThreshold;
   }
@@ -212,6 +225,7 @@ export class MicrophonePitchDetector {
           processorOptions: { noiseThreshold: this.noiseThreshold },
         }
       );
+      this.workletNode.port.postMessage({ type: 'expected-string', value: this.expectedString });
 
       // Keep the worklet graph alive without feeding microphone audio to speakers.
       this.silentGain = this.audioContext.createGain();
@@ -268,6 +282,7 @@ export class MicrophonePitchDetector {
       const started = await invoke<NativeCaptureStarted>('start_native_capture', { deviceId: deviceId || null });
       this.nativeSampleRate = started.sampleRate;
       this.nativeCapture = true;
+      void invoke('set_expected_string', { stringNumber: this.expectedString }).catch(() => undefined);
       if (requestId !== this.requestId) {
         this.stopListening();
         return false;
