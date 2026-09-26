@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector, PitchResult } from '../utils/pitchDetector';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressStalePitchAfterAttack, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice, SUSTAINED_PITCH_COOLDOWN_MS, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
@@ -75,6 +75,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastFeedbackPluck = useRef(-1);
   const lastHitNote = useRef<TabNote | null>(null);
   const pendingAttackAudioTime = useRef<number | null>(null);
+  const sustainedPitchCooldownUntil = useRef(-Infinity);
   const lastHeardPitchUpdate = useRef(0);
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
@@ -104,6 +105,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastFeedbackPluck.current = -1;
     lastHitNote.current = null;
     pendingAttackAudioTime.current = null;
+    sustainedPitchCooldownUntil.current = -Infinity;
     setFeedback(null);
     guitarSynth.stop();
   };
@@ -237,6 +239,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         result.audioTimeMs,
         result.onset
       )) return;
+      if (shouldSuppressSustainedPitchDuringCooldown(
+        sustainedPitchCooldownUntil.current,
+        result.audioTimeMs,
+        result.onset
+      )) return;
       if (result.onset) pendingAttackAudioTime.current = null;
       // A small live readout makes hardware issues observable without adding a
       // separate tuner or diagnostic screen. Throttle re-renders to 8 Hz.
@@ -259,7 +266,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       });
       if (judgement.kind === 'ignored') return;
       if (judgement.kind === 'wrong') {
-        if (result.confidence < 0.64) return;
+        if (result.confidence < 0.68) return;
         if (result.pluckId !== lastFeedbackPluck.current) {
           lastFeedbackPluck.current = result.pluckId;
           updateNotes(notesRef.current.map((note) => note.id === judgement.expected.id
@@ -276,6 +283,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           !(lastHitNote.current && (matched.isHammerOn || matched.isPullOff) && expectedMidi(matched) !== expectedMidi(lastHitNote.current))) return;
       lastConsumedPluck.current = result.pluckId;
       lastHitNote.current = matched;
+      sustainedPitchCooldownUntil.current = result.audioTimeMs + SUSTAINED_PITCH_COOLDOWN_MS;
+      micDetector.clearPitchHistory();
       updateNotes(notesRef.current.map((note) => note.id === matched.id ? { ...note, hitState: 'hit', timingOffsetMs: judgement.timingOffsetMs } : note));
       waitingRef.current = null;
       setWaiting(null);
