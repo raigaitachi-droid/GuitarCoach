@@ -43,6 +43,7 @@ export const FIRST_ONSET_SEMITONE_TOLERANCE = 1;
 // A fresh pick should not allow the old ringing pitch to score the next note
 // while the detector is waiting for a clean post-attack pitch estimate.
 export const ATTACK_PITCH_EXPIRY_MS = 140;
+export const SUSTAINED_PITCH_COOLDOWN_MS = 180;
 
 export function shouldSuppressStalePitchAfterAttack(
   attackAudioTimeMs: number | null,
@@ -52,6 +53,14 @@ export function shouldSuppressStalePitchAfterAttack(
   if (attackAudioTimeMs === null || isOnset) return false;
   const elapsedMs = pitchAudioTimeMs - attackAudioTimeMs;
   return elapsedMs < 0 || elapsedMs < ATTACK_PITCH_EXPIRY_MS;
+}
+
+export function shouldSuppressSustainedPitchDuringCooldown(
+  cooldownUntilAudioTimeMs: number,
+  pitchAudioTimeMs: number,
+  isOnset: boolean
+): boolean {
+  return !isOnset && pitchAudioTimeMs < cooldownUntilAudioTimeMs;
 }
 
 export function midiToFrequency(midi: number): number {
