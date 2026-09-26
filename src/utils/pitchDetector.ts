@@ -104,6 +104,13 @@ export class MicrophonePitchDetector {
     return this.estimatedInputLatencyMs;
   }
 
+  clearPitchHistory() {
+    this.latestResult = null;
+    this.lastMidi = -1;
+    this.lastCents = 0;
+    this.lastPitchTimeMs = 0;
+  }
+
   subscribe(listener: PitchListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -350,10 +357,8 @@ export class MicrophonePitchDetector {
       void this.audioContext.close();
     }
     this.audioContext = null;
-    this.latestResult = null;
+    this.clearPitchHistory();
     this.lastRms = 0;
-    this.lastMidi = -1;
-    this.lastPitchTimeMs = 0;
     this.polyphonicWorker?.terminate();
     this.polyphonicWorker = null;
     this.polyphonicError = null;
