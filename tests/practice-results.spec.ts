@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, shouldSuppressStalePitchAfterAttack, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
 
 const notes: TabNote[] = [
@@ -33,6 +33,14 @@ test('pitch judgement applies latency, timing windows, and cents tolerance consi
   expect(judgeDetectedPitch({ ...base, playbackMs: 1030, detected: { midiNumber: 40, cents: 50 } })).toMatchObject({ kind: 'correct', note: target });
   expect(judgeDetectedPitch({ ...base, playbackMs: 1510 })).toMatchObject({ kind: 'correct', timing: 'late', timingOffsetMs: 480 });
   expect(judgeDetectedPitch({ ...base, playbackMs: 1511 })).toMatchObject({ kind: 'ignored' });
+});
+
+test('a fresh attack expires stale pitch reads until the onset estimate arrives', () => {
+  expect(shouldSuppressStalePitchAfterAttack(null, 120, false)).toBe(false);
+  expect(shouldSuppressStalePitchAfterAttack(100, 120, false)).toBe(true);
+  expect(shouldSuppressStalePitchAfterAttack(100, 120, true)).toBe(false);
+  expect(shouldSuppressStalePitchAfterAttack(100, 250, false)).toBe(false);
+  expect(shouldSuppressStalePitchAfterAttack(100, 90, false)).toBe(true);
 });
 
 test('guitar pitches use the same MIDI-to-Hz map as the imported Guitar Pro notes', () => {
