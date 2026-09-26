@@ -27,6 +27,8 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     this.lastOnsetFrame = -99999;
     this.pluckCount = 1;
     this.minFramesBetweenPlucks = Math.round(sampleRate * 0.065); // 65ms minimum spacing between distinct picks
+    this.expectedString = null;
+    this.lastOnsetExpectedString = null;
 
     this.port.onmessage = (event) => {
       if (event.data?.type === 'threshold') {
@@ -35,6 +37,11 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
         this.mutedUntilFrame = currentFrame + Math.round(
           (event.data.durationMs / 1000) * sampleRate
         );
+      } else if (event.data?.type === 'expected-string') {
+        const stringNumber = Number(event.data.value);
+        this.expectedString = Number.isInteger(stringNumber) && stringNumber >= 1 && stringNumber <= 6
+          ? stringNumber
+          : null;
       }
     };
   }
@@ -111,6 +118,13 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     // 3) High crest factor / pick transient spike: sharp plectrum release impulse
     const framesSinceLastOnset = currentFrame - this.lastOnsetFrame;
     const canTriggerNewPluck = framesSinceLastOnset >= this.minFramesBetweenPlucks;
+    const isCrossStringTransition =
+      this.expectedString !== null &&
+      this.lastOnsetExpectedString !== null &&
+      this.expectedString !== this.lastOnsetExpectedString;
+    const repluckEnergyRatio = isCrossStringTransition ? 1.18 : 1.28;
+    const repluckHfRatio = isCrossStringTransition ? 1.42 : 1.55;
+    const repluckCrestThreshold = isCrossStringTransition ? 2.25 : 2.45;
 
     const isInitialPluck =
       rms >= this.noiseThreshold &&
@@ -121,9 +135,9 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       canTriggerNewPluck &&
       rms >= this.noiseThreshold &&
       (
-        rms > this.decayRms * 1.28 ||
-        (hfRms > this.decayHfRms * 1.55 && rms > this.decayRms * 1.15) ||
-        (crestFactor >= 2.45 && rms > this.decayRms * 1.12)
+        rms > this.decayRms * repluckEnergyRatio ||
+        (hfRms > this.decayHfRms * repluckHfRatio && rms > this.decayRms * 1.10) ||
+        (crestFactor >= repluckCrestThreshold && rms > this.decayRms * 1.08)
       );
 
     const onset = isInitialPluck || isRePluckOnRingingString;
@@ -135,6 +149,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       if (currentFrame >= this.mutedUntilFrame) {
         this.pendingOnset = true;
         this.samplesSinceOnset = 0;
+        this.lastOnsetExpectedString = this.expectedString;
       }
     }
 
