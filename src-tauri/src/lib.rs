@@ -74,6 +74,8 @@ struct AudioProcessor {
   write_index: usize,
   filled: usize,
   samples_since_snapshot: usize,
+  // Do not analyse a ring buffer that still contains the previous note.
+  samples_since_onset: u64,
   quick_samples: usize,
   quick_squares: f64,
   previous_quick_rms: f32,
@@ -101,6 +103,7 @@ impl AudioProcessor {
       write_index: 0,
       filled: 0,
       samples_since_snapshot: 0,
+      samples_since_onset: u64::MAX,
       quick_samples: 0,
       quick_squares: 0.0,
       previous_quick_rms: 0.0,
@@ -144,6 +147,7 @@ impl AudioProcessor {
       self.write_index = (self.write_index + 1) % BUFFER_SIZE;
       self.filled = (self.filled + 1).min(BUFFER_SIZE);
       self.samples_since_snapshot += 1;
+      self.samples_since_onset = self.samples_since_onset.saturating_add(1);
 
       self.quick_squares += (sample * sample) as f64;
       self.quick_samples += 1;
@@ -215,6 +219,7 @@ impl AudioProcessor {
       self.decay_rms = self.decay_rms.max(rms);
       if !self.muted() {
         self.pending_onset = true;
+        self.samples_since_onset = 0;
       }
     }
 
@@ -223,6 +228,7 @@ impl AudioProcessor {
       && self.filled == BUFFER_SIZE
       && rms >= self.noise_threshold
       && self.samples_since_snapshot >= HOP_SIZE
+      && self.samples_since_onset >= BUFFER_SIZE as u64
     {
       let mut samples = Vec::with_capacity(BUFFER_SIZE);
       samples.extend_from_slice(&self.ring[self.write_index..]);
