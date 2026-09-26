@@ -5,7 +5,7 @@ import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-wasm';
 
 type IncomingMessage =
-  | { type: 'init'; modelUrl: string }
+  | { type: 'init'; modelUrl: string; preferWasm?: boolean }
   | { type: 'samples'; samples: Float32Array; hopSamples: number; sampleRate: number; audioTimeMs: number; requestedAtMs: number; onset?: boolean };
 
 const MODEL_SAMPLE_RATE = 22050;
@@ -19,6 +19,7 @@ const REALTIME_FRAME_THRESHOLD = 0.15;
 const REALTIME_MINIMUM_NOTE_LENGTH_FRAMES = 3;
 const REALTIME_INFER_ONSETS = true;
 let model: BasicPitch | null = null;
+let tensorflowReady: Promise<void> | null = null;
 // Leading zeroes let the first short notes be evaluated without waiting for a
 // full microphone window.
 let rolling = new Float32Array(WINDOW_SAMPLES);
@@ -26,7 +27,18 @@ let lastOnsetAnalysisAt = -Infinity;
 let busy = false;
 let pendingAnalysis: { audioTimeMs: number; requestedAtMs: number } | null = null;
 
-async function initialiseTensorFlow() {
+async function initialiseTensorFlow(preferWasm: boolean) {
+  if (preferWasm) {
+    try {
+      const wasmEnabled = await tf.setBackend('wasm');
+      if (!wasmEnabled) throw new Error('WASM is unavailable in this worker.');
+      await tf.ready();
+      console.info('TF.js running on WASM to keep the native UI GPU responsive.');
+      return;
+    } catch (error) {
+      console.warn('TF.js WASM unavailable; falling back to WebGL.', error);
+    }
+  }
   try {
     const webglEnabled = await tf.setBackend('webgl');
     if (!webglEnabled) throw new Error('WebGL is unavailable in this worker.');
@@ -39,8 +51,6 @@ async function initialiseTensorFlow() {
     console.warn('TF.js WebGL unavailable; using WASM instead.');
   }
 }
-
-const tensorflowReady = initialiseTensorFlow();
 
 function appendSamples(samples: Float32Array, sampleRate: number) {
   const targetLength = Math.max(1, Math.round(samples.length * MODEL_SAMPLE_RATE / sampleRate));
@@ -104,7 +114,8 @@ async function analysePending() {
   }
 }
 
-async function initialise(modelUrl: string) {
+async function initialise(modelUrl: string, preferWasm: boolean) {
+  tensorflowReady ??= initialiseTensorFlow(preferWasm);
   await tensorflowReady;
   model = new BasicPitch(modelUrl);
   self.postMessage({ type: 'ready' });
@@ -113,7 +124,7 @@ async function initialise(modelUrl: string) {
 self.onmessage = (event: MessageEvent<IncomingMessage>) => {
   const message = event.data;
   if (message.type === 'init') {
-    void initialise(message.modelUrl).catch((error) => {
+    void initialise(message.modelUrl, Boolean(message.preferWasm)).catch((error) => {
       self.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'Polyphonic preview could not start.' });
     });
     return;
