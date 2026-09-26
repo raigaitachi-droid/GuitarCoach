@@ -207,6 +207,18 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
 
   useEffect(() => {
+    if (!withAudio) {
+      micDetector.setExpectedString(null);
+      return;
+    }
+    const unresolved = notes.filter((note) => scorableIds.has(note.id) && !note.hitState);
+    const expected = waiting || unresolved.sort((a, b) =>
+      Math.abs(a.timestampMs - playbackMs) - Math.abs(b.timestampMs - playbackMs)
+    )[0];
+    micDetector.setExpectedString(expected?.string ?? null);
+  }, [withAudio, notes, playbackMs, waiting, scorableIds]);
+
+  useEffect(() => {
     if (!withAudio) return;
     return micDetector.subscribe((result) => {
       if (!micDetector.getIsListening()) {
