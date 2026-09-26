@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector, PitchResult } from '../utils/pitchDetector';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressStalePitchAfterAttack, singleNoteIds, summarizePractice, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 
 interface Props {
@@ -74,6 +74,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastConsumedPluck = useRef(-1);
   const lastFeedbackPluck = useRef(-1);
   const lastHitNote = useRef<TabNote | null>(null);
+  const pendingAttackAudioTime = useRef<number | null>(null);
   const lastHeardPitchUpdate = useRef(0);
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
@@ -102,6 +103,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastConsumedPluck.current = -1;
     lastFeedbackPluck.current = -1;
     lastHitNote.current = null;
+    pendingAttackAudioTime.current = null;
     setFeedback(null);
     guitarSynth.stop();
   };
@@ -213,6 +215,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       }
       if (!result || !playingRef.current || completedRef.current) return;
       if (result.quickOnset) {
+        pendingAttackAudioTime.current = result.audioTimeMs;
+        lastHitNote.current = null;
+        setHeardPitch(null);
+        setHeardChord([]);
         setQuickOnsetVisible(true);
         if (quickOnsetTimer.current) window.clearTimeout(quickOnsetTimer.current);
         quickOnsetTimer.current = window.setTimeout(() => setQuickOnsetVisible(false), 180);
@@ -226,6 +232,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         setHeardChord(result.polyphonicMidiNumbers);
         return;
       }
+      if (shouldSuppressStalePitchAfterAttack(
+        pendingAttackAudioTime.current,
+        result.audioTimeMs,
+        result.onset
+      )) return;
+      if (result.onset) pendingAttackAudioTime.current = null;
       // A small live readout makes hardware issues observable without adding a
       // separate tuner or diagnostic screen. Throttle re-renders to 8 Hz.
       if (performance.now() - lastHeardPitchUpdate.current >= 125) {
