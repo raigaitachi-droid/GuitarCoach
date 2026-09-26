@@ -8,7 +8,7 @@ use cpal::{
   BufferSize, Device, SampleFormat, Stream, StreamConfig,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{ipc::Channel, AppHandle, Emitter, State};
 
 const TARGET_SAMPLE_RATE: u32 = 48_000;
 const BUFFER_SIZE: usize = 2_048;
@@ -281,22 +281,38 @@ struct CaptureState {
   controller: Mutex<CaptureController>,
 }
 
-fn emit_events(app: &AppHandle, events: Vec<CaptureEvent>) {
+fn emit_events(app: &AppHandle, samples_channel: &Channel<SamplesPayload>, events: Vec<CaptureEvent>) {
   for event in events {
-    let result = match event {
-      CaptureEvent::Level(payload) => app.emit("pitch:level", payload),
-      CaptureEvent::Onset(payload) => app.emit("pitch:onset", payload),
-      CaptureEvent::Samples(payload) => app.emit("pitch:samples", payload),
-    };
-    if let Err(error) = result {
-      eprintln!("Could not emit native audio event: {error}");
+    match event {
+      CaptureEvent::Level(payload) => {
+        if let Err(error) = app.emit("pitch:level", payload) {
+          eprintln!("Could not emit native level event: {error}");
+        }
+      }
+      CaptureEvent::Onset(payload) => {
+        if let Err(error) = app.emit("pitch:onset", payload) {
+          eprintln!("Could not emit native onset event: {error}");
+        }
+      }
+      // Audio windows are delivered on Tauri's ordered Channel rather than
+      // JSON events. This is the high-frequency/large-payload IPC path.
+      CaptureEvent::Samples(payload) => {
+        if let Err(error) = samples_channel.send(payload) {
+          eprintln!("Could not stream native audio samples: {error}");
+        }
+      }
     }
   }
 }
 
-fn process_input(samples: Vec<f32>, processor: &Arc<Mutex<AudioProcessor>>, app: &AppHandle) {
+fn process_input(
+  samples: Vec<f32>,
+  processor: &Arc<Mutex<AudioProcessor>>,
+  app: &AppHandle,
+  samples_channel: &Channel<SamplesPayload>,
+) {
   let events = processor.lock().map(|mut processor| processor.ingest(&samples)).unwrap_or_default();
-  emit_events(app, events);
+  emit_events(app, samples_channel, events);
 }
 
 fn stop_controller(controller: &mut CaptureController) {
@@ -314,6 +330,7 @@ fn build_stream(
   sample_format: SampleFormat,
   processor: Arc<Mutex<AudioProcessor>>,
   app: AppHandle,
+  samples_channel: Channel<SamplesPayload>,
 ) -> Result<Stream, String> {
   let channels = config.channels as usize;
   let error_callback = |error| eprintln!("Native audio input error: {error}");
@@ -322,7 +339,7 @@ fn build_stream(
       config,
       move |data: &[f32], _| {
         let mono = data.chunks(channels).map(|frame| frame.iter().sum::<f32>() / frame.len() as f32).collect();
-        process_input(mono, &processor, &app);
+        process_input(mono, &processor, &app, &samples_channel);
       },
       error_callback,
       None,
@@ -331,7 +348,7 @@ fn build_stream(
       config,
       move |data: &[i16], _| {
         let mono = data.chunks(channels).map(|frame| frame.iter().map(|sample| *sample as f32 / i16::MAX as f32).sum::<f32>() / frame.len() as f32).collect();
-        process_input(mono, &processor, &app);
+        process_input(mono, &processor, &app, &samples_channel);
       },
       error_callback,
       None,
@@ -340,7 +357,7 @@ fn build_stream(
       config,
       move |data: &[u16], _| {
         let mono = data.chunks(channels).map(|frame| frame.iter().map(|sample| (*sample as f32 / u16::MAX as f32) * 2.0 - 1.0).sum::<f32>() / frame.len() as f32).collect();
-        process_input(mono, &processor, &app);
+        process_input(mono, &processor, &app, &samples_channel);
       },
       error_callback,
       None,
@@ -349,7 +366,7 @@ fn build_stream(
       config,
       move |data: &[u8], _| {
         let mono = data.chunks(channels).map(|frame| frame.iter().map(|sample| (*sample as f32 / u8::MAX as f32) * 2.0 - 1.0).sum::<f32>() / frame.len() as f32).collect();
-        process_input(mono, &processor, &app);
+        process_input(mono, &processor, &app, &samples_channel);
       },
       error_callback,
       None,
@@ -402,6 +419,7 @@ fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
 fn run_capture_thread(
   app: AppHandle,
   device_id: Option<String>,
+  samples_channel: Channel<SamplesPayload>,
   control_rx: mpsc::Receiver<CaptureControl>,
   started_tx: mpsc::Sender<Result<u32, String>>,
 ) {
@@ -411,8 +429,8 @@ fn run_capture_thread(
     let mut low_latency_config = default_config.clone();
     low_latency_config.buffer_size = BufferSize::Fixed(BLOCK_SIZE as u32);
     let processor = Arc::new(Mutex::new(AudioProcessor::new(default_config.sample_rate.0)));
-    let stream = build_stream(&device, &low_latency_config, sample_format, processor.clone(), app.clone())
-      .or_else(|_| build_stream(&device, &default_config, sample_format, processor.clone(), app))?;
+    let stream = build_stream(&device, &low_latency_config, sample_format, processor.clone(), app.clone(), samples_channel.clone())
+      .or_else(|_| build_stream(&device, &default_config, sample_format, processor.clone(), app, samples_channel))?;
     stream.play().map_err(|error| error.to_string())?;
 
     let sample_rate = default_config.sample_rate.0;
@@ -453,13 +471,14 @@ fn start_native_capture(
   app: AppHandle,
   state: State<CaptureState>,
   device_id: Option<String>,
+  samples_channel: Channel<SamplesPayload>,
 ) -> Result<CaptureStarted, String> {
   let mut controller = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?;
   stop_controller(&mut controller);
 
   let (control_tx, control_rx) = mpsc::channel();
   let (started_tx, started_rx) = mpsc::channel();
-  let thread = thread::spawn(move || run_capture_thread(app, device_id, control_rx, started_tx));
+  let thread = thread::spawn(move || run_capture_thread(app, device_id, samples_channel, control_rx, started_tx));
   let sample_rate = started_rx.recv().map_err(|error| error.to_string())??;
 
   controller.control_tx = Some(control_tx);
