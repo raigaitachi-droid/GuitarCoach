@@ -286,9 +286,13 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           if (chord.kind === 'resolved') {
             const hitIds = new Set(chord.matched.map((note) => note.id));
             const chordIds = new Set(chord.expected.map((note) => note.id));
+            // Once the chord clears its 50% threshold, award the chord as one
+            // playable unit: every displayed string gets a tick. Below that
+            // threshold we retain the per-string partial feedback.
+            const awardedHitIds = chord.passed ? chordIds : hitIds;
             updateNotes(notesRef.current.map((note) => {
               if (!chordIds.has(note.id)) return note;
-              return hitIds.has(note.id)
+              return awardedHitIds.has(note.id)
                 ? { ...note, hitState: 'hit', timingOffsetMs: pending.timingOffsetMs }
                 : { ...note, hitState: 'miss' };
             }));
