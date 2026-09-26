@@ -8,13 +8,14 @@ import { guitarSynth } from './utils/guitarSynth';
 import { findWeakSection, PracticeLoopRange, PracticeResult as SessionResult, WeakSection } from './utils/practiceSession';
 import { SONG_CATALOG, SONG_TABS } from './data/songTabs';
 
-function demoSong(): ImportedSong {
-  const song = SONG_CATALOG[0];
+function builtInSong(songId: string, title: string): ImportedSong {
+  const song = SONG_CATALOG.find((candidate) => candidate.id === songId);
+  if (!song) throw new Error(`Missing built-in song: ${songId}`);
   const notes = SONG_TABS[song.id].map((note) => ({
     ...note,
     measureIndex: Math.max(1, Math.floor((note.timestampMs - 1000) / (60000 / song.tempo * 4)) + 1),
   }));
-  return { ...song, title: 'Canon in D · demo', notes, sourceFileName: '', attempts: 0, bestAccuracy: 0, measures: Math.max(...notes.map((note) => note.measureIndex)) };
+  return { ...song, title, notes, sourceFileName: '', attempts: 0, bestAccuracy: 0, measures: Math.max(...notes.map((note) => note.measureIndex)) };
 }
 
 export default function App() {
@@ -146,5 +147,7 @@ export default function App() {
 
   return <StartScreen song={song} loading={loading} busy={busy} error={error} devices={devices} deviceId={deviceId}
     onDeviceChange={setDeviceId} onFindInputs={() => { void findInputs(); }} onFile={(file) => { void loadFile(file); }}
-    onDemo={() => { setSong(demoSong()); setTempoPercent(100); setError(null); }} onStart={(useAudio) => { void startPractice(useAudio); }} onReset={reset} />;
+    onDemo={() => { setSong(builtInSong('canon-in-d', 'Canon in D · demo')); setTempoPercent(100); setError(null); }}
+    onChordTest={() => { setSong(builtInSong('open-chords-test', 'Open Chords · test')); setTempoPercent(100); setError(null); }}
+    onStart={(useAudio) => { void startPractice(useAudio); }} onReset={reset} />;
 }
