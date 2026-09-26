@@ -1,5 +1,5 @@
 // Low-latency guitar detector: AudioWorklet capture + event-driven pitch analysis.
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export interface AudioInputDevice {
@@ -72,6 +72,7 @@ export class MicrophonePitchDetector {
   private nativeCapture = false;
   private nativeSampleRate = 48000;
   private nativeUnlisteners: UnlistenFn[] = [];
+  private expectedString: number | null = null;
 
   getErrorMessage(): string | null {
     return this.errorMessage;
@@ -272,20 +273,26 @@ export class MicrophonePitchDetector {
 
   private async startNativeListening(deviceId: string, requestId: number): Promise<boolean> {
     try {
+      // Channels use Tauri's ordered streaming IPC. Events serialise their
+      // payload as JSON and are reserved below for the small level/onset data.
+      const samplesChannel = new Channel<Omit<CaptureMessage, 'type'> & { samples: number[] }>();
+      samplesChannel.onmessage = (payload) => this.handleCaptureMessage({
+        type: 'samples', ...payload,
+      }, this.nativeSampleRate);
       this.nativeUnlisteners = await Promise.all([
         listen<{ rms: number }>('pitch:level', ({ payload }) => this.handleCaptureMessage({ type: 'level', rms: payload.rms }, this.nativeSampleRate)),
         listen<{ rms: number; audioTimeMs: number }>('pitch:onset', ({ payload }) => this.handleCaptureMessage({
           type: 'ONSET_TRIGGERED', rms: payload.rms, audioTimeMs: payload.audioTimeMs,
         }, this.nativeSampleRate)),
-        listen<Omit<CaptureMessage, 'type'> & { samples: number[] }>('pitch:samples', ({ payload }) => this.handleCaptureMessage({
-          type: 'samples', ...payload,
-        }, this.nativeSampleRate)),
       ]);
-      const started = await invoke<NativeCaptureStarted>('start_native_capture', { deviceId: deviceId || null });
+      const started = await invoke<NativeCaptureStarted>('start_native_capture', {
+        deviceId: deviceId || null,
+        samplesChannel,
+      });
       this.nativeSampleRate = started.sampleRate;
       this.nativeCapture = true;
-      void invoke('set_expected_string', { stringNumber: this.expectedString }).catch(() => undefined);
       this.startPolyphonicPreview();
+      void invoke('set_expected_string', { stringNumber: this.expectedString }).catch(() => undefined);
       if (requestId !== this.requestId) {
         this.stopListening();
         return false;
