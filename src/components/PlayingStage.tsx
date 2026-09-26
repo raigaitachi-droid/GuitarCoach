@@ -263,7 +263,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (result.polyphonicMidiNumbers) {
         setHeardChord(result.polyphonicMidiNumbers);
         const pending = pendingChordAttack.current;
-        if (pending) {
+        // Ignore a late result whose audio belongs to before this attack.
+        if (pending && result.audioTimeMs >= pending.audioTimeMs) {
           const timing = {
             expectedToReadingMs: Math.round(playbackRef.current - pending.expectedTimestampMs),
             attackToReadingMs: Math.round(result.audioTimeMs - pending.audioTimeMs),
