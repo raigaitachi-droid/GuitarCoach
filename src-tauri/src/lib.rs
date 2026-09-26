@@ -63,6 +63,7 @@ enum CaptureControl {
   Stop,
   SetNoiseThreshold(f32),
   MuteOutput(u32),
+  SetExpectedString(Option<u8>),
 }
 
 struct AudioProcessor {
@@ -90,6 +91,8 @@ struct AudioProcessor {
   last_onset_frame: u64,
   min_frames_between_plucks: u64,
   pluck_count: u64,
+  expected_string: Option<u8>,
+  last_onset_expected_string: Option<u8>,
 }
 
 impl AudioProcessor {
@@ -118,6 +121,8 @@ impl AudioProcessor {
       last_onset_frame: 0,
       min_frames_between_plucks: (sample_rate as f32 * 0.065).round() as u64,
       pluck_count: 1,
+      expected_string: None,
+      last_onset_expected_string: None,
     }
   }
 
@@ -137,6 +142,10 @@ impl AudioProcessor {
     let duration_frames = (duration_ms as f64 / 1000.0 * self.sample_rate as f64).round() as u64;
     self.muted_until_frame = self.sample_clock.saturating_add(duration_frames);
     self.pending_onset = false;
+  }
+
+  fn set_expected_string(&mut self, value: Option<u8>) {
+    self.expected_string = value.filter(|string_number| (1..=6).contains(string_number));
   }
 
   fn ingest(&mut self, samples: &[f32]) -> Vec<CaptureEvent> {
@@ -204,14 +213,20 @@ impl AudioProcessor {
     self.decay_hf_rms = self.decay_hf_rms * 0.94 + hf_rms * 0.06;
 
     let can_trigger_new_pluck = self.sample_clock.saturating_sub(self.last_onset_frame) >= self.min_frames_between_plucks;
+    let cross_string_transition = self.expected_string.is_some()
+      && self.last_onset_expected_string.is_some()
+      && self.expected_string != self.last_onset_expected_string;
+    let repluck_energy_ratio = if cross_string_transition { 1.18 } else { 1.28 };
+    let repluck_hf_ratio = if cross_string_transition { 1.42 } else { 1.55 };
+    let repluck_crest_threshold = if cross_string_transition { 2.25 } else { 2.45 };
     let initial_pluck = rms >= self.noise_threshold
       && self.decay_rms <= self.noise_threshold * 1.25
       && can_trigger_new_pluck;
     let repluck = can_trigger_new_pluck
       && rms >= self.noise_threshold
-      && (rms > self.decay_rms * 1.28
-        || (hf_rms > self.decay_hf_rms * 1.55 && rms > self.decay_rms * 1.15)
-        || (crest_factor >= 2.45 && rms > self.decay_rms * 1.12));
+      && (rms > self.decay_rms * repluck_energy_ratio
+        || (hf_rms > self.decay_hf_rms * repluck_hf_ratio && rms > self.decay_rms * 1.10)
+        || (crest_factor >= repluck_crest_threshold && rms > self.decay_rms * 1.08));
     let onset = initial_pluck || repluck;
     if onset {
       self.pluck_count += 1;
@@ -220,6 +235,7 @@ impl AudioProcessor {
       if !self.muted() {
         self.pending_onset = true;
         self.samples_since_onset = 0;
+        self.last_onset_expected_string = self.expected_string;
       }
     }
 
@@ -415,6 +431,11 @@ fn run_capture_thread(
             processor.mute(duration_ms);
           }
         }
+        CaptureControl::SetExpectedString(value) => {
+          if let Ok(mut processor) = processor.lock() {
+            processor.set_expected_string(value);
+          }
+        }
       }
     }
 
@@ -469,6 +490,14 @@ fn mute_output(state: State<CaptureState>, duration_ms: u32) -> Result<(), Strin
   Ok(())
 }
 
+#[tauri::command]
+fn set_expected_string(state: State<CaptureState>, string_number: Option<u8>) -> Result<(), String> {
+  if let Some(control_tx) = state.controller.lock().map_err(|_| "Native capture state is unavailable.".to_string())?.control_tx.as_ref() {
+    let _ = control_tx.send(CaptureControl::SetExpectedString(string_number));
+  }
+  Ok(())
+}
+
 pub fn run() {
   tauri::Builder::default()
     .manage(CaptureState::default())
@@ -478,6 +507,7 @@ pub fn run() {
       stop_native_capture,
       set_noise_threshold,
       mute_output,
+      set_expected_string,
     ])
     .run(tauri::generate_context!())
     .expect("error while running GuitarCoach");
