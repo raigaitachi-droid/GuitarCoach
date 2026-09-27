@@ -151,3 +151,31 @@ The prior README identified the project's roots in
 MIT-licensed. That attribution and repository history are preserved. This change
 updates the web product flow; it does not establish a new license or erase the
 upstream history.
+
+## 3D note highway (first milestone)
+
+The practice screen now renders the current song in a Three.js perspective
+highway above the existing scrolling tablature. Six colored strings run from
+string 6 (left) to string 1 (right); note blocks carry the imported fret numbers.
+Notes reach the bright hit line at their existing song timestamp. The 4.5-second
+lookahead uses song time, so Play/Pause, tempo, Wait Mode and loop rewinds share
+the existing transport without a second audio clock. Chords appear simultaneously.
+String labels use numbers so alternate tunings are not mislabeled as standard E.
+
+Only `three` and development typings `@types/three` are added. The alphaTab
+importer, tab renderer, pitch detector, scoring and Tauri backend are unchanged.
+The scene resizes with its panel, limits device pixel ratio to 2, retains only
+visible note objects, caches fret textures and releases GPU resources on exit.
+When WebGL is unavailable or its context is lost, the tab and controls remain usable.
+
+Next: sustain/technique visuals, optional hit feedback, visual polish and a
+native Windows/WebView2 performance pass. This milestone does not introduce new
+seek controls, scoring, bloom or particles.
+
+Milestone validation (Windows / Edge): TypeScript lint and production build pass;
+26 of 27 Playwright tests pass with one worker, including all three new highway
+tests. The existing real-worklet wrong-note test also fails when the original
+PlayingStage is restored: the synthetic MIDI 41 input is accepted as a correct
+note instead of producing the expected E2 error. Pitch detection is deliberately
+unchanged. Parallel audio tests also showed timing sensitivity on this machine.
+The native Tauri installer and physical guitar input have not been validated.

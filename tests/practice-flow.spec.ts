@@ -66,7 +66,7 @@ test('minimal start, demo, pause, result, replay, and new tab', async ({ page })
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'GuitarCoach' })).toBeVisible();
-  await expect(page.getByRole('button')).toHaveCount(2);
+  await expect(page.getByRole('button')).toHaveCount(3);
   await page.getByRole('button', { name: 'Try demo song' }).click();
   await page.getByRole('button', { name: 'Continue without audio' }).click();
   await expect(page.getByRole('img', { name: /Scrolling guitar tablature/ })).toBeVisible();
@@ -216,7 +216,7 @@ test('a loop snaps to nearby notes when dragged through empty tab space', async 
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await page.getByRole('button', { name: 'Loop Off' }).click();
   await expect(page.getByText('Drag from first note to last note')).toBeVisible();
-  const tab = page.locator('canvas');
+  const tab = page.getByRole('img', { name: 'Drag from the first note to the last note to set the loop' });
   const box = await tab.boundingBox();
   if (!box) throw new Error('Tab canvas is not visible');
   // Deliberately drag in the empty header area, not over a fret label. The
