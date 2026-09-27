@@ -117,7 +117,7 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     radial-gradient(ellipse at 50% 68%, rgba(255, 255, 255, .18), transparent 13%),
     linear-gradient(180deg, transparent 0 55%, rgba(0, 0, 0, .48) 87%, rgba(0, 0, 0, .8) 100%);
 }
-.note-highway::after { content: ""; position: absolute; inset: auto 0 0; height: 42%; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(3, 4, 8, .68)); }
+.note-highway::after { content: ""; position: absolute; inset: auto 0 0; height: 26%; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(3, 4, 8, .48)); }
 .note-highway-caption, .note-highway-strings { position: absolute; z-index: 1; pointer-events: none; font: 12px var(--font-mono); color: #d2f2ee; text-shadow: 0 1px 8px rgba(0, 0, 0, .8); }
 .note-highway-caption { top: 15px; left: 18px; padding: 6px 9px; border: 1px solid rgba(178, 255, 241, .2); border-radius: 999px; background: rgba(6, 13, 15, .42); }
 .note-highway-strings { bottom: 42px; left: 18px; right: 18px; display: flex; justify-content: space-between; color: #c4d4d8; }

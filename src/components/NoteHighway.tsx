@@ -12,6 +12,7 @@ const COLORS = [0x00ff74, 0xff2424, 0xffd41f, 0x1f70ff, 0xff6a00, 0xff00f5];
 const LANE_COUNT = 6;
 const HIGHWAY_WIDTH = 11.2;
 const HIT_Z = -1.35;
+const HIT_WINDOW_MS = 90;
 
 export function NoteHighway({ notes, playbackMs }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -120,7 +121,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     hitGlowMaterial.emissive = new THREE.Color(0xffffff);
     hitGlowMaterial.emissiveIntensity = 4.2;
 
+    const textMaterials = new Map<string, THREE.SpriteMaterial>();
     const makeTextMaterial = (text: string) => {
+      const cached = textMaterials.get(text);
+      if (cached) return cached;
       const canvas = document.createElement('canvas');
       canvas.width = 128;
       canvas.height = 128;
@@ -137,25 +141,33 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       textures.push(texture);
       const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, fog: false });
       materials.push(material);
+      textMaterials.set(text, material);
       return material;
     };
 
     const padGeometry = new THREE.CylinderGeometry(0.55, 0.55, 0.16, 48);
+    const pulseGeometry = new THREE.RingGeometry(0.52, 0.72, 48);
     geometries.push(padGeometry);
-    const padLabelMaterial = makeTextMaterial('0');
+    geometries.push(pulseGeometry);
+    const padLabels = new Map<number, THREE.Sprite>();
+    const padMaterials = new Map<number, THREE.MeshBasicMaterial>();
     for (let string = 6; string >= 1; string--) {
       const laneIndex = LANE_COUNT - string;
       const padMaterial = new THREE.MeshBasicMaterial({
         color: COLORS[laneIndex],
       });
+      padMaterial.transparent = true;
+      padMaterial.opacity = 0.95;
       materials.push(padMaterial);
+      padMaterials.set(string, padMaterial);
       const pad = new THREE.Mesh(padGeometry, padMaterial);
       pad.position.set(highwayLaneX(string), 0.18, HIT_Z + 0.38);
       scene.add(pad);
-      const label = new THREE.Sprite(padLabelMaterial);
-      label.position.set(highwayLaneX(string), 0.52, HIT_Z + 0.38);
-      label.scale.set(0.68, 0.68, 1);
+      const label = new THREE.Sprite(makeTextMaterial('0'));
+      label.position.set(highwayLaneX(string), 0.62, HIT_Z + 0.38);
+      label.scale.set(0.88, 0.88, 1);
       scene.add(label);
+      padLabels.set(string, label);
       plane(1.35, 1.35, COLORS[laneIndex], highwayLaneX(string), 0.02, HIT_Z + 0.38, 0.24);
     }
 
@@ -205,6 +217,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       return material;
     };
     const active = new Map<TabNote, THREE.Group>();
+    const hitNotes = new Set<string>();
+    const pulses: Array<{ mesh: THREE.Mesh; bornAt: number; string: number }> = [];
+    let previousPlaybackMs = playbackMs;
     let frame = 0;
     let lost = false;
     const resize = () => {
@@ -222,11 +237,39 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const draw = () => {
       if (lost) return;
       const current = view.current;
+      if (current.playbackMs < previousPlaybackMs - 100) {
+        hitNotes.clear();
+        pulses.splice(0).forEach(({ mesh }) => scene.remove(mesh));
+      }
+      const playbackAdvanced = current.playbackMs > previousPlaybackMs;
       const visible = new Set<TabNote>();
       const start = firstHighwayNote(current.notes, current.playbackMs - HIGHWAY_PAST_MS);
+      const nextFrets = new Map<number, number>();
       for (let i = start; i < current.notes.length; i++) {
         const note = current.notes[i];
         if (note.timestampMs > current.playbackMs + HIGHWAY_LOOKAHEAD_MS) break;
+        if (!nextFrets.has(note.string) && note.timestampMs >= current.playbackMs - HIT_WINDOW_MS) {
+          nextFrets.set(note.string, note.fret);
+        }
+        if (playbackAdvanced && note.timestampMs > previousPlaybackMs && note.timestampMs <= current.playbackMs + HIT_WINDOW_MS && !hitNotes.has(note.id)) {
+          hitNotes.add(note.id);
+          const laneIndex = LANE_COUNT - note.string;
+          const pulseMaterial = new THREE.MeshBasicMaterial({
+            color: COLORS[laneIndex],
+            transparent: true,
+            opacity: 0.8,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          });
+          materials.push(pulseMaterial);
+          const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial);
+          pulse.rotation.x = -Math.PI / 2;
+          pulse.position.set(highwayLaneX(note.string), 0.26, HIT_Z + 0.38);
+          scene.add(pulse);
+          pulses.push({ mesh: pulse, bornAt: current.playbackMs, string: note.string });
+          const padMaterial = padMaterials.get(note.string);
+          if (padMaterial) padMaterial.opacity = 1;
+        }
         visible.add(note);
         let group = active.get(note);
         if (!group) {
@@ -245,10 +288,33 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         }
         group.position.set(highwayLaneX(note.string), 0.14, highwayNoteZ(note.timestampMs, current.playbackMs) + HIT_Z);
       }
+      for (let string = 1; string <= 6; string++) {
+        const label = padLabels.get(string);
+        if (label) label.material = makeTextMaterial(String(nextFrets.get(string) ?? 0));
+        const padMaterial = padMaterials.get(string);
+        if (padMaterial && playbackAdvanced) padMaterial.opacity = THREE.MathUtils.lerp(padMaterial.opacity, 0.95, 0.08);
+      }
+      for (let i = pulses.length - 1; i >= 0; i--) {
+        const pulse = pulses[i];
+        const age = current.playbackMs - pulse.bornAt;
+        const progress = age / 480;
+        if (progress >= 1 || progress < -0.1) {
+          scene.remove(pulse.mesh);
+          (pulse.mesh.material as THREE.Material).dispose();
+          pulses.splice(i, 1);
+          continue;
+        }
+        const scale = 1 + progress * 1.8;
+        pulse.mesh.scale.set(scale, scale, 1);
+        const material = pulse.mesh.material as THREE.MeshBasicMaterial;
+        material.opacity = (1 - progress) * 0.72;
+        pulse.mesh.position.y = 0.26 + progress * 0.06;
+      }
       for (const [note, group] of active) {
         if (!visible.has(note)) { scene.remove(group); active.delete(note); }
       }
       renderer.render(scene, camera);
+      previousPlaybackMs = current.playbackMs;
       frame = requestAnimationFrame(draw);
     };
     const contextLost = (event: Event) => {
