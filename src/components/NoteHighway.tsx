@@ -174,18 +174,18 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       context.shadowBlur = shape === 'pad' ? 34 : 28;
       context.fillStyle = cssColor;
       context.beginPath();
-      if (shape === 'pad') context.ellipse(128, 66, 92, 44, 0, 0, Math.PI * 2);
-      else context.roundRect(42, 26, 172, 70, 18);
+      if (shape === 'pad') context.ellipse(128, 66, 86, 50, 0, 0, Math.PI * 2);
+      else context.roundRect(38, 28, 180, 68, 34);
       context.fill();
       context.shadowBlur = 0;
       const centerGlow = context.createRadialGradient(128, 66, 8, 128, 66, shape === 'pad' ? 92 : 96);
       centerGlow.addColorStop(0, 'rgba(255,255,255,.24)');
       centerGlow.addColorStop(.42, 'rgba(255,255,255,.08)');
-      centerGlow.addColorStop(1, 'rgba(0,0,0,.14)');
+      centerGlow.addColorStop(1, 'rgba(0,0,0,.10)');
       context.fillStyle = centerGlow;
       context.beginPath();
-      if (shape === 'pad') context.ellipse(128, 66, 92, 44, 0, 0, Math.PI * 2);
-      else context.roundRect(42, 26, 172, 70, 18);
+      if (shape === 'pad') context.ellipse(128, 66, 86, 50, 0, 0, Math.PI * 2);
+      else context.roundRect(38, 28, 180, 68, 34);
       context.fill();
       context.globalAlpha = 0.16;
       context.fillStyle = cssColor;
@@ -206,7 +206,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
       textures.push(texture);
-      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, fog: false });
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, fog: false, blending: THREE.AdditiveBlending });
       materials.push(material);
       textMaterials.set(key, material);
       return material;
@@ -229,9 +229,17 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     // Share geometry and cache fret textures; create objects only in the visible
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
     const noteHaloGeometry = new THREE.BoxGeometry(1.78, 0.04, 1.02);
+    const noteShadowGeometry = new THREE.PlaneGeometry(1.68, 0.74);
     geometries.push(noteHaloGeometry);
+    geometries.push(noteShadowGeometry);
     const haloMaterials = COLORS.map((color) => {
       const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.42, depthWrite: false });
+      materials.push(material);
+      return material;
+    });
+    const shadowMaterials = COLORS.map((color) => {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide });
+      material.blending = THREE.AdditiveBlending;
       materials.push(material);
       return material;
     });
@@ -296,17 +304,25 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         if (!group) {
           group = new THREE.Group();
           const laneIndex = LANE_COUNT - note.string;
+          const shadow = new THREE.Mesh(noteShadowGeometry, shadowMaterials[laneIndex]);
+          shadow.rotation.x = -Math.PI / 2;
+          shadow.position.y = -0.2;
+          shadow.position.z = 0.18;
+          shadow.scale.set(1.06, 1.18, 1);
+          group.add(shadow);
           const halo = new THREE.Mesh(noteHaloGeometry, haloMaterials[laneIndex]);
-          halo.position.y = -0.11;
+          halo.position.y = -0.14;
           group.add(halo);
           const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note'));
           badge.position.y = 0.55;
-          badge.scale.set(1.55, 0.78, 1);
+          badge.scale.set(1.68, 0.74, 1);
           group.add(badge);
           scene.add(group);
           active.set(note, group);
         }
-        group.position.set(highwayLaneX(note.string), 0.14, highwayNoteZ(note.timestampMs, current.playbackMs) + HIT_Z);
+        const noteZ = highwayNoteZ(note.timestampMs, current.playbackMs) + HIT_Z;
+        const depthLift = THREE.MathUtils.clamp((noteZ - HIT_Z) / 34, 0, 1) * 0.54;
+        group.position.set(highwayLaneX(note.string), 0.22 + depthLift, noteZ);
       }
       for (let string = 1; string <= 6; string++) {
         const label = padLabels.get(string);
