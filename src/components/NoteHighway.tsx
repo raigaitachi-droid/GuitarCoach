@@ -40,17 +40,17 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 0.92;
     renderer.domElement.setAttribute('role', 'img');
     renderer.domElement.setAttribute('aria-label', '3D guitar note highway. Six strings from string 6 on the left to string 1 on the right; fret numbers approach the hit line.');
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x05070c, 22, 58);
+    scene.fog = new THREE.Fog(0x03050a, 30, 64);
     const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 90);
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.74, 0.34, 0.18);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.12, 0.72);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
     camera.position.set(0, 3.35, 3.2);
@@ -137,7 +137,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const farFadeMaterial = new THREE.MeshBasicMaterial({
       color: 0x05070c,
       transparent: true,
-      opacity: 0.58,
+      opacity: 0.28,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
@@ -149,9 +149,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const horizonMistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 10, 8);
     geometries.push(horizonMistGeometry);
     const horizonMistMaterial = new THREE.MeshBasicMaterial({
-      color: 0x0b1533,
+      color: 0x071027,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.18,
       depthWrite: false,
       side: THREE.DoubleSide,
     });

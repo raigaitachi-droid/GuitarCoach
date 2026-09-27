@@ -120,8 +120,8 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
   background:
     linear-gradient(90deg, transparent 0 8%, rgba(255, 107, 0, .28) 9%, transparent 12%),
     linear-gradient(90deg, transparent 0 88%, rgba(255, 107, 0, .24) 91%, transparent 95%),
-    radial-gradient(ellipse at 50% 64%, rgba(255, 255, 255, .23), transparent 15%),
-    linear-gradient(180deg, transparent 0 55%, rgba(0, 0, 0, .48) 87%, rgba(0, 0, 0, .8) 100%);
+    radial-gradient(ellipse at 50% 64%, rgba(255, 255, 255, .08), transparent 15%),
+    linear-gradient(180deg, transparent 0 55%, rgba(0, 0, 0, .56) 87%, rgba(0, 0, 0, .86) 100%);
 }
 .note-highway::after {
   content: "";
@@ -129,12 +129,12 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, .055) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 72% 48%, rgba(255, 255, 255, .045) 0 1px, transparent 1.9px),
-    linear-gradient(180deg, transparent 0 66%, rgba(3, 4, 8, .42) 100%);
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, .032) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 72% 48%, rgba(255, 255, 255, .026) 0 1px, transparent 1.9px),
+    linear-gradient(180deg, transparent 0 70%, rgba(3, 4, 8, .26) 100%);
   background-size: 7px 7px, 11px 11px, 100% 100%;
   mix-blend-mode: screen;
-  opacity: .38;
+  opacity: .22;
 }
 .note-highway-caption, .note-highway-strings { display: none; position: absolute; z-index: 1; pointer-events: none; font: 12px var(--font-mono); color: #d2f2ee; text-shadow: 0 1px 8px rgba(0, 0, 0, .8); }
 .note-highway-caption { top: 15px; left: 18px; padding: 6px 9px; border: 1px solid rgba(178, 255, 241, .2); border-radius: 999px; background: rgba(6, 13, 15, .42); }
