@@ -6,7 +6,7 @@ export const HIGHWAY_PAST_MS = 350;
 
 // Low E on the left, high E on the right. Imported strings are numbered 1–6.
 export function highwayLaneX(string: number): number {
-  return (3.5 - string) * 1.38;
+  return (3.5 - string) * 1.74;
 }
 
 export function highwayNoteZ(timestampMs: number, playbackMs: number): number {

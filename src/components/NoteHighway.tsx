@@ -10,8 +10,8 @@ interface Props {
 
 const COLORS = [0x00ff74, 0xff2424, 0xffd41f, 0x1f70ff, 0xff6a00, 0xff00f5];
 const LANE_COUNT = 6;
-const HIGHWAY_WIDTH = 11.2;
-const HIT_Z = -1.35;
+const HIGHWAY_WIDTH = 14.2;
+const HIT_Z = -2.75;
 const HIT_WINDOW_MS = 90;
 
 export function NoteHighway({ notes, playbackMs }: Props) {
@@ -41,9 +41,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
 
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x05070c, 22, 58);
-    const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 90);
-    camera.position.set(0, 4.15, 4.55);
-    camera.lookAt(0, 0.05, -14);
+    const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 90);
+    camera.position.set(0, 3.35, 3.2);
+    camera.lookAt(0, -0.05, -12);
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
     const textures: THREE.Texture[] = [];
@@ -90,8 +90,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const string = LANE_COUNT - lane;
       const x = highwayLaneX(string);
-      plane(1.16, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.118, -HIGHWAY_LENGTH / 2 + 1, 0.15);
-      plane(1.34, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.116, -HIGHWAY_LENGTH / 2 + 1, 0.055);
+      plane(1.46, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.118, -HIGHWAY_LENGTH / 2 + 1, 0.16);
+      plane(1.7, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.116, -HIGHWAY_LENGTH / 2 + 1, 0.06);
     }
     for (let i = 0; i <= 9; i++) {
       const z = -i * 4.2;
@@ -102,7 +102,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const railMaterial = rail.material as THREE.MeshStandardMaterial;
       railMaterial.emissive = new THREE.Color(COLORS[6 - string]);
       railMaterial.emissiveIntensity = 2.35;
-      plane(0.26, HIGHWAY_LENGTH + 5, COLORS[6 - string], highwayLaneX(string), -0.04, -HIGHWAY_LENGTH / 2 + 1, 0.34);
+      plane(0.34, HIGHWAY_LENGTH + 5, COLORS[6 - string], highwayLaneX(string), -0.04, -HIGHWAY_LENGTH / 2 + 1, 0.38);
     }
     for (const x of [-HIGHWAY_WIDTH / 2, HIGHWAY_WIDTH / 2]) {
       const rail = box(0.09, 0.16, HIGHWAY_LENGTH + 7, 0x77d8f7, x, 0.04, -HIGHWAY_LENGTH / 2 + 1);
@@ -145,8 +145,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       return material;
     };
 
-    const padGeometry = new THREE.CylinderGeometry(0.55, 0.55, 0.16, 48);
-    const pulseGeometry = new THREE.RingGeometry(0.52, 0.72, 48);
+    const padGeometry = new THREE.CylinderGeometry(0.72, 0.72, 0.18, 56);
+    const pulseGeometry = new THREE.RingGeometry(0.68, 0.95, 56);
     geometries.push(padGeometry);
     geometries.push(pulseGeometry);
     const padLabels = new Map<number, THREE.Sprite>();
@@ -168,12 +168,12 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       label.scale.set(0.88, 0.88, 1);
       scene.add(label);
       padLabels.set(string, label);
-      plane(1.35, 1.35, COLORS[laneIndex], highwayLaneX(string), 0.02, HIT_Z + 0.38, 0.24);
+      plane(1.75, 1.75, COLORS[laneIndex], highwayLaneX(string), 0.02, HIT_Z + 0.38, 0.26);
     }
 
     // Share geometry and cache fret textures; create objects only in the visible
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
-    const noteGeometry = new THREE.BoxGeometry(1.1, 0.24, 0.62);
+    const noteGeometry = new THREE.BoxGeometry(1.35, 0.28, 0.72);
     geometries.push(noteGeometry);
     const laneMaterials = COLORS.map((color) => {
       const material = new THREE.MeshStandardMaterial({
@@ -186,7 +186,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       materials.push(material);
       return material;
     });
-    const noteHaloGeometry = new THREE.BoxGeometry(1.42, 0.04, 0.86);
+    const noteHaloGeometry = new THREE.BoxGeometry(1.78, 0.04, 1.02);
     geometries.push(noteHaloGeometry);
     const haloMaterials = COLORS.map((color) => {
       const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.42, depthWrite: false });
@@ -228,7 +228,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       renderer.setSize(width, height);
       camera.aspect = width / height;
       // Keep all six lanes visible on narrow windows.
-      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(Math.tan(THREE.MathUtils.degToRad(31)), 0.74 / camera.aspect)));
+      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(Math.tan(THREE.MathUtils.degToRad(29)), 0.84 / camera.aspect)));
       camera.updateProjectionMatrix();
     };
     const observer = new ResizeObserver(resize);
