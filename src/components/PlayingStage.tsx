@@ -4,6 +4,7 @@ import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector, PitchResult } from '../utils/pitchDetector';
 import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedChord, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice, SUSTAINED_PITCH_COOLDOWN_MS, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
+import { NoteHighway3D } from './NoteHighway3D';
 
 interface Props {
   song: ImportedSong;
@@ -475,7 +476,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>
-      <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />
+      <div className="practice-visuals">\n        <NoteHighway3D notes={notes} playbackMs={playbackMs} waitingId={waiting?.id} />\n        <div className="tab-panel">\n          <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />\n        </div>\n      </div>
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
       <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>{polyphonicError ? 'Single-note feedback only · chord preview is unavailable.' : 'Chord scoring: at least 50% of expected tones.'}</span>}</footer>
     </main>
