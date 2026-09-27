@@ -30,13 +30,25 @@ test('3D scene moves, freezes with transport, resizes, and remounts alongside th
   await expect(highway).toBeVisible();
   await expect(page.getByText('3D view is unavailable.', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('img', { name: /Scrolling guitar tablature/ })).toBeVisible();
-  const moving = await highway.screenshot();
+  const highwayShot = async () => {
+    const box = await highway.boundingBox();
+    expect(box).not.toBeNull();
+    return page.screenshot({
+      clip: {
+        x: Math.round(box!.x + box!.width * 0.32),
+        y: Math.round(box!.y + box!.height * 0.24),
+        width: Math.round(box!.width * 0.36),
+        height: Math.round(box!.height * 0.32),
+      },
+    });
+  };
+  const moving = await highwayShot();
   await page.waitForTimeout(250);
-  expect((await highway.screenshot()).equals(moving)).toBe(false);
+  expect((await highwayShot()).equals(moving)).toBe(false);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  const paused = await highway.screenshot();
+  const paused = await highwayShot();
   await page.waitForTimeout(250);
-  expect((await highway.screenshot()).equals(paused)).toBe(true);
+  expect((await highwayShot()).equals(paused)).toBe(true);
   const progress = await page.getByRole('progressbar').getAttribute('value');
   await page.getByLabel('Tempo', { exact: true }).fill('60');
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', progress!);
@@ -44,9 +56,9 @@ test('3D scene moves, freezes with transport, resizes, and remounts alongside th
   await expect(highway).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
-  const resumed = await highway.screenshot();
+  const resumed = await highwayShot();
   await page.waitForTimeout(250);
-  expect((await highway.screenshot()).equals(resumed)).toBe(false);
+  expect((await highwayShot()).equals(resumed)).toBe(false);
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(highway).toHaveCount(0);
   await page.getByRole('button', { name: 'Play again' }).click();

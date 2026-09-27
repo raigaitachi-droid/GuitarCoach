@@ -13,6 +13,7 @@ const LANE_COUNT = 6;
 const HIGHWAY_WIDTH = 14.2;
 const HIT_Z = -2.75;
 const HIT_WINDOW_MS = 90;
+const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
 
 export function NoteHighway({ notes, playbackMs }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -121,71 +122,72 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     hitGlowMaterial.emissive = new THREE.Color(0xffffff);
     hitGlowMaterial.emissiveIntensity = 4.2;
 
-    const textMaterials = new Map<string, THREE.SpriteMaterial>();
-    const makeTextMaterial = (text: string) => {
-      const cached = textMaterials.get(text);
+    const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad') => {
+      const key = `${shape}:${color}:${text}`;
+      const cached = textMaterials.get(key);
       if (cached) return cached;
       const canvas = document.createElement('canvas');
-      canvas.width = 128;
+      canvas.width = 256;
       canvas.height = 128;
       const context = canvas.getContext('2d')!;
-      context.shadowColor = 'rgba(255, 255, 255, 0.9)';
-      context.shadowBlur = 14;
+      const cssColor = colorStyle(color);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.shadowColor = cssColor;
+      context.shadowBlur = shape === 'pad' ? 32 : 26;
+      context.fillStyle = cssColor;
+      context.beginPath();
+      if (shape === 'pad') context.ellipse(128, 66, 92, 44, 0, 0, Math.PI * 2);
+      else context.roundRect(42, 26, 172, 70, 18);
+      context.fill();
+      context.shadowBlur = 0;
+      const gradient = context.createLinearGradient(0, 22, 0, 104);
+      gradient.addColorStop(0, 'rgba(255,255,255,.56)');
+      gradient.addColorStop(.48, 'rgba(255,255,255,.12)');
+      gradient.addColorStop(1, 'rgba(0,0,0,.3)');
+      context.fillStyle = gradient;
+      context.beginPath();
+      if (shape === 'pad') context.ellipse(128, 66, 92, 44, 0, 0, Math.PI * 2);
+      else context.roundRect(42, 26, 172, 70, 18);
+      context.fill();
+      context.strokeStyle = 'rgba(255,255,255,.9)';
+      context.lineWidth = shape === 'pad' ? 5 : 6;
+      context.beginPath();
+      if (shape === 'pad') context.ellipse(128, 66, 92, 44, 0, 0, Math.PI * 2);
+      else context.roundRect(42, 26, 172, 70, 18);
+      context.stroke();
+      context.shadowColor = 'rgba(255,255,255,.95)';
+      context.shadowBlur = 10;
       context.fillStyle = '#ffffff';
-      context.font = 'bold ' + (text.length < 3 ? 78 : 54) + 'px monospace';
+      context.font = 'bold ' + (text.length < 3 ? 66 : 46) + 'px monospace';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      context.fillText(text, 64, 66);
+      context.fillText(text, 128, 66);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
       textures.push(texture);
       const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, fog: false });
       materials.push(material);
-      textMaterials.set(text, material);
+      textMaterials.set(key, material);
       return material;
     };
+    const textMaterials = new Map<string, THREE.SpriteMaterial>();
 
-    const padGeometry = new THREE.CylinderGeometry(0.72, 0.72, 0.18, 56);
     const pulseGeometry = new THREE.RingGeometry(0.68, 0.95, 56);
-    geometries.push(padGeometry);
     geometries.push(pulseGeometry);
     const padLabels = new Map<number, THREE.Sprite>();
-    const padMaterials = new Map<number, THREE.MeshBasicMaterial>();
     for (let string = 6; string >= 1; string--) {
       const laneIndex = LANE_COUNT - string;
-      const padMaterial = new THREE.MeshBasicMaterial({
-        color: COLORS[laneIndex],
-      });
-      padMaterial.transparent = true;
-      padMaterial.opacity = 0.95;
-      materials.push(padMaterial);
-      padMaterials.set(string, padMaterial);
-      const pad = new THREE.Mesh(padGeometry, padMaterial);
-      pad.position.set(highwayLaneX(string), 0.18, HIT_Z + 0.38);
+      const pad = new THREE.Sprite(makeBadgeMaterial('0', COLORS[laneIndex], 'pad'));
+      pad.position.set(highwayLaneX(string), 0.48, HIT_Z + 0.38);
+      pad.scale.set(1.8, 0.9, 1);
       scene.add(pad);
-      const label = new THREE.Sprite(makeTextMaterial('0'));
-      label.position.set(highwayLaneX(string), 0.62, HIT_Z + 0.38);
-      label.scale.set(0.88, 0.88, 1);
-      scene.add(label);
-      padLabels.set(string, label);
+      padLabels.set(string, pad);
       plane(1.75, 1.75, COLORS[laneIndex], highwayLaneX(string), 0.02, HIT_Z + 0.38, 0.26);
     }
 
     // Share geometry and cache fret textures; create objects only in the visible
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
-    const noteGeometry = new THREE.BoxGeometry(1.35, 0.28, 0.72);
-    geometries.push(noteGeometry);
-    const laneMaterials = COLORS.map((color) => {
-      const material = new THREE.MeshStandardMaterial({
-        color,
-        emissive: new THREE.Color(color),
-        emissiveIntensity: 1.75,
-        roughness: 0.2,
-        metalness: 0.1,
-      });
-      materials.push(material);
-      return material;
-    });
     const noteHaloGeometry = new THREE.BoxGeometry(1.78, 0.04, 1.02);
     geometries.push(noteHaloGeometry);
     const haloMaterials = COLORS.map((color) => {
@@ -193,29 +195,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       materials.push(material);
       return material;
     });
-    const fretMaterials = new Map<number, THREE.SpriteMaterial>();
-    const fretMaterial = (fret: number) => {
-      const cached = fretMaterials.get(fret);
-      if (cached) return cached;
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const context = canvas.getContext('2d')!;
-      context.shadowColor = 'rgba(255, 255, 255, 0.9)';
-      context.shadowBlur = 16;
-      context.fillStyle = '#ffffff';
-      context.font = 'bold ' + (fret < 100 ? 82 : 56) + 'px monospace';
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      context.fillText(String(fret), 64, 66);
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      textures.push(texture);
-      const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, fog: false });
-      materials.push(material);
-      fretMaterials.set(fret, material);
-      return material;
-    };
     const active = new Map<TabNote, THREE.Group>();
     const hitNotes = new Set<string>();
     const pulses: Array<{ mesh: THREE.Mesh; bornAt: number; string: number }> = [];
@@ -267,8 +246,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           pulse.position.set(highwayLaneX(note.string), 0.26, HIT_Z + 0.38);
           scene.add(pulse);
           pulses.push({ mesh: pulse, bornAt: current.playbackMs, string: note.string });
-          const padMaterial = padMaterials.get(note.string);
-          if (padMaterial) padMaterial.opacity = 1;
+          const pad = padLabels.get(note.string);
+          if (pad) pad.material.opacity = 1;
         }
         visible.add(note);
         let group = active.get(note);
@@ -278,11 +257,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           const halo = new THREE.Mesh(noteHaloGeometry, haloMaterials[laneIndex]);
           halo.position.y = -0.11;
           group.add(halo);
-          group.add(new THREE.Mesh(noteGeometry, laneMaterials[laneIndex]));
-          const label = new THREE.Sprite(fretMaterial(note.fret));
-          label.position.y = 0.55;
-          label.scale.set(0.82, 0.82, 1);
-          group.add(label);
+          const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note'));
+          badge.position.y = 0.55;
+          badge.scale.set(1.55, 0.78, 1);
+          group.add(badge);
           scene.add(group);
           active.set(note, group);
         }
@@ -290,9 +268,11 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       }
       for (let string = 1; string <= 6; string++) {
         const label = padLabels.get(string);
-        if (label) label.material = makeTextMaterial(String(nextFrets.get(string) ?? 0));
-        const padMaterial = padMaterials.get(string);
-        if (padMaterial && playbackAdvanced) padMaterial.opacity = THREE.MathUtils.lerp(padMaterial.opacity, 0.95, 0.08);
+        if (label) {
+          label.material = makeBadgeMaterial(String(nextFrets.get(string) ?? 0), COLORS[LANE_COUNT - string], 'pad');
+          const target = playbackAdvanced ? 1 : 0.95;
+          label.material.opacity = THREE.MathUtils.lerp(label.material.opacity, target, 0.08);
+        }
       }
       for (let i = pulses.length - 1; i >= 0; i--) {
         const pulse = pulses[i];
