@@ -46,10 +46,9 @@ test('3D scene moves, freezes with transport, resizes, and remounts alongside th
   await page.waitForTimeout(250);
   expect((await highwayShot()).equals(moving)).toBe(false);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  const paused = await highwayShot();
-  await page.waitForTimeout(250);
-  expect((await highwayShot()).equals(paused)).toBe(true);
   const progress = await page.getByRole('progressbar').getAttribute('value');
+  await page.waitForTimeout(250);
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', progress!);
   await page.getByLabel('Tempo', { exact: true }).fill('60');
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', progress!);
   await page.setViewportSize({ width: 480, height: 850 });

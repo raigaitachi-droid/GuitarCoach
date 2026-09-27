@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { TabNote } from '../types';
 import { firstHighwayNote, HIGHWAY_LENGTH, HIGHWAY_LOOKAHEAD_MS, HIGHWAY_PAST_MS, highwayLaneX, highwayNotes, highwayNoteZ } from '../utils/noteHighway';
 
@@ -36,6 +39,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
     renderer.domElement.setAttribute('role', 'img');
     renderer.domElement.setAttribute('aria-label', '3D guitar note highway. Six strings from string 6 on the left to string 1 on the right; fret numbers approach the hit line.');
     host.appendChild(renderer.domElement);
@@ -43,6 +48,11 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x05070c, 22, 58);
     const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 90);
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.74, 0.34, 0.18);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
     camera.position.set(0, 3.35, 3.2);
     camera.lookAt(0, -0.05, -12);
     const geometries: THREE.BufferGeometry[] = [];
@@ -121,6 +131,34 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     hitGlowMaterial.opacity = 0.62;
     hitGlowMaterial.emissive = new THREE.Color(0xffffff);
     hitGlowMaterial.emissiveIntensity = 4.2;
+
+    const farFadeGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 4.8, 20);
+    geometries.push(farFadeGeometry);
+    const farFadeMaterial = new THREE.MeshBasicMaterial({
+      color: 0x05070c,
+      transparent: true,
+      opacity: 0.58,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    materials.push(farFadeMaterial);
+    const farFade = new THREE.Mesh(farFadeGeometry, farFadeMaterial);
+    farFade.rotation.x = -Math.PI / 2;
+    farFade.position.set(0, 0.28, -34);
+    scene.add(farFade);
+    const horizonMistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 10, 8);
+    geometries.push(horizonMistGeometry);
+    const horizonMistMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0b1533,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    materials.push(horizonMistMaterial);
+    const horizonMist = new THREE.Mesh(horizonMistGeometry, horizonMistMaterial);
+    horizonMist.position.set(0, 3.1, -38);
+    scene.add(horizonMist);
 
     const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad') => {
       const key = `${shape}:${color}:${text}`;
@@ -205,6 +243,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const width = Math.max(1, host.clientWidth);
       const height = Math.max(1, host.clientHeight);
       renderer.setSize(width, height);
+      composer.setSize(width, height);
+      bloomPass.setSize(width, height);
       camera.aspect = width / height;
       // Keep all six lanes visible on narrow windows.
       camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(Math.tan(THREE.MathUtils.degToRad(29)), 0.84 / camera.aspect)));
@@ -293,7 +333,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       for (const [note, group] of active) {
         if (!visible.has(note)) { scene.remove(group); active.delete(note); }
       }
-      renderer.render(scene, camera);
+      composer.render();
       previousPlaybackMs = current.playbackMs;
       frame = requestAnimationFrame(draw);
     };
@@ -322,6 +362,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       textures.forEach((texture) => texture.dispose());
       materials.forEach((material) => material.dispose());
       geometries.forEach((geometry) => geometry.dispose());
+      composer.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
       renderer.domElement.remove();
