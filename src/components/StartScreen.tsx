@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ImportedSong } from '../types';
 import { AudioInputDevice } from '../utils/pitchDetector';
-import { IdleHighway } from './IdleHighway';
+import startBackgroundVideo from '../assets/start-bg.mp4';
+import startBackgroundPoster from '../assets/start-bg-poster.jpg';
 
 interface Props {
   song: ImportedSong | null;
@@ -21,12 +22,34 @@ interface Props {
 
 export function StartScreen({ song, loading, busy, error, devices, deviceId, onDeviceChange, onFindInputs, onFile, onDemo, onStart, onReset }: Props) {
   const input = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
   const disabled = loading || busy;
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || videoFailed) return;
+    const syncPlayback = () => {
+      if (document.hidden) {
+        video.pause();
+        return;
+      }
+      void video.play().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', syncPlayback);
+    syncPlayback();
+    return () => {
+      document.removeEventListener('visibilitychange', syncPlayback);
+      video.pause();
+    };
+  }, [videoFailed]);
+
   return (
     <main className="start-screen" aria-labelledby="start-heading">
-      <div className="start-background" aria-hidden="true" />
-      <IdleHighway />
+      <div className={`start-video-layer ${videoFailed ? 'is-video-failed' : ''}`} aria-hidden="true" style={{ backgroundImage: `url(${startBackgroundPoster})` }}>
+        {!videoFailed && <video ref={videoRef} className="start-bg-video" src={startBackgroundVideo} poster={startBackgroundPoster} autoPlay loop muted playsInline preload="auto" onError={() => setVideoFailed(true)} />}
+      </div>
       <h1 className="start-wordmark"><span>Guitar</span>Coach</h1>
       <div className="start-card">
         {!song ? (

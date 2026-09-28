@@ -759,3 +759,50 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
   font-size: 13px;
   color: #c8d3da;
 }
+
+/* Video-backed start screen */
+.start-screen {
+  background: #02050a;
+}
+.start-video-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -4;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  overflow: hidden;
+}
+.start-bg-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.start-video-layer.is-video-failed .start-bg-video { display: none; }
+.start-background,
+.start-ambience,
+.start-highway,
+.start-idle-highway { display: none !important; }
+.start-screen::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  left: 50%;
+  top: 50%;
+  width: min(820px, 72vw);
+  height: min(620px, 70vh);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.66) 0%, rgba(0,0,0,.48) 42%, rgba(0,0,0,.16) 72%, transparent 100%);
+}
+.start-screen::after {
+  z-index: 2;
+}
+.start-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(22, 51, 64, .38), rgba(10, 16, 34, .3));
+  border: 1px solid rgba(118, 255, 247, .64);
+  backdrop-filter: blur(26px) saturate(1.34);
+}
