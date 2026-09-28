@@ -1325,3 +1325,13 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     0 12px 34px rgba(0, 0, 0, .18),
     0 0 18px rgba(32, 214, 195, .045);
 }
+
+/* Practice controls toolbar grouping correction */
+.practice-controls {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.practice-controls .bar-position {
+  margin-left: auto;
+}
