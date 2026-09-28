@@ -4,11 +4,24 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
-const COLORS = [0x00ff74, 0xff2424, 0xffd41f, 0x1f70ff, 0xff6a00, 0xff00f5];
 const LANE_COUNT = 6;
 const HIGHWAY_WIDTH = 13.8;
 const HIGHWAY_LENGTH = 48;
+const HIT_Z = -3.15;
+
+// Tunables for the start-screen idle highway.
+const PULSE_INTERVAL_SECONDS = [2.5, 3.25, 2.85, 3.7, 3.05, 3.45];
+const PULSE_TRAVEL_SECONDS = 2.7;
+const STRING_GLOW_INTENSITY = 0.72;
+const RING_SIZE = 0.78;
+const RING_GLOW_INTENSITY = 0.82;
+const HAZE_AMOUNT = 0.18;
+const DUST_COUNT = 84;
+
+const STRING_COLORS = [0x35d3a2, 0xf0b24b, 0x7e8ff2, 0x42b8e8, 0xe17857, 0xc75be8];
 const laneX = (lane: number) => -HIGHWAY_WIDTH / 2 + (lane + 0.5) * (HIGHWAY_WIDTH / LANE_COUNT);
+const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 export function IdleHighway() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -17,6 +30,7 @@ export function IdleHighway() {
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -24,29 +38,64 @@ export function IdleHighway() {
       setUnavailable(true);
       return;
     }
+
     setUnavailable(false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.82;
+    renderer.toneMappingExposure = 0.84;
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x07101a, 10, 42);
-    const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 90);
-    camera.position.set(0, 3.12, 4.35);
-    camera.lookAt(0, -0.26, -28);
+    scene.fog = new THREE.Fog(0x050b12, 9.5, 42);
+    const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 90);
+    camera.position.set(0, 3.36, 4.05);
+    camera.lookAt(0, -0.3, -25);
+
     const composer = new EffectComposer(renderer);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.24, 0.07, 0.86);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.12, 0.82);
     composer.addPass(new RenderPass(scene, camera));
     composer.addPass(bloomPass);
 
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
-    const plane = (width: number, depth: number, color: number, x: number, y: number, z: number, opacity: number, blending: THREE.Blending = THREE.NormalBlending) => {
+    const textures: THREE.Texture[] = [];
+    const rings: Array<{ rim: THREE.Mesh; glow: THREE.Mesh; fill: THREE.Mesh; light: THREE.PointLight; phase: number; hitUntil: number }> = [];
+    const pulses: Array<{ mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; lane: number; nextStart: number; active: boolean }> = [];
+
+    const makeGradientTexture = (color: number, alphaNear: number, alphaFar: number, centerBoost = 0) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 256;
+      const context = canvas.getContext('2d')!;
+      const c = new THREE.Color(color);
+      const rgb = `${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}`;
+      const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, `rgba(${rgb}, ${alphaFar})`);
+      gradient.addColorStop(0.46, `rgba(${rgb}, ${alphaFar + centerBoost})`);
+      gradient.addColorStop(1, `rgba(${rgb}, ${alphaNear})`);
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      textures.push(texture);
+      return texture;
+    };
+
+    const plane = (width: number, depth: number, color: number, x: number, y: number, z: number, opacity: number, blending: THREE.Blending = THREE.NormalBlending, map?: THREE.Texture) => {
       const geometry = new THREE.PlaneGeometry(width, depth);
-      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false, blending });
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        ...(map ? { map } : {}),
+        transparent: true,
+        opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending,
+      });
       geometries.push(geometry);
       materials.push(material);
       const mesh = new THREE.Mesh(geometry, material);
@@ -55,9 +104,10 @@ export function IdleHighway() {
       scene.add(mesh);
       return mesh;
     };
+
     const box = (width: number, height: number, depth: number, color: number, x: number, y: number, z: number) => {
       const geometry = new THREE.BoxGeometry(width, height, depth);
-      const material = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.08 });
+      const material = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.12, transparent: true, opacity: 0.98 });
       geometries.push(geometry);
       materials.push(material);
       const mesh = new THREE.Mesh(geometry, material);
@@ -66,46 +116,112 @@ export function IdleHighway() {
       return mesh;
     };
 
-    scene.add(new THREE.HemisphereLight(0x9ceaff, 0x04030a, 1.35));
-    const floorGlow = plane(26, 20, 0x030914, 0, -0.34, -6, 0.24);
-    floorGlow.scale.x = 1.4;
-    const bed = box(HIGHWAY_WIDTH, 0.08, HIGHWAY_LENGTH, 0x070d16, 0, -0.18, -HIGHWAY_LENGTH / 2);
-    (bed.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x050a12);
-    (bed.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.45;
+    scene.add(new THREE.HemisphereLight(0x9bc8d5, 0x020409, 1.05));
+    const stageLight = new THREE.PointLight(0x93d7ff, 3.2, 18, 2.4);
+    stageLight.position.set(0, 2.2, -3.2);
+    scene.add(stageLight);
+
+    const floor = plane(24, 16, 0x02050a, 0, -0.38, -4.8, 0.42);
+    floor.scale.x = 1.45;
+    const bed = box(HIGHWAY_WIDTH + 0.5, 0.07, HIGHWAY_LENGTH, 0x050910, 0, -0.2, -HIGHWAY_LENGTH / 2 + 0.8);
+    const bedMaterial = bed.material as THREE.MeshStandardMaterial;
+    bedMaterial.emissive = new THREE.Color(0x02060b);
+    bedMaterial.emissiveIntensity = 0.32;
 
     for (let lane = 0; lane < LANE_COUNT; lane++) {
+      const color = STRING_COLORS[lane];
       const x = laneX(lane);
-      plane(1.54, HIGHWAY_LENGTH, 0x07101a, x, -0.122, -HIGHWAY_LENGTH / 2, 0.38);
-      plane(1.46, HIGHWAY_LENGTH, COLORS[lane], x, -0.116, -HIGHWAY_LENGTH / 2, 0.035);
-      plane(1.72, 18, COLORS[lane], x, -0.112, -8.5, 0.038, THREE.AdditiveBlending);
-      plane(1.16, 16, COLORS[lane], x, -0.245, -7.5, 0.022, THREE.AdditiveBlending);
-      const rail = box(0.052, 0.055, HIGHWAY_LENGTH, COLORS[lane], x, 0.025, -HIGHWAY_LENGTH / 2);
-      const railMaterial = rail.material as THREE.MeshStandardMaterial;
-      railMaterial.emissive = new THREE.Color(COLORS[lane]);
-      railMaterial.emissiveIntensity = 2.15;
+      const laneTexture = makeGradientTexture(color, 0.078, 0.01, 0.01);
+      plane(1.5, HIGHWAY_LENGTH, 0x08101a, x, -0.118, -HIGHWAY_LENGTH / 2 + 0.8, 0.52);
+      plane(1.42, HIGHWAY_LENGTH, 0xffffff, x, -0.112, -HIGHWAY_LENGTH / 2 + 0.8, 1, THREE.NormalBlending, laneTexture);
+      plane(1.72, 18, color, x, -0.24, -7.3, 0.034, THREE.AdditiveBlending);
+      plane(2.1, 3.5, color, x, -0.255, HIT_Z - 0.1, 0.052, THREE.AdditiveBlending);
+
+      const core = box(0.026, 0.038, HIGHWAY_LENGTH, color, x, 0.034, -HIGHWAY_LENGTH / 2 + 0.8);
+      const coreMaterial = core.material as THREE.MeshStandardMaterial;
+      coreMaterial.emissive = new THREE.Color(color);
+      coreMaterial.emissiveIntensity = 2.35;
+      const filamentGlow = plane(0.36, HIGHWAY_LENGTH, color, x, -0.026, -HIGHWAY_LENGTH / 2 + 0.8, STRING_GLOW_INTENSITY, THREE.AdditiveBlending, makeGradientTexture(color, 0.48, 0.025, 0.035));
+      filamentGlow.renderOrder = 1;
+
+      const pulseGeometry = new THREE.PlaneGeometry(0.42, 2.7);
+      const pulseMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+      geometries.push(pulseGeometry);
+      materials.push(pulseMaterial);
+      const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial);
+      pulse.rotation.x = -Math.PI / 2;
+      pulse.position.set(x, 0.075, -42);
+      scene.add(pulse);
+      pulses.push({ mesh: pulse, material: pulseMaterial, lane, nextStart: lane * 0.42 + 0.6, active: false });
     }
+
     for (const x of [-HIGHWAY_WIDTH / 2, HIGHWAY_WIDTH / 2]) {
-      const rail = box(0.052, 0.08, HIGHWAY_LENGTH, 0x6feeff, x, 0.02, -HIGHWAY_LENGTH / 2);
+      const rail = box(0.036, 0.055, HIGHWAY_LENGTH, 0xd6f2ff, x, 0.018, -HIGHWAY_LENGTH / 2 + 0.8);
       const railMaterial = rail.material as THREE.MeshStandardMaterial;
-      railMaterial.emissive = new THREE.Color(0x1b8fae);
-      railMaterial.emissiveIntensity = 0.55;
-      plane(0.18, HIGHWAY_LENGTH, 0x2fdfff, x, -0.18, -HIGHWAY_LENGTH / 2, 0.045, THREE.AdditiveBlending);
+      railMaterial.emissive = new THREE.Color(0xa9c7d0);
+      railMaterial.emissiveIntensity = 0.24;
+      plane(0.12, HIGHWAY_LENGTH, 0xd6f2ff, x, -0.18, -HIGHWAY_LENGTH / 2 + 0.8, 0.026, THREE.AdditiveBlending);
     }
+
+    const hazeTexture = makeGradientTexture(0x89b9c6, HAZE_AMOUNT, 0.02);
+    const farHaze = plane(HIGHWAY_WIDTH + 5.5, 14, 0xffffff, 0, 0.04, -38, 1, THREE.NormalBlending, hazeTexture);
+    farHaze.rotation.x = -Math.PI / 2;
+    const mistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 10, 7);
+    const mistMaterial = new THREE.MeshBasicMaterial({ color: 0x86aebc, transparent: true, opacity: HAZE_AMOUNT * 0.56, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    geometries.push(mistGeometry);
+    materials.push(mistMaterial);
+    const mist = new THREE.Mesh(mistGeometry, mistMaterial);
+    mist.position.set(0, 2.1, -38);
+    scene.add(mist);
+
+    const ringGeometry = new THREE.RingGeometry(RING_SIZE * 0.62, RING_SIZE * 0.78, 96);
+    const fillGeometry = new THREE.CircleGeometry(RING_SIZE * 0.6, 96);
+    const glowGeometry = new THREE.CircleGeometry(RING_SIZE * 1.22, 96);
+    geometries.push(ringGeometry, fillGeometry, glowGeometry);
     for (let lane = 0; lane < LANE_COUNT; lane++) {
-      const geometry = new THREE.RingGeometry(0.5, 0.75, 64);
-      const material = new THREE.MeshBasicMaterial({ color: COLORS[lane], transparent: true, opacity: 0.86, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-      geometries.push(geometry);
-      materials.push(material);
-      const marker = new THREE.Mesh(geometry, material);
-      marker.rotation.x = -Math.PI / 2;
-      marker.scale.set(1.34, 0.86, 1);
-      marker.position.set(laneX(lane), 0.105, -3.2);
-      scene.add(marker);
-      plane(1.72, 1.08, COLORS[lane], laneX(lane), -0.16, -3.2, 0.16, THREE.AdditiveBlending);
+      const color = STRING_COLORS[lane];
+      const x = laneX(lane);
+      const fillMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+      const rimMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+      const glowMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+      materials.push(fillMaterial, rimMaterial, glowMaterial);
+      const fill = new THREE.Mesh(fillGeometry, fillMaterial);
+      const rim = new THREE.Mesh(ringGeometry, rimMaterial);
+      const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+      for (const mesh of [fill, rim, glow]) {
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.scale.set(1.2, 0.82, 1);
+        mesh.position.set(x, mesh === glow ? -0.01 : 0.09, HIT_Z);
+        scene.add(mesh);
+      }
+      const light = new THREE.PointLight(color, 0.6, 3.4, 2.2);
+      light.position.set(x, 0.38, HIT_Z + 0.1);
+      scene.add(light);
+      rings.push({ rim, glow, fill, light, phase: lane * 0.8, hitUntil: -10 });
     }
+
+    const dustGeometry = new THREE.BufferGeometry();
+    const dustPositions = new Float32Array(DUST_COUNT * 3);
+    const dustSeeds = new Float32Array(DUST_COUNT);
+    for (let i = 0; i < DUST_COUNT; i++) {
+      dustPositions[i * 3] = (Math.random() - 0.5) * (HIGHWAY_WIDTH + 4);
+      dustPositions[i * 3 + 1] = 0.5 + Math.random() * 2.2;
+      dustPositions[i * 3 + 2] = -39 + Math.random() * 35;
+      dustSeeds[i] = Math.random() * 10;
+    }
+    dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+    const dustMaterial = new THREE.PointsMaterial({ color: 0xb9dce3, transparent: true, opacity: 0.12, size: 0.035, depthWrite: false, blending: THREE.AdditiveBlending });
+    geometries.push(dustGeometry);
+    materials.push(dustMaterial);
+    const dust = new THREE.Points(dustGeometry, dustMaterial);
+    scene.add(dust);
 
     let frame = 0;
-    const startedAt = performance.now();
+    let running = !document.hidden;
+    let lastTime = performance.now();
+    let elapsed = 0;
+    let lost = false;
+
     const resize = () => {
       const width = Math.max(1, host.clientWidth);
       const height = Math.max(1, host.clientHeight);
@@ -113,24 +229,113 @@ export function IdleHighway() {
       composer.setSize(width, height);
       bloomPass.setSize(width, height);
       camera.aspect = width / height;
+      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(Math.tan(THREE.MathUtils.degToRad(28.5)), 0.82 / camera.aspect)));
       camera.updateProjectionMatrix();
     };
-    const observer = new ResizeObserver(resize);
-    observer.observe(host);
-    resize();
-    const draw = () => {
-      const t = (performance.now() - startedAt) / 1000;
-      bed.position.y = -0.19 + Math.sin(t * 0.6) * 0.01;
-      composer.render();
-      frame = requestAnimationFrame(draw);
+
+    const scheduleNextPulse = (pulse: typeof pulses[number], now: number) => {
+      const jitter = 0.65 + ((pulse.lane * 41 + Math.floor(now * 3)) % 100) / 100 * 0.75;
+      pulse.nextStart = now + PULSE_INTERVAL_SECONDS[pulse.lane] + jitter;
+      pulse.active = false;
+      pulse.material.opacity = 0;
     };
-    frame = requestAnimationFrame(draw);
+
+    const render = (nowMs: number) => {
+      if (lost) return;
+      if (!running) {
+        frame = 0;
+        return;
+      }
+      const delta = Math.min((nowMs - lastTime) / 1000, 0.05);
+      lastTime = nowMs;
+      if (!reducedMotion) elapsed += delta;
+
+      for (const pulse of pulses) {
+        if (!reducedMotion && !pulse.active && elapsed >= pulse.nextStart) pulse.active = true;
+        if (!pulse.active) continue;
+        const progress = THREE.MathUtils.clamp((elapsed - pulse.nextStart) / PULSE_TRAVEL_SECONDS, 0, 1);
+        const eased = easeInOutCubic(progress);
+        pulse.mesh.position.z = THREE.MathUtils.lerp(-42, HIT_Z, eased);
+        pulse.material.opacity = Math.sin(progress * Math.PI) * 0.44;
+        pulse.mesh.scale.z = 0.75 + (1 - progress) * 0.55;
+        if (progress >= 1) {
+          rings[pulse.lane].hitUntil = elapsed + 0.42;
+          scheduleNextPulse(pulse, elapsed);
+        }
+      }
+
+      rings.forEach((ring, lane) => {
+        const breathe = reducedMotion ? 0.5 : (Math.sin(elapsed * (Math.PI * 2 / (4.6 + lane * 0.17)) + ring.phase) + 1) / 2;
+        const hit = THREE.MathUtils.clamp((ring.hitUntil - elapsed) / 0.42, 0, 1);
+        const hitEase = easeOutCubic(hit);
+        const glow = RING_GLOW_INTENSITY * (0.82 + breathe * 0.18 + hitEase * 0.5);
+        (ring.rim.material as THREE.MeshBasicMaterial).opacity = 0.72 + breathe * 0.12 + hitEase * 0.16;
+        (ring.fill.material as THREE.MeshBasicMaterial).opacity = 0.1 + breathe * 0.035 + hitEase * 0.06;
+        (ring.glow.material as THREE.MeshBasicMaterial).opacity = 0.16 + glow * 0.12;
+        const scale = 1 + breathe * 0.025 + hitEase * 0.12;
+        ring.rim.scale.set(1.2 * scale, 0.82 * scale, 1);
+        ring.fill.scale.set(1.2 * scale, 0.82 * scale, 1);
+        ring.glow.scale.set(1.2 * (1.08 + hitEase * 0.12), 0.82 * (1.08 + hitEase * 0.12), 1);
+        ring.light.intensity = 0.35 + breathe * 0.16 + hitEase * 0.42;
+      });
+
+      if (!reducedMotion) {
+        const position = dustGeometry.attributes.position as THREE.BufferAttribute;
+        for (let i = 0; i < DUST_COUNT; i++) {
+          const zIndex = i * 3 + 2;
+          dustPositions[zIndex] += delta * (0.22 + (dustSeeds[i] % 1) * 0.16);
+          dustPositions[i * 3] += Math.sin(elapsed * 0.2 + dustSeeds[i]) * delta * 0.015;
+          if (dustPositions[zIndex] > 0.5) dustPositions[zIndex] = -39;
+        }
+        position.needsUpdate = true;
+      }
+
+      composer.render();
+      frame = requestAnimationFrame(render);
+    };
+
+    const visibilityChange = () => {
+      running = !document.hidden;
+      lastTime = performance.now();
+      if (!running) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      } else if (!frame && !lost) {
+        frame = requestAnimationFrame(render);
+      }
+    };
+    const observer = new ResizeObserver(resize);
+    const contextLost = (event: Event) => {
+      event.preventDefault();
+      lost = true;
+      cancelAnimationFrame(frame);
+      setUnavailable(true);
+    };
+    const contextRestored = () => {
+      lost = false;
+      setUnavailable(false);
+      resize();
+      frame = requestAnimationFrame(render);
+    };
+
+    observer.observe(host);
+    document.addEventListener('visibilitychange', visibilityChange);
+    renderer.domElement.addEventListener('webglcontextlost', contextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
+    resize();
+    composer.render();
+    frame = requestAnimationFrame(render);
+
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      document.removeEventListener('visibilitychange', visibilityChange);
+      renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
       scene.clear();
-      geometries.forEach((geometry) => geometry.dispose());
+      textures.forEach((texture) => texture.dispose());
       materials.forEach((material) => material.dispose());
+      geometries.forEach((geometry) => geometry.dispose());
       composer.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
