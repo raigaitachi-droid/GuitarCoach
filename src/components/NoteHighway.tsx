@@ -21,7 +21,7 @@ const STRING_PULSE_COUNT = 18;
 const STRING_PULSE_TRAVEL_MS = 2300;
 const STRING_PULSE_MIN_DELAY_MS = 260;
 const STRING_PULSE_SPACING_MS = 420;
-const PAD_BASE_SCALE = 1.18;
+const PAD_BASE_SCALE = 1.28;
 const FLOOR_REFLECTION_OPACITY = 0.18;
 const PAD_REFLECTION_OPACITY = 0.34;
 const NOTE_CONTACT_OPACITY = 0.22;
@@ -277,10 +277,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     addDrumKit();
 
     const beamSpecs = [
-      { color: 0x4ce7ff, opacity: 0.17, x: -8.7, y: 7.6, z: -35, rotation: 0.34, width: 6.4, height: 17.5 },
+      { color: 0x4ce7ff, opacity: 0.115, x: -8.7, y: 7.1, z: -35, rotation: 0.3, width: 5.4, height: 15.2 },
       { color: 0x74e6ff, opacity: 0.14, x: -1.6, y: 8.2, z: -44, rotation: 0.06, width: 7.2, height: 19.5 },
       { color: 0x7e65ff, opacity: 0.15, x: 7.3, y: 7.5, z: -36, rotation: -0.31, width: 6.5, height: 17.5 },
-      { color: 0xe6a84f, opacity: 0.085, x: 13.0, y: 5.8, z: -34, rotation: -0.48, width: 4.6, height: 14.5 },
+      { color: 0xe6a84f, opacity: 0.045, x: 13.0, y: 5.8, z: -34, rotation: -0.48, width: 4.2, height: 12.5 },
     ];
     const lightBeams = beamSpecs.map((spec) => {
       const geometry = new THREE.PlaneGeometry(spec.width, spec.height);
@@ -375,12 +375,12 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       railMaterial.emissive = new THREE.Color(0x2ba6c9);
       railMaterial.emissiveIntensity = 0.55;
     }
-    const hitLine = box(HIGHWAY_WIDTH - 2.8, 0.016, 0.032, 0x7eeaff, 0, 0.09, TARGET_Z);
+    const hitLine = box(HIGHWAY_WIDTH - 5.2, 0.01, 0.026, 0x7eeaff, 0, 0.08, TARGET_Z);
     const hitMaterial = hitLine.material as THREE.MeshStandardMaterial;
     hitMaterial.transparent = true;
-    hitMaterial.opacity = 0.34;
+    hitMaterial.opacity = 0.18;
     hitMaterial.emissive = new THREE.Color(0x6feeff);
-    hitMaterial.emissiveIntensity = 0.12;
+    hitMaterial.emissiveIntensity = 0.05;
     const farFadeGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 4.8, 20);
     geometries.push(farFadeGeometry);
     const farFadeMaterial = new THREE.MeshBasicMaterial({
@@ -411,66 +411,86 @@ export function NoteHighway({ notes, playbackMs }: Props) {
 
     const textMaterials = new Map<string, THREE.SpriteMaterial>();
     const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad') => {
-      const key = shape === 'pad' ? `${shape}:${color}` : `${shape}:${color}:${text}`;
+      const key = `${shape}:${color}:${text}`;
       const cached = textMaterials.get(key);
       if (cached) return cached;
       const canvas = document.createElement('canvas');
       const isPad = shape === 'pad';
-      canvas.width = isPad ? 192 : 256;
-      canvas.height = isPad ? 192 : 128;
+      canvas.width = isPad ? 220 : 288;
+      canvas.height = isPad ? 220 : 144;
       const context = canvas.getContext('2d')!;
       const cssColor = colorStyle(color);
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
       context.clearRect(0, 0, canvas.width, canvas.height);
+
       context.shadowColor = cssColor;
-      context.shadowBlur = isPad ? 28 : 26;
+      context.shadowBlur = isPad ? 24 : 22;
       context.fillStyle = cssColor;
       context.beginPath();
-      if (isPad) context.arc(centerX, centerY, 47, 0, Math.PI * 2);
-      else context.roundRect(58, 24, 140, 80, 40);
+      if (isPad) {
+        context.arc(centerX, centerY, 54, 0, Math.PI * 2);
+      } else {
+        context.roundRect(66, 28, 156, 88, 44);
+      }
       context.fill();
       context.shadowBlur = 0;
-      const centerGlow = context.createRadialGradient(centerX, centerY, 8, centerX, centerY, isPad ? 62 : 86);
-      centerGlow.addColorStop(0, isPad ? 'rgba(255,255,255,.025)' : 'rgba(255,255,255,.09)');
-      centerGlow.addColorStop(.5, isPad ? 'rgba(255,255,255,.012)' : 'rgba(255,255,255,.03)');
-      centerGlow.addColorStop(1, 'rgba(0,0,0,.08)');
-      context.fillStyle = centerGlow;
-      context.beginPath();
-      if (isPad) context.arc(centerX, centerY, 47, 0, Math.PI * 2);
-      else context.roundRect(58, 24, 140, 80, 40);
-      context.fill();
+
       if (isPad) {
-        context.globalAlpha = 0.82;
-        context.lineWidth = 4;
+        context.globalCompositeOperation = 'destination-out';
+        context.fillStyle = 'rgba(0,0,0,1)';
+        context.beginPath();
+        context.arc(centerX, centerY, 34, 0, Math.PI * 2);
+        context.fill();
+        context.globalCompositeOperation = 'source-over';
+        context.globalAlpha = 0.42;
+        const inner = context.createRadialGradient(centerX, centerY, 4, centerX, centerY, 47);
+        inner.addColorStop(0, `${cssColor}33`);
+        inner.addColorStop(1, 'rgba(255,255,255,0)');
+        context.fillStyle = inner;
+        context.beginPath();
+        context.arc(centerX, centerY, 49, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = 1;
+        context.lineWidth = 5;
         context.strokeStyle = cssColor;
         context.shadowColor = cssColor;
         context.shadowBlur = 18;
         context.beginPath();
-        context.arc(centerX, centerY, 47, 0, Math.PI * 2);
+        context.arc(centerX, centerY, 54, 0, Math.PI * 2);
         context.stroke();
         context.shadowBlur = 0;
+      } else {
+        const centerGlow = context.createRadialGradient(centerX, centerY, 8, centerX, centerY, 92);
+        centerGlow.addColorStop(0, 'rgba(255,255,255,.07)');
+        centerGlow.addColorStop(.54, 'rgba(255,255,255,.022)');
+        centerGlow.addColorStop(1, 'rgba(0,0,0,.1)');
+        context.fillStyle = centerGlow;
+        context.beginPath();
+        context.roundRect(66, 28, 156, 88, 44);
+        context.fill();
       }
-      context.globalAlpha = isPad ? 0.08 : 0.13;
+
+      context.globalAlpha = isPad ? 0.1 : 0.12;
       context.fillStyle = cssColor;
-      for (let i = 0; i < 26; i++) {
-        const x = (isPad ? 48 : 58) + ((i * 47) % (isPad ? 96 : 140));
-        const y = (isPad ? 48 : 34) + ((i * 29) % (isPad ? 96 : 62));
-        context.fillRect(x, y, 1.5, 1.5);
+      for (let i = 0; i < 24; i++) {
+        const x = (isPad ? 54 : 70) + ((i * 47) % (isPad ? 112 : 150));
+        const y = (isPad ? 54 : 38) + ((i * 29) % (isPad ? 112 : 68));
+        context.fillRect(x, y, 1.4, 1.4);
       }
       context.globalAlpha = 1;
+
+      context.font = '800 ' + (isPad ? 72 : (text.length < 3 ? 68 : 50)) + 'px monospace';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.lineJoin = 'round';
       context.shadowBlur = 0;
-      if (!isPad) {
-        context.font = 'bold ' + (text.length < 3 ? 64 : 46) + 'px monospace';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.lineJoin = 'round';
-        context.lineWidth = text.length < 3 ? 11 : 8;
-        context.strokeStyle = 'rgba(0,0,0,.9)';
-        context.strokeText(text, centerX, centerY);
-        context.fillStyle = '#ffffff';
-        context.fillText(text, centerX, centerY);
-      }
+      context.lineWidth = isPad ? 12 : (text.length < 3 ? 12 : 9);
+      context.strokeStyle = 'rgba(0,0,0,.94)';
+      context.strokeText(text, centerX, centerY + (isPad ? 1 : 0));
+      context.fillStyle = '#ffffff';
+      context.fillText(text, centerX, centerY + (isPad ? 1 : 0));
+
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
@@ -478,10 +498,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const material = new THREE.SpriteMaterial({
         map: texture,
         transparent: true,
-        opacity: shape === 'pad' ? 0.9 : 1,
+        opacity: shape === 'pad' ? 0.96 : 1,
         depthTest: false,
         fog: false,
-        blending: shape === 'pad' ? THREE.NormalBlending : THREE.AdditiveBlending,
+        blending: THREE.NormalBlending,
       });
       materials.push(material);
       textMaterials.set(key, material);
@@ -524,7 +544,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const noteContacts = new Map<TabNote, THREE.MeshBasicMaterial>();
     for (let string = 6; string >= 1; string--) {
       const laneIndex = LANE_COUNT - string;
-      const pad = new THREE.Sprite(makeBadgeMaterial('', COLORS[laneIndex], 'pad'));
+      const pad = new THREE.Sprite(makeBadgeMaterial('0', COLORS[laneIndex], 'pad'));
       pad.position.set(highwayLaneX(string), 0.72, TARGET_Z);
       pad.scale.set(PAD_BASE_SCALE, PAD_BASE_SCALE, 1);
       scene.add(pad);
@@ -580,10 +600,14 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       }
       const playbackAdvanced = current.playbackMs > previousPlaybackMs;
       const visible = new Set<TabNote>();
+      const nextPadFrets = new Map<number, number>();
       const start = firstHighwayNote(current.notes, current.playbackMs - HIGHWAY_PAST_MS);
       for (let i = start; i < current.notes.length; i++) {
         const note = current.notes[i];
         if (note.timestampMs > current.playbackMs + HIGHWAY_LOOKAHEAD_MS) break;
+        if (!nextPadFrets.has(note.string) && note.timestampMs >= current.playbackMs - HIT_WINDOW_MS) {
+          nextPadFrets.set(note.string, note.fret);
+        }
         if (playbackAdvanced && note.timestampMs > previousPlaybackMs && note.timestampMs <= current.playbackMs + HIT_WINDOW_MS && !hitNotes.has(note.id)) {
           hitNotes.add(note.id);
           const pad = padLabels.get(note.string);
@@ -599,7 +623,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           const laneIndex = LANE_COUNT - note.string;
           const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note'));
           badge.position.y = 0.62;
-          badge.scale.set(1.28, 0.76, 1);
+          badge.scale.set(1.42, 0.9, 1);
           group.add(badge);
           const contactGeometry = new THREE.PlaneGeometry(1.42, 0.72);
           geometries.push(contactGeometry);
@@ -630,6 +654,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           const hitProgress = THREE.MathUtils.clamp(hitAge / 260, 0, 1);
           const hitPulse = hitAge >= 0 && hitAge < 260 ? Math.sin((1 - hitProgress) * Math.PI) : 0;
           const target = playbackAdvanced ? 0.9 + hitPulse * 0.1 : 0.82;
+          label.material = makeBadgeMaterial(String(nextPadFrets.get(string) ?? 0), COLORS[LANE_COUNT - string], 'pad');
           label.material.opacity = THREE.MathUtils.lerp(label.material.opacity, target, 0.16);
           const reflectionMaterial = padReflections.get(string);
           if (reflectionMaterial) {
