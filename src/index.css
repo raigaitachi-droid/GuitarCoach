@@ -1275,3 +1275,16 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     linear-gradient(180deg, rgba(0, 0, 0, .04) 0%, transparent 48%, rgba(0, 0, 0, .24) 100%);
   background-size: 100% 100%;
 }
+
+/* Practice stage center-glow continuation */
+.note-highway::after {
+  background:
+    radial-gradient(ellipse at 50% 47%, rgba(54, 200, 191, .24), transparent 12%, transparent 100%),
+    radial-gradient(ellipse at 50% 39%, rgba(92, 156, 255, .2), transparent 29%),
+    radial-gradient(ellipse at 43% 48%, rgba(230, 168, 79, .11), transparent 21%),
+    radial-gradient(ellipse at 57% 48%, rgba(188, 103, 223, .12), transparent 22%),
+    radial-gradient(ellipse at 48% 46%, rgba(74, 203, 137, .095), transparent 23%),
+    radial-gradient(ellipse at 52% 46%, rgba(224, 109, 88, .07), transparent 24%),
+    linear-gradient(180deg, rgba(0, 0, 0, .04) 0%, transparent 50%, rgba(0, 0, 0, .24) 100%);
+  background-size: 100% 100%;
+}

@@ -157,12 +157,32 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       gradient.addColorStop(1, '#020307');
       context.fillStyle = gradient;
       context.fillRect(0, 0, canvas.width, canvas.height);
-      const center = context.createRadialGradient(canvas.width / 2, canvas.height * 0.58, 40, canvas.width / 2, canvas.height * 0.58, 390);
-      center.addColorStop(0, 'rgba(44,127,178,.28)');
-      center.addColorStop(0.48, 'rgba(33,69,126,.13)');
+      const center = context.createRadialGradient(canvas.width / 2, canvas.height * 0.58, 36, canvas.width / 2, canvas.height * 0.58, 430);
+      center.addColorStop(0, 'rgba(54,200,191,.34)');
+      center.addColorStop(0.24, 'rgba(72,130,215,.22)');
+      center.addColorStop(0.56, 'rgba(33,69,126,.14)');
       center.addColorStop(1, 'rgba(0,0,0,0)');
       context.fillStyle = center;
       context.fillRect(0, 0, canvas.width, canvas.height);
+
+      context.globalCompositeOperation = 'screen';
+      const risingGlow = context.createRadialGradient(canvas.width / 2, canvas.height * 0.7, 20, canvas.width / 2, canvas.height * 0.34, 360);
+      risingGlow.addColorStop(0, 'rgba(84,220,220,.28)');
+      risingGlow.addColorStop(0.22, 'rgba(138,155,255,.18)');
+      risingGlow.addColorStop(0.46, 'rgba(188,103,223,.1)');
+      risingGlow.addColorStop(0.72, 'rgba(230,168,79,.055)');
+      risingGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      context.fillStyle = risingGlow;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      const centerColumn = context.createLinearGradient(0, canvas.height * 0.18, 0, canvas.height * 0.72);
+      centerColumn.addColorStop(0, 'rgba(90,145,255,0)');
+      centerColumn.addColorStop(0.34, 'rgba(74,203,137,.055)');
+      centerColumn.addColorStop(0.62, 'rgba(54,200,191,.145)');
+      centerColumn.addColorStop(1, 'rgba(224,109,88,.05)');
+      context.fillStyle = centerColumn;
+      context.fillRect(canvas.width * 0.33, canvas.height * 0.18, canvas.width * 0.34, canvas.height * 0.58);
+      context.globalCompositeOperation = 'source-over';
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
@@ -224,7 +244,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     backdrop.position.set(0, 5.4, -54);
     scene.add(backdrop);
 
-    const silhouetteMaterial = new THREE.MeshBasicMaterial({ color: 0x02050a, transparent: true, opacity: 0.82, depthWrite: false });
+    const silhouetteMaterial = new THREE.MeshBasicMaterial({ color: 0x02050a, transparent: true, opacity: 0.58, depthWrite: false });
     materials.push(silhouetteMaterial);
     const addSilhouette = (width: number, height: number, x: number, y: number, z: number) => {
       const geometry = new THREE.BoxGeometry(width, height, 0.18);
