@@ -98,24 +98,34 @@ export function NoteHighway({ notes, playbackMs }: Props) {
 
     const makeBeamMaterial = (color: number, opacity: number) => {
       const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 512;
+      canvas.width = 256;
+      canvas.height = 768;
       const context = canvas.getContext('2d')!;
       const cssColor = colorStyle(color);
-      const horizontal = context.createLinearGradient(0, 0, canvas.width, 0);
-      horizontal.addColorStop(0, 'rgba(255,255,255,0)');
-      horizontal.addColorStop(0.48, `${cssColor}88`);
-      horizontal.addColorStop(0.5, 'rgba(255,255,255,.38)');
-      horizontal.addColorStop(0.52, `${cssColor}88`);
-      horizontal.addColorStop(1, 'rgba(255,255,255,0)');
-      context.fillStyle = horizontal;
+      const cone = context.createRadialGradient(canvas.width / 2, 0, 4, canvas.width / 2, canvas.height * 0.62, canvas.width * 0.62);
+      cone.addColorStop(0, 'rgba(255,255,255,.34)');
+      cone.addColorStop(0.18, `${cssColor}66`);
+      cone.addColorStop(0.58, `${cssColor}20`);
+      cone.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = cone;
+      context.beginPath();
+      context.moveTo(canvas.width / 2 - 24, 0);
+      context.lineTo(canvas.width, canvas.height);
+      context.lineTo(0, canvas.height);
+      context.closePath();
+      context.fill();
+      const edge = context.createLinearGradient(0, 0, canvas.width, 0);
+      edge.addColorStop(0, 'rgba(0,0,0,0)');
+      edge.addColorStop(0.5, 'rgba(0,0,0,.95)');
+      edge.addColorStop(1, 'rgba(0,0,0,0)');
+      context.globalCompositeOperation = 'destination-in';
+      context.fillStyle = edge;
       context.fillRect(0, 0, canvas.width, canvas.height);
       const vertical = context.createLinearGradient(0, 0, 0, canvas.height);
-      vertical.addColorStop(0, 'rgba(0,0,0,.9)');
-      vertical.addColorStop(0.18, 'rgba(0,0,0,.48)');
-      vertical.addColorStop(0.58, 'rgba(0,0,0,.16)');
+      vertical.addColorStop(0, 'rgba(0,0,0,.95)');
+      vertical.addColorStop(0.32, 'rgba(0,0,0,.58)');
+      vertical.addColorStop(0.78, 'rgba(0,0,0,.16)');
       vertical.addColorStop(1, 'rgba(0,0,0,0)');
-      context.globalCompositeOperation = 'destination-in';
       context.fillStyle = vertical;
       context.fillRect(0, 0, canvas.width, canvas.height);
       const texture = new THREE.CanvasTexture(canvas);
@@ -214,7 +224,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     backdrop.position.set(0, 5.4, -54);
     scene.add(backdrop);
 
-    const silhouetteMaterial = new THREE.MeshBasicMaterial({ color: 0x02050a, transparent: true, opacity: 0.74, depthWrite: false });
+    const silhouetteMaterial = new THREE.MeshBasicMaterial({ color: 0x02050a, transparent: true, opacity: 0.82, depthWrite: false });
     materials.push(silhouetteMaterial);
     const addSilhouette = (width: number, height: number, x: number, y: number, z: number) => {
       const geometry = new THREE.BoxGeometry(width, height, 0.18);
@@ -222,19 +232,55 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const mesh = new THREE.Mesh(geometry, silhouetteMaterial);
       mesh.position.set(x, y, z);
       scene.add(mesh);
+      return mesh;
     };
-    addSilhouette(3.8, 4.8, -12.8, 1.65, -38);
-    addSilhouette(2.4, 3.3, -9.4, 1.1, -43);
-    addSilhouette(3.2, 4.4, 11.8, 1.42, -39);
-    addSilhouette(2.2, 3.1, 8.4, 1.0, -45);
-    addSilhouette(0.16, 9.2, -16.2, 3.2, -43);
-    addSilhouette(0.16, 8.7, 16.0, 3.0, -43);
+    const addAmp = (x: number, y: number, z: number, scale = 1) => {
+      addSilhouette(3.4 * scale, 3.8 * scale, x, y, z);
+      addSilhouette(3.1 * scale, 0.18 * scale, x, y + 1.1 * scale, z - 0.03);
+      addSilhouette(2.7 * scale, 0.16 * scale, x, y + 0.18 * scale, z - 0.03);
+      addSilhouette(0.16 * scale, 3.2 * scale, x - 1.15 * scale, y, z - 0.04);
+      addSilhouette(0.16 * scale, 3.2 * scale, x + 1.15 * scale, y, z - 0.04);
+    };
+    const addTruss = (x: number, z: number) => {
+      addSilhouette(0.16, 9.6, x, 3.35, z);
+      addSilhouette(0.16, 9.6, x + 0.72, 3.35, z);
+      for (let i = 0; i < 5; i++) {
+        const brace = addSilhouette(0.13, 1.05, x + 0.36, -0.5 + i * 1.75, z - 0.02);
+        brace.rotation.z = i % 2 === 0 ? 0.58 : -0.58;
+      }
+    };
+    const addDrumKit = () => {
+      const drumMaterial = silhouetteMaterial;
+      const kickGeometry = new THREE.CircleGeometry(1.0, 32);
+      geometries.push(kickGeometry);
+      const kick = new THREE.Mesh(kickGeometry, drumMaterial);
+      kick.position.set(0, 1.05, -47.5);
+      scene.add(kick);
+      const tomGeometry = new THREE.CircleGeometry(0.42, 24);
+      geometries.push(tomGeometry);
+      const leftTom = new THREE.Mesh(tomGeometry, drumMaterial);
+      leftTom.position.set(-0.9, 1.78, -47.3);
+      scene.add(leftTom);
+      const rightTom = new THREE.Mesh(tomGeometry, drumMaterial);
+      rightTom.position.set(0.92, 1.78, -47.3);
+      scene.add(rightTom);
+      addSilhouette(2.8, 0.1, 0, 2.42, -47.4);
+      addSilhouette(0.08, 1.2, -1.7, 1.85, -47.4);
+      addSilhouette(0.08, 1.2, 1.7, 1.85, -47.4);
+    };
+    addAmp(-13.0, 1.35, -38, 1.08);
+    addAmp(-9.4, 1.0, -44, 0.78);
+    addAmp(12.2, 1.3, -39, 0.98);
+    addAmp(8.4, 0.95, -45, 0.72);
+    addTruss(-16.4, -42);
+    addTruss(15.6, -42);
+    addDrumKit();
 
     const beamSpecs = [
-      { color: 0x4ce7ff, opacity: 0.18, x: -8.6, y: 6.8, z: -34, rotation: 0.38, width: 3.6, height: 15.5 },
-      { color: 0x74e6ff, opacity: 0.13, x: -1.8, y: 7.8, z: -43, rotation: 0.08, width: 4.2, height: 18 },
-      { color: 0x7e65ff, opacity: 0.16, x: 7.4, y: 6.9, z: -36, rotation: -0.34, width: 3.8, height: 15.5 },
-      { color: 0xe6a84f, opacity: 0.1, x: 12.8, y: 4.8, z: -34, rotation: -0.54, width: 2.7, height: 12.5 },
+      { color: 0x4ce7ff, opacity: 0.17, x: -8.7, y: 7.6, z: -35, rotation: 0.34, width: 6.4, height: 17.5 },
+      { color: 0x74e6ff, opacity: 0.14, x: -1.6, y: 8.2, z: -44, rotation: 0.06, width: 7.2, height: 19.5 },
+      { color: 0x7e65ff, opacity: 0.15, x: 7.3, y: 7.5, z: -36, rotation: -0.31, width: 6.5, height: 17.5 },
+      { color: 0xe6a84f, opacity: 0.085, x: 13.0, y: 5.8, z: -34, rotation: -0.48, width: 4.6, height: 14.5 },
     ];
     const lightBeams = beamSpecs.map((spec) => {
       const geometry = new THREE.PlaneGeometry(spec.width, spec.height);
@@ -338,9 +384,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const farFadeGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 4.8, 20);
     geometries.push(farFadeGeometry);
     const farFadeMaterial = new THREE.MeshBasicMaterial({
-      color: 0x05070c,
+      color: 0x071226,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.18,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
@@ -349,18 +395,18 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     farFade.rotation.x = -Math.PI / 2;
     farFade.position.set(0, 0.12, -42);
     scene.add(farFade);
-    const horizonMistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 10, 8);
+    const horizonMistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 18, 10);
     geometries.push(horizonMistGeometry);
     const horizonMistMaterial = new THREE.MeshBasicMaterial({
-      color: 0x071027,
+      color: 0x0b1e3a,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.18,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
     materials.push(horizonMistMaterial);
     const horizonMist = new THREE.Mesh(horizonMistGeometry, horizonMistMaterial);
-    horizonMist.position.set(0, 3.6, -46);
+    horizonMist.position.set(0, 2.9, -43);
     scene.add(horizonMist);
 
     const textMaterials = new Map<string, THREE.SpriteMaterial>();

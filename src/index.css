@@ -895,3 +895,21 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     linear-gradient(180deg, rgba(255,255,255,.018) 0 100%);
   background-size: 7px 7px, 11px 11px, 100% 100%, 100% 100%;
 }
+
+/* Practice background concert-stage pass */
+.note-highway::before {
+  background:
+    radial-gradient(ellipse at 50% 21%, rgba(54, 135, 255, .2), transparent 23%),
+    radial-gradient(ellipse at 50% 46%, rgba(59, 174, 255, .09), transparent 32%),
+    radial-gradient(ellipse at 50% 57%, rgba(8, 25, 54, .36), transparent 26%),
+    linear-gradient(180deg, rgba(0, 36, 96, .15) 0%, transparent 42%, transparent 100%);
+}
+.note-highway::after {
+  opacity: .18;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, .04) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 72% 48%, rgba(255, 255, 255, .03) 0 1px, transparent 1.9px),
+    radial-gradient(ellipse at 50% 51%, transparent 0 34%, rgba(0,0,0,.18) 68%, rgba(0,0,0,.5) 100%),
+    linear-gradient(180deg, rgba(255,255,255,.016) 0 100%);
+  background-size: 7px 7px, 11px 11px, 100% 100%, 100% 100%;
+}
