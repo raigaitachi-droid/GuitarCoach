@@ -934,3 +934,237 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     inset 0 1px 0 rgba(255,255,255,.09),
     inset 0 0 30px rgba(99, 177, 255, .08);
 }
+
+/* Practice top bar premium glass pass */
+.practice-screen {
+  --practice-glass-bg: rgba(255, 255, 255, .075);
+  --practice-glass-bg-hover: rgba(255, 255, 255, .115);
+  --practice-glass-border: rgba(255, 255, 255, .12);
+  --practice-glass-highlight: rgba(255, 255, 255, .16);
+  --practice-accent: #20d6c3;
+  --practice-accent-soft: rgba(32, 214, 195, .34);
+  --practice-radius: 18px;
+  --practice-text: rgba(241, 250, 255, .94);
+  --practice-muted: rgba(194, 214, 222, .72);
+}
+
+.practice-header {
+  top: 20px;
+  align-items: flex-start;
+}
+
+.wordmark {
+  color: rgba(156, 211, 222, .76);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .65), 0 0 18px rgba(76, 224, 232, .18);
+}
+
+.practice-header h1 {
+  color: var(--practice-text);
+  font-size: 21px;
+  font-weight: 620;
+  letter-spacing: -.015em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .68), 0 0 24px rgba(99, 216, 255, .14);
+}
+
+.practice-header .text-button,
+.loop-range .text-button {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: rgba(225, 247, 255, .82);
+  padding: 6px 1px;
+  border-radius: 0;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .72);
+  transition: color .16s ease, opacity .16s ease, text-shadow .16s ease;
+}
+
+.practice-header .text-button::after,
+.loop-range .text-button::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(102, 245, 232, .7), transparent);
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.practice-header .text-button:hover,
+.loop-range .text-button:hover,
+.practice-header .text-button:focus-visible,
+.loop-range .text-button:focus-visible {
+  color: #f6feff;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .72), 0 0 18px rgba(48, 225, 209, .28);
+}
+
+.practice-header .text-button:hover::after,
+.loop-range .text-button:hover::after,
+.practice-header .text-button:focus-visible::after,
+.loop-range .text-button:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.practice-controls {
+  top: 88px;
+  gap: 12px;
+  color: var(--practice-muted);
+}
+
+.practice-controls .primary-button,
+.practice-controls .toggle-button,
+.practice-controls .tempo-step,
+.practice-controls .tempo-control input {
+  border: 1px solid var(--practice-glass-border);
+  border-radius: var(--practice-radius);
+  background:
+    linear-gradient(180deg, var(--practice-glass-highlight), rgba(255,255,255,0) 1px),
+    var(--practice-glass-bg);
+  color: var(--practice-text);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 12px 34px rgba(0, 0, 0, .18),
+    0 0 0 1px rgba(0, 0, 0, .06);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, color .16s ease, opacity .16s ease, transform .16s ease;
+}
+
+.practice-controls .primary-button:hover,
+.practice-controls .toggle-button:hover,
+.practice-controls .tempo-step:hover,
+.practice-controls .tempo-control input:hover,
+.practice-controls .primary-button:focus-visible,
+.practice-controls .toggle-button:focus-visible,
+.practice-controls .tempo-step:focus-visible,
+.practice-controls .tempo-control input:focus-visible {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,0) 1px),
+    var(--practice-glass-bg-hover);
+  border-color: rgba(255, 255, 255, .18);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.12),
+    0 14px 38px rgba(0, 0, 0, .22),
+    0 0 22px rgba(32, 214, 195, .08);
+}
+
+.practice-controls .primary-button:focus-visible,
+.practice-controls .toggle-button:focus-visible,
+.practice-controls .tempo-step:focus-visible,
+.practice-controls .tempo-control input:focus-visible {
+  outline: 1px solid rgba(106, 255, 239, .56);
+  outline-offset: 3px;
+}
+
+.play-button {
+  min-width: 88px;
+  padding: 10px 21px;
+  font-weight: 620;
+}
+
+.practice-controls .play-button:not(:disabled) {
+  color: #eafffb;
+  border-color: rgba(91, 255, 230, .22);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,0) 1px),
+    rgba(32, 214, 195, .12);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.12),
+    0 0 30px rgba(32, 214, 195, .18),
+    0 12px 34px rgba(0, 0, 0, .2);
+}
+
+.tempo-control {
+  gap: 10px;
+  color: var(--practice-muted);
+  font-size: 14px;
+}
+
+.tempo-control span {
+  color: rgba(214, 232, 237, .76);
+}
+
+.tempo-step {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(232, 254, 255, .86);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.tempo-control input {
+  width: 68px;
+  padding: 10px 8px;
+  text-align: center;
+  font: 600 14px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+.tempo-control input::-webkit-outer-spin-button,
+.tempo-control input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.toggle-button {
+  padding: 10px 16px;
+  font-weight: 520;
+  color: rgba(218, 234, 239, .72);
+}
+
+.toggle-button span {
+  color: rgba(183, 202, 208, .52);
+}
+
+.toggle-button[aria-pressed="true"] {
+  color: #edfffc;
+  border-color: rgba(91, 255, 230, .24);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,0) 1px),
+    rgba(32, 214, 195, .13);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.12),
+    0 0 28px rgba(32, 214, 195, .2),
+    0 12px 34px rgba(0, 0, 0, .2);
+}
+
+.toggle-button[aria-pressed="true"] span {
+  color: #9ffcf1;
+  text-shadow: 0 0 14px rgba(32, 214, 195, .36);
+}
+
+.loop-range {
+  color: rgba(194, 214, 222, .62);
+}
+
+.bar-position {
+  color: rgba(228, 249, 255, .86);
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .68), 0 0 16px rgba(77, 220, 255, .12);
+}
+
+.practice-status {
+  top: 135px;
+  color: rgba(202, 220, 226, .72);
+  font-size: 13px;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .72);
+}
+
+.detector-readout {
+  color: rgba(169, 205, 180, .68);
+}
+
+.timing-feedback {
+  color: rgba(213, 204, 184, .68);
+}
