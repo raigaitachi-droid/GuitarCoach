@@ -128,9 +128,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const hitGlow = box(HIGHWAY_WIDTH + 1.1, 0.018, 0.66, 0xafffff, 0, 0.045, HIT_Z);
     const hitGlowMaterial = hitGlow.material as THREE.MeshStandardMaterial;
     hitGlowMaterial.transparent = true;
-    hitGlowMaterial.opacity = 0.62;
+    hitGlowMaterial.opacity = 0.24;
     hitGlowMaterial.emissive = new THREE.Color(0xffffff);
-    hitGlowMaterial.emissiveIntensity = 4.2;
+    hitGlowMaterial.emissiveIntensity = 1.8;
 
     const farFadeGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 4.8, 20);
     geometries.push(farFadeGeometry);
@@ -195,12 +195,15 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         context.fillRect(x, y, 1.5, 1.5);
       }
       context.globalAlpha = 1;
-      context.shadowColor = 'rgba(0,0,0,.7)';
-      context.shadowBlur = 3;
-      context.fillStyle = '#ffffff';
-      context.font = 'bold ' + (text.length < 3 ? 66 : 46) + 'px monospace';
+      context.shadowBlur = 0;
+      context.font = 'bold ' + (text.length < 3 ? 68 : 48) + 'px monospace';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
+      context.lineJoin = 'round';
+      context.lineWidth = text.length < 3 ? 9 : 7;
+      context.strokeStyle = 'rgba(0,0,0,.78)';
+      context.strokeText(text, 128, 66);
+      context.fillStyle = '#ffffff';
       context.fillText(text, 128, 66);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -223,20 +226,13 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       pad.scale.set(1.8, 0.9, 1);
       scene.add(pad);
       padLabels.set(string, pad);
-      plane(1.75, 1.75, COLORS[laneIndex], highwayLaneX(string), 0.02, HIT_Z + 0.38, 0.26);
+      plane(1.38, 1.38, COLORS[laneIndex], highwayLaneX(string), -0.005, HIT_Z + 0.38, 0.12);
     }
 
     // Share geometry and cache fret textures; create objects only in the visible
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
-    const noteHaloGeometry = new THREE.BoxGeometry(1.78, 0.04, 1.02);
-    const noteShadowGeometry = new THREE.PlaneGeometry(1.68, 0.74);
-    geometries.push(noteHaloGeometry);
+    const noteShadowGeometry = new THREE.PlaneGeometry(1.62, 0.7);
     geometries.push(noteShadowGeometry);
-    const haloMaterials = COLORS.map((color) => {
-      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.42, depthWrite: false });
-      materials.push(material);
-      return material;
-    });
     const shadowMaterials = COLORS.map((color) => {
       const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide });
       material.blending = THREE.AdditiveBlending;
@@ -310,9 +306,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           shadow.position.z = 0.18;
           shadow.scale.set(1.06, 1.18, 1);
           group.add(shadow);
-          const halo = new THREE.Mesh(noteHaloGeometry, haloMaterials[laneIndex]);
-          halo.position.y = -0.14;
-          group.add(halo);
           const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note'));
           badge.position.y = 0.55;
           badge.scale.set(1.68, 0.74, 1);
