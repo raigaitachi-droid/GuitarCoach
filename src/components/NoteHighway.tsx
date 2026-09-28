@@ -54,8 +54,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.24, 0.1, 0.78);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
-    camera.position.set(0, 3.34, 3.55);
-    camera.lookAt(0, -0.2, -23);
+    camera.position.set(0, 3.48, 3.48);
+    camera.lookAt(0, -0.24, -24);
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
     const textures: THREE.Texture[] = [];
@@ -170,7 +170,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const centerY = canvas.height / 2;
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.shadowColor = cssColor;
-      context.shadowBlur = isPad ? 22 : 26;
+      context.shadowBlur = isPad ? 28 : 26;
       context.fillStyle = cssColor;
       context.beginPath();
       if (isPad) context.roundRect(44, 56, 104, 80, 40);
@@ -178,7 +178,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       context.fill();
       context.shadowBlur = 0;
       const centerGlow = context.createRadialGradient(centerX, centerY, 8, centerX, centerY, isPad ? 62 : 86);
-      centerGlow.addColorStop(0, isPad ? 'rgba(255,255,255,.035)' : 'rgba(255,255,255,.14)');
+      centerGlow.addColorStop(0, isPad ? 'rgba(255,255,255,.025)' : 'rgba(255,255,255,.14)');
       centerGlow.addColorStop(.5, isPad ? 'rgba(255,255,255,.012)' : 'rgba(255,255,255,.045)');
       centerGlow.addColorStop(1, 'rgba(0,0,0,.08)');
       context.fillStyle = centerGlow;
@@ -187,11 +187,11 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       else context.roundRect(58, 24, 140, 80, 40);
       context.fill();
       if (isPad) {
-        context.globalAlpha = 0.72;
+        context.globalAlpha = 0.82;
         context.lineWidth = 4;
         context.strokeStyle = cssColor;
         context.shadowColor = cssColor;
-        context.shadowBlur = 14;
+        context.shadowBlur = 18;
         context.beginPath();
         context.roundRect(44, 56, 104, 80, 40);
         context.stroke();
@@ -222,7 +222,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const material = new THREE.SpriteMaterial({
         map: texture,
         transparent: true,
-        opacity: shape === 'pad' ? 0.82 : 1,
+        opacity: shape === 'pad' ? 0.9 : 1,
         depthTest: false,
         fog: false,
         blending: shape === 'pad' ? THREE.NormalBlending : THREE.AdditiveBlending,
@@ -233,14 +233,12 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     };
     const textMaterials = new Map<string, THREE.SpriteMaterial>();
 
-    const pulseGeometry = new THREE.RingGeometry(0.5, 0.86, 64);
-    geometries.push(pulseGeometry);
     const padLabels = new Map<number, THREE.Sprite>();
     for (let string = 6; string >= 1; string--) {
       const laneIndex = LANE_COUNT - string;
       const pad = new THREE.Sprite(makeBadgeMaterial('0', COLORS[laneIndex], 'pad'));
       pad.position.set(highwayLaneX(string), 0.72, TARGET_Z);
-      pad.scale.set(1.22, 0.94, 1);
+      pad.scale.set(1.34, 1.02, 1);
       scene.add(pad);
       padLabels.set(string, pad);
     }
@@ -249,7 +247,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
     const active = new Map<TabNote, THREE.Group>();
     const hitNotes = new Set<string>();
-    const pulses: Array<{ mesh: THREE.Mesh; bornAt: number; string: number }> = [];
     const padHits = new Map<number, number>();
     let previousPlaybackMs = playbackMs;
     let frame = 0;
@@ -274,7 +271,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       if (current.playbackMs < previousPlaybackMs - 100) {
         hitNotes.clear();
         padHits.clear();
-        pulses.splice(0).forEach(({ mesh }) => scene.remove(mesh));
       }
       const playbackAdvanced = current.playbackMs > previousPlaybackMs;
       const visible = new Set<TabNote>();
@@ -288,20 +284,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         }
         if (playbackAdvanced && note.timestampMs > previousPlaybackMs && note.timestampMs <= current.playbackMs + HIT_WINDOW_MS && !hitNotes.has(note.id)) {
           hitNotes.add(note.id);
-          const laneIndex = LANE_COUNT - note.string;
-          const pulseMaterial = new THREE.MeshBasicMaterial({
-            color: COLORS[laneIndex],
-            transparent: true,
-            opacity: 0.72,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-          });
-          materials.push(pulseMaterial);
-          const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial);
-          pulse.rotation.x = -Math.PI / 2;
-          pulse.position.set(highwayLaneX(note.string), 0.2, TARGET_Z);
-          scene.add(pulse);
-          pulses.push({ mesh: pulse, bornAt: current.playbackMs, string: note.string });
           const pad = padLabels.get(note.string);
           if (pad) {
             pad.material.opacity = 1;
@@ -331,27 +313,11 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           const hitAge = current.playbackMs - (padHits.get(string) ?? -1000);
           const hitProgress = THREE.MathUtils.clamp(hitAge / 260, 0, 1);
           const hitPulse = hitAge >= 0 && hitAge < 260 ? Math.sin((1 - hitProgress) * Math.PI) : 0;
-          const target = playbackAdvanced ? 0.82 + hitPulse * 0.18 : 0.76;
+          const target = playbackAdvanced ? 0.9 + hitPulse * 0.1 : 0.82;
           label.material.opacity = THREE.MathUtils.lerp(label.material.opacity, target, 0.16);
-          const scalePulse = 1 + hitPulse * 0.38;
-          label.scale.set(1.22 * scalePulse, 0.94 * scalePulse, 1);
+          const scalePulse = 1 + hitPulse * 0.34;
+          label.scale.set(1.34 * scalePulse, 1.02 * scalePulse, 1);
         }
-      }
-      for (let i = pulses.length - 1; i >= 0; i--) {
-        const pulse = pulses[i];
-        const age = current.playbackMs - pulse.bornAt;
-        const progress = age / 480;
-        if (progress >= 1 || progress < -0.1) {
-          scene.remove(pulse.mesh);
-          (pulse.mesh.material as THREE.Material).dispose();
-          pulses.splice(i, 1);
-          continue;
-        }
-        const scale = 0.72 + progress * 1.9;
-        pulse.mesh.scale.set(scale, scale, 1);
-        const material = pulse.mesh.material as THREE.MeshBasicMaterial;
-        material.opacity = (1 - progress) * 0.72;
-        pulse.mesh.position.y = 0.28 + progress * 0.08;
       }
       for (const [note, group] of active) {
         if (!visible.has(note)) { scene.remove(group); active.delete(note); }
