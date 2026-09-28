@@ -27,6 +27,12 @@ const PAD_REFLECTION_OPACITY = 0.2;
 const NOTE_CONTACT_OPACITY = 0.22;
 const DUST_PARTICLE_COUNT = 28;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
+const colorRgba = (color: number, alpha: number) => {
+  const red = (color >> 16) & 255;
+  const green = (color >> 8) & 255;
+  const blue = color & 255;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+};
 const FRET_DIGIT_FONT = '"Inter", "Manrope", "Space Grotesk", "Aptos", "Segoe UI", system-ui, sans-serif';
 const TABULAR_DIGITS = '0123456789';
 const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string, x: number, y: number) => {
@@ -449,56 +455,130 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const centerY = canvas.height / 2;
       context.clearRect(0, 0, canvas.width, canvas.height);
 
+      const drawNotePath = () => {
+        context.beginPath();
+        context.roundRect(66, 28, 156, 88, 44);
+      };
+      const drawPadPath = (radius: number) => {
+        context.beginPath();
+        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      };
+      const noiseSeed = (color % 997) + text.length * 29 + (isPad ? 83 : 0);
+
       if (isPad) {
-        const innerTint = context.createRadialGradient(centerX, centerY, 10, centerX, centerY, 62);
-        innerTint.addColorStop(0, `${cssColor}18`);
-        innerTint.addColorStop(0.58, `${cssColor}10`);
+        const innerTint = context.createRadialGradient(centerX - 5, centerY - 7, 8, centerX, centerY, 68);
+        innerTint.addColorStop(0, colorRgba(color, 0.16));
+        innerTint.addColorStop(0.52, colorRgba(color, 0.07));
         innerTint.addColorStop(1, 'rgba(255,255,255,0)');
         context.fillStyle = innerTint;
-        context.beginPath();
-        context.arc(centerX, centerY, 60, 0, Math.PI * 2);
+        drawPadPath(62);
         context.fill();
 
-        context.lineWidth = 12;
-        context.strokeStyle = cssColor;
-        context.shadowColor = cssColor;
-        context.shadowBlur = 28;
-        context.beginPath();
-        context.arc(centerX, centerY, 56, 0, Math.PI * 2);
-        context.stroke();
+        for (const layer of [
+          { width: 24, alpha: 0.12, blur: 36, radius: 55 },
+          { width: 16, alpha: 0.28, blur: 22, radius: 55 },
+          { width: 9, alpha: 0.58, blur: 10, radius: 55 },
+        ]) {
+          context.save();
+          context.globalAlpha = layer.alpha;
+          context.strokeStyle = cssColor;
+          context.lineWidth = layer.width;
+          context.shadowColor = cssColor;
+          context.shadowBlur = layer.blur;
+          drawPadPath(layer.radius);
+          context.stroke();
+          context.restore();
+        }
 
-        context.lineWidth = 3;
-        context.strokeStyle = 'rgba(255,255,255,.74)';
-        context.shadowBlur = 0;
-        context.beginPath();
-        context.arc(centerX, centerY, 56, 0, Math.PI * 2);
-        context.stroke();
-      } else {
+        context.save();
+        context.lineCap = 'round';
+        context.lineWidth = 4;
         context.shadowColor = cssColor;
-        context.shadowBlur = 22;
+        context.shadowBlur = 8;
+        for (let i = 0; i < 9; i++) {
+          const start = ((noiseSeed + i * 37) % 360) * Math.PI / 180;
+          const length = (18 + ((noiseSeed + i * 19) % 32)) * Math.PI / 180;
+          context.globalAlpha = 0.12 + ((i % 3) * 0.04);
+          context.strokeStyle = i % 4 === 0 ? 'rgba(255,255,255,.68)' : cssColor;
+          context.beginPath();
+          context.arc(centerX, centerY, 55 + (i % 2) * 1.6, start, start + length);
+          context.stroke();
+        }
+        context.restore();
+
+        context.save();
+        context.globalAlpha = 0.18;
         context.fillStyle = cssColor;
-        context.beginPath();
-        context.roundRect(66, 28, 156, 88, 44);
-        context.fill();
-        context.shadowBlur = 0;
+        drawPadPath(50);
+        context.clip();
+        for (let i = 0; i < 34; i++) {
+          const x = centerX - 48 + ((noiseSeed + i * 47) % 96);
+          const y = centerY - 48 + ((noiseSeed + i * 31) % 96);
+          context.globalAlpha = 0.025 + (i % 4) * 0.012;
+          context.fillRect(x, y, 1 + (i % 3) * 0.35, 1 + (i % 2) * 0.35);
+        }
+        context.restore();
+      } else {
+        for (const layer of [
+          { alpha: 0.16, blur: 42, dx: -3, dy: 4 },
+          { alpha: 0.25, blur: 25, dx: 4, dy: -2 },
+          { alpha: 0.52, blur: 12, dx: 0, dy: 0 },
+        ]) {
+          context.save();
+          context.globalAlpha = layer.alpha;
+          context.shadowColor = cssColor;
+          context.shadowBlur = layer.blur;
+          context.fillStyle = cssColor;
+          context.translate(layer.dx, layer.dy);
+          drawNotePath();
+          context.fill();
+          context.restore();
+        }
 
-        const centerGlow = context.createRadialGradient(centerX, centerY, 8, centerX, centerY, 92);
-        centerGlow.addColorStop(0, 'rgba(255,255,255,.07)');
-        centerGlow.addColorStop(.54, 'rgba(255,255,255,.022)');
-        centerGlow.addColorStop(1, 'rgba(0,0,0,.1)');
-        context.fillStyle = centerGlow;
-        context.beginPath();
-        context.roundRect(66, 28, 156, 88, 44);
+        const body = context.createRadialGradient(centerX - 24, centerY - 18, 12, centerX, centerY, 95);
+        body.addColorStop(0, colorRgba(color, 0.95));
+        body.addColorStop(0.42, colorRgba(color, 0.82));
+        body.addColorStop(0.76, colorRgba(color, 0.72));
+        body.addColorStop(1, colorRgba(color, 0.58));
+        context.fillStyle = body;
+        drawNotePath();
         context.fill();
+
+        context.save();
+        drawNotePath();
+        context.clip();
+        const unevenLight = context.createLinearGradient(66, 28, 222, 116);
+        unevenLight.addColorStop(0, 'rgba(255,255,255,.18)');
+        unevenLight.addColorStop(0.36, 'rgba(255,255,255,.045)');
+        unevenLight.addColorStop(0.62, 'rgba(0,0,0,.03)');
+        unevenLight.addColorStop(1, 'rgba(0,0,0,.13)');
+        context.fillStyle = unevenLight;
+        context.fillRect(66, 28, 156, 88);
+        context.fillStyle = cssColor;
+        for (let i = 0; i < 42; i++) {
+          const x = 72 + ((noiseSeed + i * 41) % 144);
+          const y = 34 + ((noiseSeed + i * 23) % 76);
+          context.globalAlpha = 0.025 + (i % 5) * 0.009;
+          context.fillRect(x, y, 1 + (i % 3) * 0.45, 1 + (i % 2) * 0.4);
+        }
+        context.restore();
+
+        for (const rim of [
+          { width: 8, alpha: 0.2, blur: 9, color: cssColor },
+          { width: 3, alpha: 0.35, blur: 5, color: 'rgba(255,255,255,.72)' },
+        ]) {
+          context.save();
+          context.globalAlpha = rim.alpha;
+          context.strokeStyle = rim.color;
+          context.lineWidth = rim.width;
+          context.shadowColor = cssColor;
+          context.shadowBlur = rim.blur;
+          drawNotePath();
+          context.stroke();
+          context.restore();
+        }
       }
 
-      context.globalAlpha = isPad ? 0.1 : 0.12;
-      context.fillStyle = cssColor;
-      for (let i = 0; i < 24; i++) {
-        const x = (isPad ? 54 : 70) + ((i * 47) % (isPad ? 112 : 150));
-        const y = (isPad ? 54 : 38) + ((i * 29) % (isPad ? 112 : 68));
-        context.fillRect(x, y, 1.4, 1.4);
-      }
       context.globalAlpha = 1;
 
       context.font = '750 ' + (isPad ? 72 : (text.length < 3 ? 68 : 50)) + 'px ' + FRET_DIGIT_FONT;
