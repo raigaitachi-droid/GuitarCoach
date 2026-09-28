@@ -39,7 +39,7 @@ export function StartScreen({ song, loading, busy, error, devices, deviceId, onD
               onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
               onDragLeave={() => setDragging(false)}
               onDrop={(event) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file && !disabled) onFile(file); }}>
-              <span className="drop-icon" aria-hidden="true" />
+              <svg className="drop-icon" aria-hidden="true" viewBox="0 0 32 32" fill="none"><path d="M9 5h10l5 5v17H9V5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/><path d="M19 5v6h5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/><path d="M22 21h7M25.5 17.5v7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/></svg>
               <span className="drop-title">{loading ? 'Loading your tab...' : 'Load Guitar Pro Tab'}</span>
             </button>
             <button className="secondary-button demo-button" disabled={disabled} onClick={onDemo}>Try demo song</button>
