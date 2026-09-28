@@ -15,7 +15,7 @@ const COLORS = [0xe6a84f, 0x36c8bf, 0xe06d58, 0x8a9bff, 0x4acb89, 0xbc67df];
 const LANE_COUNT = 6;
 const HIGHWAY_WIDTH = 14.2;
 const HIT_Z = -2.75;
-const TARGET_Z = HIT_Z - 0.72;
+const TARGET_Z = HIT_Z - 2.35;
 const HIT_WINDOW_MS = 90;
 const STRING_PULSE_COUNT = 18;
 const STRING_PULSE_TRAVEL_MS = 2300;
@@ -24,6 +24,7 @@ const STRING_PULSE_SPACING_MS = 420;
 const PAD_BASE_SCALE = 1.18;
 const FLOOR_REFLECTION_OPACITY = 0.18;
 const PAD_REFLECTION_OPACITY = 0.34;
+const NOTE_CONTACT_OPACITY = 0.22;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
 
 export function NoteHighway({ notes, playbackMs }: Props) {
@@ -58,11 +59,11 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 90);
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.24, 0.1, 0.78);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.3, 0.12, 0.8);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
-    camera.position.set(0, 3.48, 3.48);
-    camera.lookAt(0, -0.24, -24);
+    camera.position.set(0, 3.12, 4.72);
+    camera.lookAt(0, -0.18, -25.5);
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
     const textures: THREE.Texture[] = [];
@@ -186,11 +187,20 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       plane(HIGHWAY_WIDTH - 3.3, 0.016, 0x5a7890, 0, -0.065, z, i === 0 ? 0.035 : 0.055);
     }
     for (let string = 6; string >= 1; string--) {
-      const rail = box(0.055, 0.055, HIGHWAY_LENGTH + 5, COLORS[6 - string], highwayLaneX(string), 0.03, -HIGHWAY_LENGTH / 2 + 1);
+      const laneIndex = 6 - string;
+      const x = highwayLaneX(string);
+      const railGlow = box(0.13, 0.045, HIGHWAY_LENGTH + 5, COLORS[laneIndex], x, 0.018, -HIGHWAY_LENGTH / 2 + 1);
+      const railGlowMaterial = railGlow.material as THREE.MeshStandardMaterial;
+      railGlowMaterial.transparent = true;
+      railGlowMaterial.opacity = 0.42;
+      railGlowMaterial.emissive = new THREE.Color(COLORS[laneIndex]);
+      railGlowMaterial.emissiveIntensity = 1.3;
+      const rail = box(0.032, 0.032, HIGHWAY_LENGTH + 5, 0xf4fbff, x, 0.055, -HIGHWAY_LENGTH / 2 + 1);
       const railMaterial = rail.material as THREE.MeshStandardMaterial;
-      railMaterial.emissive = new THREE.Color(COLORS[6 - string]);
-      railMaterial.emissiveIntensity = 2.35;
-      plane(0.34, HIGHWAY_LENGTH + 5, COLORS[6 - string], highwayLaneX(string), -0.04, -HIGHWAY_LENGTH / 2 + 1, 0.38);
+      railMaterial.color = new THREE.Color(0xf4fbff).lerp(new THREE.Color(COLORS[laneIndex]), 0.42);
+      railMaterial.emissive = new THREE.Color(COLORS[laneIndex]);
+      railMaterial.emissiveIntensity = 3.15;
+      plane(0.34, HIGHWAY_LENGTH + 5, COLORS[laneIndex], x, -0.04, -HIGHWAY_LENGTH / 2 + 1, 0.3);
     }
     for (const x of [-HIGHWAY_WIDTH / 2, HIGHWAY_WIDTH / 2]) {
       const rail = box(0.045, 0.085, HIGHWAY_LENGTH + 7, 0x4ca8c5, x, 0.025, -HIGHWAY_LENGTH / 2 + 1);
@@ -255,8 +265,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       context.fill();
       context.shadowBlur = 0;
       const centerGlow = context.createRadialGradient(centerX, centerY, 8, centerX, centerY, isPad ? 62 : 86);
-      centerGlow.addColorStop(0, isPad ? 'rgba(255,255,255,.025)' : 'rgba(255,255,255,.14)');
-      centerGlow.addColorStop(.5, isPad ? 'rgba(255,255,255,.012)' : 'rgba(255,255,255,.045)');
+      centerGlow.addColorStop(0, isPad ? 'rgba(255,255,255,.025)' : 'rgba(255,255,255,.09)');
+      centerGlow.addColorStop(.5, isPad ? 'rgba(255,255,255,.012)' : 'rgba(255,255,255,.03)');
       centerGlow.addColorStop(1, 'rgba(0,0,0,.08)');
       context.fillStyle = centerGlow;
       context.beginPath();
@@ -288,8 +298,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.lineJoin = 'round';
-        context.lineWidth = text.length < 3 ? 9 : 7;
-        context.strokeStyle = 'rgba(0,0,0,.82)';
+        context.lineWidth = text.length < 3 ? 11 : 8;
+        context.strokeStyle = 'rgba(0,0,0,.9)';
         context.strokeText(text, centerX, centerY);
         context.fillStyle = '#ffffff';
         context.fillText(text, centerX, centerY);
@@ -344,6 +354,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
 
     const padLabels = new Map<number, THREE.Sprite>();
     const padReflections = new Map<number, THREE.MeshBasicMaterial>();
+    const noteContacts = new Map<TabNote, THREE.MeshBasicMaterial>();
     for (let string = 6; string >= 1; string--) {
       const laneIndex = LANE_COUNT - string;
       const pad = new THREE.Sprite(makeBadgeMaterial('', COLORS[laneIndex], 'pad'));
@@ -420,15 +431,30 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           group = new THREE.Group();
           const laneIndex = LANE_COUNT - note.string;
           const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note'));
-          badge.position.y = 0.55;
-          badge.scale.set(1.36, 0.82, 1);
+          badge.position.y = 0.62;
+          badge.scale.set(1.28, 0.76, 1);
           group.add(badge);
+          const contactGeometry = new THREE.PlaneGeometry(1.42, 0.72);
+          geometries.push(contactGeometry);
+          const contactMaterial = makeFloorGlowMaterial(COLORS[laneIndex], NOTE_CONTACT_OPACITY, false);
+          const contact = new THREE.Mesh(contactGeometry, contactMaterial);
+          contact.rotation.x = -Math.PI / 2;
+          group.add(contact);
+          noteContacts.set(note, contactMaterial);
           scene.add(group);
           active.set(note, group);
         }
         const noteZ = highwayNoteZ(note.timestampMs, current.playbackMs) + TARGET_Z;
         const depthLift = THREE.MathUtils.clamp((noteZ - TARGET_Z) / 34, 0, 1) * 0.54;
-        group.position.set(highwayLaneX(note.string), 0.22 + depthLift, noteZ);
+        const noteY = 0.22 + depthLift;
+        group.position.set(highwayLaneX(note.string), noteY, noteZ);
+        const contact = group.children[1];
+        if (contact) contact.position.y = -noteY - 0.355;
+        const contactMaterial = noteContacts.get(note);
+        if (contactMaterial) {
+          const near = 1 - THREE.MathUtils.clamp((TARGET_Z - noteZ) / HIGHWAY_LENGTH, 0, 1);
+          contactMaterial.opacity = NOTE_CONTACT_OPACITY * THREE.MathUtils.clamp(near, 0.16, 1);
+        }
       }
       for (let string = 1; string <= 6; string++) {
         const label = padLabels.get(string);
@@ -464,7 +490,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         pulse.sprite.scale.set(width, length, 1);
       }
       for (const [note, group] of active) {
-        if (!visible.has(note)) { scene.remove(group); active.delete(note); }
+        if (!visible.has(note)) { scene.remove(group); active.delete(note); noteContacts.delete(note); }
       }
       composer.render();
       previousPlaybackMs = current.playbackMs;

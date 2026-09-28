@@ -845,3 +845,36 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
 }
 .format-note { font-size: 15px; }
 .start-card .privacy-note { font-size: 14px; }
+
+/* Practice scene cohesion pass */
+.practice-views::after {
+  height: calc(18dvh + 36px);
+  background: linear-gradient(180deg, transparent 0%, rgba(3, 8, 18, .42) 20%, rgba(2, 6, 14, .78) 100%);
+}
+.practice-views .tab-surface {
+  left: 10px;
+  right: 10px;
+  bottom: 24px;
+  height: 18.5dvh;
+  min-height: 178px;
+  border-color: rgba(125, 205, 255, .34);
+  background: linear-gradient(180deg, rgba(5, 16, 32, .68), rgba(3, 8, 20, .52));
+  box-shadow:
+    0 0 30px rgba(35, 132, 255, .22),
+    0 0 12px rgba(121, 0, 255, .16),
+    inset 0 1px 0 rgba(255,255,255,.09),
+    inset 0 0 30px rgba(99, 177, 255, .08);
+  backdrop-filter: blur(20px) saturate(1.18);
+}
+.practice-views .tab-surface canvas { opacity: .9; }
+.note-highway {
+  background:
+    radial-gradient(circle at 10% 18%, rgba(255, 111, 0, .72) 0 7px, transparent 40px),
+    radial-gradient(circle at 22% 0%, rgba(0, 129, 255, .72) 0 9px, rgba(0, 129, 255, .2) 54px, transparent 180px),
+    radial-gradient(circle at 50% -2%, rgba(95, 232, 255, .78) 0 11px, rgba(95, 232, 255, .22) 72px, transparent 220px),
+    radial-gradient(circle at 78% 0%, rgba(0, 129, 255, .7) 0 9px, rgba(0, 129, 255, .18) 56px, transparent 180px),
+    radial-gradient(circle at 92% 18%, rgba(255, 111, 0, .7) 0 7px, transparent 40px),
+    linear-gradient(105deg, transparent 0 12%, rgba(0, 97, 255, .18) 20%, transparent 33%),
+    linear-gradient(75deg, transparent 0 60%, rgba(255, 71, 0, .16) 72%, transparent 90%),
+    linear-gradient(180deg, #02030a 0%, #070820 38%, #100611 64%, #040507 100%);
+}
