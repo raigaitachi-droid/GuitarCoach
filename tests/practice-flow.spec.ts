@@ -1,4 +1,4 @@
-import { expect, Page, test } from '@playwright/test';
+﻿import { expect, Page, test } from '@playwright/test';
 import * as alphaTab from '@coderline/alphatab';
 
 function guitarProFile() {
@@ -66,7 +66,7 @@ test('minimal start, demo, pause, result, replay, and new tab', async ({ page })
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'GuitarCoach' })).toBeVisible();
-  await expect(page.getByRole('button')).toHaveCount(3);
+  await expect(page.getByRole('button')).toHaveCount(2);
   await page.getByRole('button', { name: 'Try demo song' }).click();
   await page.getByRole('button', { name: 'Continue without audio' }).click();
   await expect(page.getByRole('img', { name: /Scrolling guitar tablature/ })).toBeVisible();
@@ -92,7 +92,7 @@ test('file errors recover; a real GP file reaches natural completion', async ({ 
   await page.getByLabel('Guitar Pro file').setInputFiles({ name: 'bad.txt', mimeType: 'text/plain', buffer: Buffer.from('not a tab') });
   await expect(page.getByRole('alert')).toContainText('Choose a Guitar Pro file');
   await page.getByLabel('Guitar Pro file').setInputFiles({ name: 'bad.gp', mimeType: 'application/octet-stream', buffer: Buffer.from('not a tab') });
-  await expect(page.getByRole('alert')).toContainText('We couldn’t open that tab');
+  await expect(page.getByRole('alert')).toContainText('We couldnвЂ™t open that tab');
   await loadRiff(page);
   await page.getByRole('button', { name: 'Continue without audio' }).click();
   await expect(page.getByRole('heading', { name: 'Test riff' })).toBeVisible();
@@ -176,12 +176,12 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   const waitingPosition = await page.getByRole('progressbar').getAttribute('value');
   await page.evaluate(() => (window as any).testGuitar.pluck(41));
-  await expect(page.getByRole('status')).toContainText('Wrong note · play E2');
+  await expect(page.getByRole('status')).toContainText('Wrong note В· play E2');
   await page.waitForTimeout(250);
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', waitingPosition!);
   await page.evaluate(() => (window as any).testGuitar.pluck(40));
   await expect(page.getByRole('status')).toContainText('Correct note');
-  await expect(page.getByText(/Heard E2 · 82\.4 Hz/)).toBeVisible();
+  await expect(page.getByText(/Heard E2 В· 82\.4 Hz/)).toBeVisible();
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByRole('heading', { name: '100% accuracy' })).toBeVisible();
   await expect(page.getByText('1 of 1 single notes played correctly.')).toBeVisible();
@@ -236,3 +236,4 @@ test('the background polyphonic preview reports a played chord without touching 
   await page.evaluate(() => (window as any).testGuitar.chord([40, 47, 52]));
   await expect(page.getByText(/Chord preview:/)).toBeVisible({ timeout: 40_000 });
 });
+
