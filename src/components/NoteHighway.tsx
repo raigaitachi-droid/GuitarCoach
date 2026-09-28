@@ -22,6 +22,8 @@ const STRING_PULSE_TRAVEL_MS = 2300;
 const STRING_PULSE_MIN_DELAY_MS = 260;
 const STRING_PULSE_SPACING_MS = 420;
 const PAD_BASE_SCALE = 1.18;
+const FLOOR_REFLECTION_OPACITY = 0.18;
+const PAD_REFLECTION_OPACITY = 0.34;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
 
 export function NoteHighway({ notes, playbackMs }: Props) {
@@ -92,6 +94,52 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       return mesh;
     };
 
+    const makeFloorGlowMaterial = (color: number, opacity: number, elongated: boolean) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = elongated ? 128 : 192;
+      canvas.height = elongated ? 512 : 192;
+      const context = canvas.getContext('2d')!;
+      const cssColor = colorStyle(color);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      if (elongated) {
+        const side = context.createLinearGradient(0, 0, canvas.width, 0);
+        side.addColorStop(0, 'rgba(255,255,255,0)');
+        side.addColorStop(0.5, `${cssColor}aa`);
+        side.addColorStop(1, 'rgba(255,255,255,0)');
+        context.fillStyle = side;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        const length = context.createLinearGradient(0, 0, 0, canvas.height);
+        length.addColorStop(0, 'rgba(0,0,0,0)');
+        length.addColorStop(0.28, 'rgba(0,0,0,.34)');
+        length.addColorStop(0.7, 'rgba(0,0,0,.06)');
+        length.addColorStop(1, 'rgba(0,0,0,.55)');
+        context.globalCompositeOperation = 'destination-in';
+        context.fillStyle = length;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      } else {
+        const glow = context.createRadialGradient(canvas.width / 2, canvas.height / 2, 4, canvas.width / 2, canvas.height / 2, canvas.width * 0.48);
+        glow.addColorStop(0, `${cssColor}dd`);
+        glow.addColorStop(0.36, `${cssColor}66`);
+        glow.addColorStop(1, 'rgba(255,255,255,0)');
+        context.fillStyle = glow;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
+      textures.push(texture);
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      });
+      materials.push(material);
+      return material;
+    };
+
     scene.add(new THREE.HemisphereLight(0xb6e8ff, 0x07030d, 1.7));
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
     keyLight.position.set(-4, 9, 5);
@@ -100,13 +148,36 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     hitLight.position.set(0, 1.4, 0.1);
     scene.add(hitLight);
 
-    plane(26, 9, 0x05070b, 0, -0.42, 2.9, 0.86);
+    const floorGeometry = new THREE.PlaneGeometry(30, 16, 1, 1);
+    geometries.push(floorGeometry);
+    const floorMaterial = new THREE.MeshStandardMaterial({
+      color: 0x030509,
+      roughness: 0.24,
+      metalness: 0.32,
+      transparent: true,
+      opacity: 0.96,
+      emissive: new THREE.Color(0x010308),
+      emissiveIntensity: 0.42,
+      side: THREE.DoubleSide,
+    });
+    materials.push(floorMaterial);
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -0.46, 1.5);
+    scene.add(floor);
+    plane(28, 2.2, 0x00040a, 0, -0.452, 4.45, 0.48);
     const bed = box(HIGHWAY_WIDTH, 0.1, HIGHWAY_LENGTH + 9, 0x0a1018, 0, -0.2, -HIGHWAY_LENGTH / 2 + 1);
     bed.scale.x = 1.02;
     (bed.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x04080d);
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const string = LANE_COUNT - lane;
       const x = highwayLaneX(string);
+      const reflectionGeometry = new THREE.PlaneGeometry(0.94, HIGHWAY_LENGTH + 7);
+      geometries.push(reflectionGeometry);
+      const reflection = new THREE.Mesh(reflectionGeometry, makeFloorGlowMaterial(COLORS[lane], FLOOR_REFLECTION_OPACITY, true));
+      reflection.rotation.x = -Math.PI / 2;
+      reflection.position.set(x, -0.435, -HIGHWAY_LENGTH / 2 + 1.1);
+      scene.add(reflection);
       plane(1.46, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.118, -HIGHWAY_LENGTH / 2 + 1, 0.16);
       plane(1.7, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.116, -HIGHWAY_LENGTH / 2 + 1, 0.06);
     }
@@ -272,6 +343,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     };
 
     const padLabels = new Map<number, THREE.Sprite>();
+    const padReflections = new Map<number, THREE.MeshBasicMaterial>();
     for (let string = 6; string >= 1; string--) {
       const laneIndex = LANE_COUNT - string;
       const pad = new THREE.Sprite(makeBadgeMaterial('', COLORS[laneIndex], 'pad'));
@@ -279,6 +351,14 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       pad.scale.set(PAD_BASE_SCALE, PAD_BASE_SCALE, 1);
       scene.add(pad);
       padLabels.set(string, pad);
+      const padGlowGeometry = new THREE.PlaneGeometry(2.2, 1.3);
+      geometries.push(padGlowGeometry);
+      const padGlowMaterial = makeFloorGlowMaterial(COLORS[laneIndex], PAD_REFLECTION_OPACITY, false);
+      const padGlow = new THREE.Mesh(padGlowGeometry, padGlowMaterial);
+      padGlow.rotation.x = -Math.PI / 2;
+      padGlow.position.set(highwayLaneX(string), -0.425, TARGET_Z + 0.08);
+      scene.add(padGlow);
+      padReflections.set(string, padGlowMaterial);
     }
 
     const stringPulses = Array.from({ length: STRING_PULSE_COUNT }, (_, index) => {
@@ -358,6 +438,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           const hitPulse = hitAge >= 0 && hitAge < 260 ? Math.sin((1 - hitProgress) * Math.PI) : 0;
           const target = playbackAdvanced ? 0.9 + hitPulse * 0.1 : 0.82;
           label.material.opacity = THREE.MathUtils.lerp(label.material.opacity, target, 0.16);
+          const reflectionMaterial = padReflections.get(string);
+          if (reflectionMaterial) {
+            reflectionMaterial.opacity = THREE.MathUtils.lerp(reflectionMaterial.opacity, PAD_REFLECTION_OPACITY + hitPulse * 0.22, 0.12);
+          }
           const breathe = 1 + Math.sin(performance.now() * 0.0014 + string) * 0.025;
           const scalePulse = (1 + hitPulse * 0.32) * breathe;
           label.scale.set(PAD_BASE_SCALE * scalePulse, PAD_BASE_SCALE * scalePulse, 1);
