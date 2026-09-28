@@ -13,6 +13,16 @@ interface Props {
 }
 const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
 const STRING_LABEL_COLORS = ['rgba(188, 103, 223, .74)', 'rgba(74, 203, 137, .72)', 'rgba(138, 155, 255, .72)', 'rgba(224, 109, 88, .72)', 'rgba(54, 200, 191, .72)', 'rgba(230, 168, 79, .74)'];
+const FRET_DIGIT_FONT = '"Inter", "Manrope", "Space Grotesk", "Aptos", "Segoe UI", system-ui, sans-serif';
+const TABULAR_DIGITS = '0123456789';
+const drawCenteredTabularText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+  const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => ctx.measureText(digit).width));
+  let cursor = x - (advance * text.length) / 2 + advance / 2;
+  for (const character of text) {
+    ctx.fillText(character, cursor, y);
+    cursor += advance;
+  }
+};
 
 // Retains the existing scrolling tab geometry, fret labels, sustain lengths,
 // and legato marks. Decorative effects and game overlays are removed.
@@ -105,9 +115,9 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
           ctx.lineWidth = 1;
         }
         ctx.fillStyle = color;
-        ctx.font = '700 20px ui-monospace, monospace';
+        ctx.font = '750 20px ' + FRET_DIGIT_FONT;
         ctx.textAlign = 'center';
-        ctx.fillText(String(note.fret), x, y);
+        drawCenteredTabularText(ctx, String(note.fret), x, y);
         if (note.hitState === 'hit' || note.hitState === 'miss') {
           ctx.font = '12px system-ui, sans-serif';
           ctx.fillText(note.hitState === 'hit' ? '✓' : '×', x, y + 22);

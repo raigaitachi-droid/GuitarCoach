@@ -27,6 +27,17 @@ const PAD_REFLECTION_OPACITY = 0.2;
 const NOTE_CONTACT_OPACITY = 0.22;
 const DUST_PARTICLE_COUNT = 28;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
+const FRET_DIGIT_FONT = '"Inter", "Manrope", "Space Grotesk", "Aptos", "Segoe UI", system-ui, sans-serif';
+const TABULAR_DIGITS = '0123456789';
+const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+  const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).width));
+  let cursor = x - (advance * text.length) / 2 + advance / 2;
+  for (const character of text) {
+    context.strokeText(character, cursor, y);
+    context.fillText(character, cursor, y);
+    cursor += advance;
+  }
+};
 
 export function NoteHighway({ notes, playbackMs }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -490,16 +501,15 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       }
       context.globalAlpha = 1;
 
-      context.font = '800 ' + (isPad ? 72 : (text.length < 3 ? 68 : 50)) + 'px monospace';
+      context.font = '750 ' + (isPad ? 72 : (text.length < 3 ? 68 : 50)) + 'px ' + FRET_DIGIT_FONT;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
       context.lineJoin = 'round';
       context.shadowBlur = 0;
       context.lineWidth = isPad ? 12 : (text.length < 3 ? 12 : 9);
       context.strokeStyle = 'rgba(0,0,0,.94)';
-      context.strokeText(text, centerX, centerY + (isPad ? 1 : 0));
       context.fillStyle = '#ffffff';
-      context.fillText(text, centerX, centerY + (isPad ? 1 : 0));
+      drawCenteredTabularText(context, text, centerX, centerY + (isPad ? 1 : 0));
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
