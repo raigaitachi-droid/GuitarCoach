@@ -12,6 +12,7 @@ interface Props {
   onLoopSelect?: (start: TabNote, end: TabNote) => void;
 }
 const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E'];
+const STRING_LABEL_COLORS = ['rgba(188, 103, 223, .74)', 'rgba(74, 203, 137, .72)', 'rgba(138, 155, 255, .72)', 'rgba(224, 109, 88, .72)', 'rgba(54, 200, 191, .72)', 'rgba(230, 168, 79, .74)'];
 
 // Retains the existing scrolling tab geometry, fret labels, sustain lengths,
 // and legato marks. Decorative effects and game overlays are removed.
@@ -36,7 +37,12 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = '#15191b';
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      const panelWash = ctx.createLinearGradient(0, 0, 0, rect.height);
+      panelWash.addColorStop(0, 'rgba(12, 26, 38, .26)');
+      panelWash.addColorStop(0.38, 'rgba(6, 14, 22, .18)');
+      panelWash.addColorStop(1, 'rgba(2, 7, 13, .34)');
+      ctx.fillStyle = panelWash;
       ctx.fillRect(0, 0, rect.width, rect.height);
       const { notes, playbackMs: now, waitingId, loopStartId, loopEndId, selectingLoop } = view.current;
       const hitX = rect.width * 0.18;
@@ -44,15 +50,15 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       const laneHeight = (rect.height - 80) / 6;
       const xAt = (time: number) => hitX + (time - now) / visibleWindowMs * (rect.width - hitX);
       const yAt = (string: number) => 40 + laneHeight * (string - 0.5);
-      ctx.font = '14px ui-monospace, monospace';
+      ctx.font = '600 14px ui-monospace, monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       for (let string = 1; string <= 6; string++) {
         const y = yAt(string);
-        ctx.strokeStyle = '#41494b';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(196, 218, 224, .16)';
+        ctx.lineWidth = 0.75;
         ctx.beginPath(); ctx.moveTo(44, y); ctx.lineTo(rect.width - 24, y); ctx.stroke();
-        ctx.fillStyle = '#a2aba9';
+        ctx.fillStyle = STRING_LABEL_COLORS[string - 1];
         ctx.fillText(STRING_NAMES[string - 1], 20, y);
       }
       // Use imported measure indices for labels instead of inventing 4/4 bars.
@@ -62,14 +68,16 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         measures.add(note.measureIndex);
         const x = xAt(note.timestampMs);
         if (x < 50 || x > rect.width - 30) continue;
-        ctx.fillStyle = '#929b99';
+        ctx.fillStyle = 'rgba(194, 211, 216, .7)';
+        ctx.font = '600 13px ui-monospace, monospace';
         ctx.fillText(`Bar ${note.measureIndex}`, Math.min(x, rect.width - 70), 20);
+        ctx.font = '600 14px ui-monospace, monospace';
         // Fill a snapped pixel column instead of stroking a fractional canvas
         // coordinate; this keeps the bar boundary visibly solid on every DPR.
-        ctx.fillStyle = '#465152';
-        ctx.fillRect(Math.round(x) - 1, 36, 3, rect.height - 66);
+        ctx.fillStyle = 'rgba(185, 210, 218, .24)';
+        ctx.fillRect(Math.round(x) - 1, 36, 2, rect.height - 66);
       }
-      ctx.strokeStyle = '#99b9a5';
+      ctx.strokeStyle = 'rgba(126, 255, 229, .56)';
       ctx.beginPath(); ctx.moveTo(hitX, 36); ctx.lineTo(hitX, rect.height - 30); ctx.stroke();
       const visible = notes.filter((note) => xAt(note.timestampMs) >= 48 && xAt(note.timestampMs) <= rect.width + 24);
       for (const note of visible) {
@@ -81,13 +89,13 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         const color = note.hitState === 'hit' ? '#89d9a8' : note.hitState === 'miss' || note.hitState === 'wrong' ? '#f29393' : '#e3e8e4';
         const sustain = Math.min(xAt(note.timestampMs + note.durationMs) - x, gap - radius - 4);
         if (sustain > 20) {
-          ctx.strokeStyle = '#59615e';
+          ctx.strokeStyle = 'rgba(168, 190, 190, .24)';
           ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + sustain, y); ctx.stroke();
         }
-        ctx.fillStyle = '#15191b';
+        ctx.fillStyle = 'rgba(3, 9, 15, .58)';
         ctx.fillRect(x - radius, y - 15, radius * 2, 30);
         if (note.id === waitingId) {
-          ctx.strokeStyle = '#99b9a5';
+          ctx.strokeStyle = 'rgba(126, 255, 229, .56)';
           ctx.strokeRect(x - radius - 4, y - 19, radius * 2 + 8, 38);
         }
         if (note.id === loopStartId || note.id === loopEndId) {
@@ -97,7 +105,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
           ctx.lineWidth = 1;
         }
         ctx.fillStyle = color;
-        ctx.font = '600 20px ui-monospace, monospace';
+        ctx.font = '700 20px ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.fillText(String(note.fret), x, y);
         if (note.hitState === 'hit' || note.hitState === 'miss') {
@@ -106,7 +114,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         }
         if (note.isHarmonic || note.isHammerOn || note.isPullOff) {
           ctx.font = '10px system-ui, sans-serif';
-          ctx.fillStyle = '#a2aba9';
+          ctx.fillStyle = 'rgba(182, 199, 204, .72)';
           ctx.fillText(note.isHarmonic ? '◇' : note.isHammerOn ? 'H' : 'P', x, y - 24);
         }
       }
@@ -122,7 +130,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         const right = Math.max(startX, endX);
         // Dim the unselected timeline so the chosen musical phrase remains the
         // only visually dominant part of the tab.
-        ctx.fillStyle = isDragging ? 'rgba(5, 8, 9, 0.44)' : 'rgba(5, 8, 9, 0.56)';
+        ctx.fillStyle = isDragging ? 'rgba(2, 6, 10, 0.34)' : 'rgba(2, 6, 10, 0.48)';
         ctx.fillRect(0, 0, Math.max(0, left), rect.height);
         ctx.fillRect(Math.min(rect.width, right), 0, Math.max(0, rect.width - right), rect.height);
         ctx.fillStyle = isDragging ? '#b8a8e5' : '#8ecfb0';

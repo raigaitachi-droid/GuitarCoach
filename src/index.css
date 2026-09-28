@@ -1168,3 +1168,43 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
 .timing-feedback {
   color: rgba(213, 204, 184, .68);
 }
+
+/* Practice tab panel premium glass pass */
+.practice-views .tab-surface {
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 18px 18px 14px 14px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,0) 1px),
+    linear-gradient(180deg, rgba(12, 27, 39, .58), rgba(4, 10, 18, .52));
+  box-shadow:
+    0 -32px 78px rgba(12, 103, 141, .1),
+    0 -14px 44px rgba(41, 218, 255, .08),
+    0 0 28px rgba(35, 132, 255, .15),
+    inset 0 1px 0 rgba(255,255,255,.08),
+    inset 0 0 34px rgba(99, 177, 255, .07);
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+}
+.practice-views .tab-surface::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: -1px;
+  height: 42px;
+  pointer-events: none;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(180deg, rgba(102, 245, 232, .12), rgba(102, 245, 232, .035) 38%, transparent 100%);
+  mix-blend-mode: screen;
+}
+.practice-views .tab-surface canvas {
+  opacity: .98;
+}
+.practice-views .tab-surface.is-selecting-loop {
+  border-color: rgba(142, 207, 176, .46);
+  box-shadow:
+    0 -32px 78px rgba(12, 103, 141, .1),
+    0 0 32px rgba(32, 214, 195, .18),
+    inset 0 1px 0 rgba(255,255,255,.1),
+    inset 0 0 34px rgba(99, 177, 255, .08);
+}
