@@ -11,17 +11,19 @@ const HIT_Z = -3.15;
 
 // Tunables for the start-screen idle highway.
 const PULSE_INTERVAL_SECONDS = [2.5, 3.25, 2.85, 3.7, 3.05, 3.45];
-const PULSE_TRAVEL_SECONDS = 2.7;
-const STRING_GLOW_INTENSITY = 0.72;
+const PULSE_TRAVEL_SECONDS = 3.1;
+const STRING_GLOW_INTENSITY = 0.78;
 const RING_SIZE = 0.72;
-const RING_GLOW_INTENSITY = 0.82;
+const RING_GLOW_INTENSITY = 0.9;
 const HAZE_AMOUNT = 0.24;
-const DUST_COUNT = 84;
+const DUST_COUNT = 128;
+const FLOOR_SHIMMER_INTENSITY = 0.18;
 
 const STRING_COLORS = [0xe6a84f, 0x36c8bf, 0xe06d58, 0x8a9bff, 0x4acb89, 0xbc67df];
 const laneX = (lane: number) => -HIGHWAY_WIDTH / 2 + (lane + 0.5) * (HIGHWAY_WIDTH / LANE_COUNT);
 const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const clamp01 = (value: number) => THREE.MathUtils.clamp(value, 0, 1);
 
 export function IdleHighway() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -61,8 +63,9 @@ export function IdleHighway() {
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
     const textures: THREE.Texture[] = [];
-    const rings: Array<{ rim: THREE.Mesh; glow: THREE.Mesh; fill: THREE.Mesh; light: THREE.PointLight; phase: number; hitUntil: number }> = [];
-    const pulses: Array<{ mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; lane: number; nextStart: number; active: boolean }> = [];
+    const rings: Array<{ rim: THREE.Mesh; glow: THREE.Mesh; bloom: THREE.Mesh; fill: THREE.Mesh; reflection: THREE.Mesh; light: THREE.PointLight; phase: number; hitUntil: number }> = [];
+    const pulses: Array<{ head: THREE.Sprite; tail: THREE.Mesh; headMaterial: THREE.SpriteMaterial; tailMaterial: THREE.MeshBasicMaterial; lane: number; nextStart: number; active: boolean }> = [];
+    const animatedStrings: Array<{ core: THREE.Mesh; coreMaterial: THREE.MeshStandardMaterial; glow: THREE.Mesh; glowMaterial: THREE.MeshBasicMaterial; reflection: THREE.Mesh; reflectionMaterial: THREE.MeshBasicMaterial; phase: number }> = [];
 
     const makeGradientTexture = (color: number, alphaNear: number, alphaFar: number, centerBoost = 0) => {
       const canvas = document.createElement('canvas');
@@ -81,6 +84,56 @@ export function IdleHighway() {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.wrapS = THREE.ClampToEdgeWrapping;
       texture.wrapT = THREE.ClampToEdgeWrapping;
+      textures.push(texture);
+      return texture;
+    };
+
+
+    const makeSoftDiscTexture = (color: number, centerAlpha: number, midAlpha: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const context = canvas.getContext('2d')!;
+      const c = new THREE.Color(color);
+      const rgb = `${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}`;
+      const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 126);
+      gradient.addColorStop(0, `rgba(${rgb}, ${centerAlpha})`);
+      gradient.addColorStop(0.34, `rgba(${rgb}, ${midAlpha})`);
+      gradient.addColorStop(0.72, `rgba(${rgb}, ${midAlpha * 0.22})`);
+      gradient.addColorStop(1, `rgba(${rgb}, 0)`);
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 4;
+      textures.push(texture);
+      return texture;
+    };
+
+    const makeCometTexture = (color: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 512;
+      const context = canvas.getContext('2d')!;
+      const c = new THREE.Color(color);
+      const rgb = `${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}`;
+      const tail = context.createLinearGradient(0, 0, 0, canvas.height);
+      tail.addColorStop(0, `rgba(${rgb}, 0)`);
+      tail.addColorStop(0.45, `rgba(${rgb}, .08)`);
+      tail.addColorStop(0.78, `rgba(${rgb}, .42)`);
+      tail.addColorStop(1, `rgba(255,255,255,.72)`);
+      context.fillStyle = tail;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const radial = context.createRadialGradient(64, 444, 0, 64, 444, 58);
+      radial.addColorStop(0, 'rgba(255,255,255,.95)');
+      radial.addColorStop(0.28, `rgba(${rgb}, .82)`);
+      radial.addColorStop(1, `rgba(${rgb}, 0)`);
+      context.globalCompositeOperation = 'screen';
+      context.fillStyle = radial;
+      context.fillRect(0, 386, canvas.width, 126);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
       textures.push(texture);
       return texture;
     };
@@ -143,18 +196,34 @@ export function IdleHighway() {
       coreMaterial.emissiveIntensity = 2.35;
       const filamentGlow = plane(0.34, HIGHWAY_LENGTH, color, x, -0.026, -HIGHWAY_LENGTH / 2 + 0.8, STRING_GLOW_INTENSITY, THREE.AdditiveBlending, makeGradientTexture(color, 0.48, 0.014, 0.022));
       filamentGlow.renderOrder = 1;
-      const stringReflection = plane(0.5, HIGHWAY_LENGTH * 0.72, color, x, -0.315, -HIGHWAY_LENGTH * 0.32, 0.052, THREE.AdditiveBlending, makeGradientTexture(color, 0.2, 0.004, 0.01));
-      stringReflection.scale.x = 1.25;
+      const stringReflection = plane(0.58, HIGHWAY_LENGTH * 0.72, color, x, -0.315, -HIGHWAY_LENGTH * 0.32, 0.056, THREE.AdditiveBlending, makeGradientTexture(color, 0.22, 0.004, 0.012));
+      stringReflection.scale.x = 1.32;
+      animatedStrings.push({
+        core,
+        coreMaterial,
+        glow: filamentGlow,
+        glowMaterial: filamentGlow.material as THREE.MeshBasicMaterial,
+        reflection: stringReflection,
+        reflectionMaterial: stringReflection.material as THREE.MeshBasicMaterial,
+        phase: lane * 0.9,
+      });
 
-      const pulseGeometry = new THREE.PlaneGeometry(0.42, 2.7);
-      const pulseMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-      geometries.push(pulseGeometry);
-      materials.push(pulseMaterial);
-      const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial);
-      pulse.rotation.x = -Math.PI / 2;
-      pulse.position.set(x, 0.075, -42);
-      scene.add(pulse);
-      pulses.push({ mesh: pulse, material: pulseMaterial, lane, nextStart: lane * 0.42 + 0.6, active: false });
+      const cometTexture = makeCometTexture(color);
+      const pulseTailGeometry = new THREE.PlaneGeometry(0.58, 3.5);
+      const pulseTailMaterial = new THREE.MeshBasicMaterial({ map: cometTexture, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+      geometries.push(pulseTailGeometry);
+      materials.push(pulseTailMaterial);
+      const tail = new THREE.Mesh(pulseTailGeometry, pulseTailMaterial);
+      tail.rotation.x = -Math.PI / 2;
+      tail.position.set(x, 0.09, -42);
+      scene.add(tail);
+      const headMaterial = new THREE.SpriteMaterial({ map: makeSoftDiscTexture(color, 0.9, 0.42), transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+      materials.push(headMaterial);
+      const head = new THREE.Sprite(headMaterial);
+      head.position.set(x, 0.32, -42);
+      head.scale.set(0.7, 0.7, 1);
+      scene.add(head);
+      pulses.push({ head, tail, headMaterial, tailMaterial: pulseTailMaterial, lane, nextStart: lane * 0.42 + 0.6, active: false });
     }
 
     for (const x of [-HIGHWAY_WIDTH / 2, HIGHWAY_WIDTH / 2]) {
@@ -179,18 +248,21 @@ export function IdleHighway() {
     const ringGeometry = new THREE.RingGeometry(RING_SIZE * 0.62, RING_SIZE * 0.78, 96);
     const fillGeometry = new THREE.CircleGeometry(RING_SIZE * 0.6, 96);
     const glowGeometry = new THREE.CircleGeometry(RING_SIZE * 1.05, 96);
-    geometries.push(ringGeometry, fillGeometry, glowGeometry);
+    const bloomGeometry = new THREE.CircleGeometry(RING_SIZE * 1.48, 96);
+    geometries.push(ringGeometry, fillGeometry, glowGeometry, bloomGeometry);
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const color = STRING_COLORS[lane];
       const x = laneX(lane);
       const fillMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
       const rimMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-      const glowMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-      materials.push(fillMaterial, rimMaterial, glowMaterial);
+      const glowMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, map: makeSoftDiscTexture(color, 0.34, 0.18) });
+      const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, map: makeSoftDiscTexture(color, 0.5, 0.16) });
+      materials.push(fillMaterial, rimMaterial, glowMaterial, bloomMaterial);
       const fill = new THREE.Mesh(fillGeometry, fillMaterial);
       const rim = new THREE.Mesh(ringGeometry, rimMaterial);
       const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-      for (const mesh of [fill, rim, glow]) {
+      const bloom = new THREE.Mesh(bloomGeometry, bloomMaterial);
+      for (const mesh of [fill, rim, glow, bloom]) {
         mesh.rotation.x = -Math.PI / 2;
         mesh.scale.set(1.06, 0.78, 1);
         mesh.position.set(x, mesh === glow ? -0.01 : 0.09, HIT_Z);
@@ -201,7 +273,7 @@ export function IdleHighway() {
       const light = new THREE.PointLight(color, lane === 3 ? 0.82 : 0.6, 3.4, 2.2);
       light.position.set(x, 0.38, HIT_Z + 0.1);
       scene.add(light);
-      rings.push({ rim, glow, fill, light, phase: lane * 0.8, hitUntil: -10 });
+      rings.push({ rim, glow, bloom, fill, reflection: ringReflection, light, phase: lane * 0.8, hitUntil: -10 });
     }
 
     const dustGeometry = new THREE.BufferGeometry();
@@ -241,7 +313,8 @@ export function IdleHighway() {
       const jitter = 0.65 + ((pulse.lane * 41 + Math.floor(now * 3)) % 100) / 100 * 0.75;
       pulse.nextStart = now + PULSE_INTERVAL_SECONDS[pulse.lane] + jitter;
       pulse.active = false;
-      pulse.material.opacity = 0;
+      pulse.tailMaterial.opacity = 0;
+      pulse.headMaterial.opacity = 0;
     };
 
     const render = (nowMs: number) => {
@@ -254,16 +327,30 @@ export function IdleHighway() {
       lastTime = nowMs;
       if (!reducedMotion) elapsed += delta;
 
+      animatedStrings.forEach((string, lane) => {
+        const shimmer = reducedMotion ? 0.5 : (Math.sin(elapsed * 0.52 + string.phase) + 1) / 2;
+        string.coreMaterial.emissiveIntensity = 2.05 + shimmer * 0.42;
+        string.glowMaterial.opacity = STRING_GLOW_INTENSITY * (0.82 + shimmer * 0.2);
+        string.reflectionMaterial.opacity = 0.034 + shimmer * FLOOR_SHIMMER_INTENSITY * 0.08 + (lane === 3 ? 0.01 : 0);
+      });
+
       for (const pulse of pulses) {
         if (!reducedMotion && !pulse.active && elapsed >= pulse.nextStart) pulse.active = true;
         if (!pulse.active) continue;
-        const progress = THREE.MathUtils.clamp((elapsed - pulse.nextStart) / PULSE_TRAVEL_SECONDS, 0, 1);
+        const progress = clamp01((elapsed - pulse.nextStart) / PULSE_TRAVEL_SECONDS);
         const eased = easeInOutCubic(progress);
-        pulse.mesh.position.z = THREE.MathUtils.lerp(-42, HIT_Z, eased);
-        pulse.material.opacity = Math.sin(progress * Math.PI) * 0.44;
-        pulse.mesh.scale.z = 0.75 + (1 - progress) * 0.55;
+        const z = THREE.MathUtils.lerp(-42, HIT_Z, eased);
+        const perspective = 0.55 + eased * 0.72;
+        const opacity = Math.pow(Math.sin(progress * Math.PI), 0.82);
+        pulse.tail.position.z = z - 0.36;
+        pulse.head.position.z = z + 0.15;
+        pulse.head.position.y = 0.3 + eased * 0.08;
+        pulse.tailMaterial.opacity = opacity * 0.36;
+        pulse.headMaterial.opacity = opacity * 0.5;
+        pulse.tail.scale.set(perspective, 0.72 + (1 - progress) * 0.5, 1);
+        pulse.head.scale.set(0.44 * perspective, 0.44 * perspective, 1);
         if (progress >= 1) {
-          rings[pulse.lane].hitUntil = elapsed + 0.42;
+          rings[pulse.lane].hitUntil = elapsed + 0.5;
           scheduleNextPulse(pulse, elapsed);
         }
       }
@@ -275,15 +362,22 @@ export function IdleHighway() {
         const glow = RING_GLOW_INTENSITY * (0.82 + breathe * 0.18 + hitEase * 0.5);
         (ring.rim.material as THREE.MeshBasicMaterial).opacity = 0.72 + breathe * 0.12 + hitEase * 0.16;
         (ring.fill.material as THREE.MeshBasicMaterial).opacity = 0.1 + breathe * 0.035 + hitEase * 0.06;
-        (ring.glow.material as THREE.MeshBasicMaterial).opacity = 0.16 + glow * 0.12;
+        (ring.glow.material as THREE.MeshBasicMaterial).opacity = 0.12 + glow * 0.13;
+        (ring.bloom.material as THREE.MeshBasicMaterial).opacity = 0.045 + glow * 0.05 + hitEase * 0.08;
+        (ring.reflection.material as THREE.MeshBasicMaterial).opacity = 0.065 + breathe * 0.025 + hitEase * 0.06;
         const scale = 1 + breathe * 0.025 + hitEase * 0.12;
         ring.rim.scale.set(1.06 * scale, 0.78 * scale, 1);
         ring.fill.scale.set(1.06 * scale, 0.78 * scale, 1);
         ring.glow.scale.set(1.06 * (1.08 + hitEase * 0.12), 0.78 * (1.08 + hitEase * 0.12), 1);
-        ring.light.intensity = 0.35 + breathe * 0.16 + hitEase * 0.42;
+        ring.bloom.scale.set(1.06 * (1.08 + hitEase * 0.18), 0.78 * (1.08 + hitEase * 0.18), 1);
+        ring.reflection.scale.set(1.25 * (1 + hitEase * 0.08), 1, 1);
+        ring.light.intensity = 0.35 + breathe * 0.16 + hitEase * 0.52;
       });
 
       if (!reducedMotion) {
+        camera.position.x = Math.sin(elapsed * 0.18) * 0.035;
+        camera.position.y = 3.18 + Math.sin(elapsed * 0.24 + 1.4) * 0.018;
+        camera.lookAt(0, -0.62, -20);
         const position = dustGeometry.attributes.position as THREE.BufferAttribute;
         for (let i = 0; i < DUST_COUNT; i++) {
           const zIndex = i * 3 + 2;
