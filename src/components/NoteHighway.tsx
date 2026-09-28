@@ -11,7 +11,7 @@ interface Props {
   playbackMs: number;
 }
 
-const COLORS = [0x00ff74, 0xff2424, 0xffd41f, 0x1f70ff, 0xff6a00, 0xff00f5];
+const COLORS = [0xe6a84f, 0x36c8bf, 0xe06d58, 0x8a9bff, 0x4acb89, 0xbc67df];
 const LANE_COUNT = 6;
 const HIGHWAY_WIDTH = 14.2;
 const HIT_Z = -2.75;

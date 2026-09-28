@@ -5,7 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 const LANE_COUNT = 6;
-const HIGHWAY_WIDTH = 13.8;
+const HIGHWAY_WIDTH = 15.2;
 const HIGHWAY_LENGTH = 48;
 const HIT_Z = -3.15;
 
@@ -13,12 +13,12 @@ const HIT_Z = -3.15;
 const PULSE_INTERVAL_SECONDS = [2.5, 3.25, 2.85, 3.7, 3.05, 3.45];
 const PULSE_TRAVEL_SECONDS = 2.7;
 const STRING_GLOW_INTENSITY = 0.72;
-const RING_SIZE = 0.78;
+const RING_SIZE = 0.72;
 const RING_GLOW_INTENSITY = 0.82;
-const HAZE_AMOUNT = 0.18;
+const HAZE_AMOUNT = 0.24;
 const DUST_COUNT = 84;
 
-const STRING_COLORS = [0x35d3a2, 0xf0b24b, 0x7e8ff2, 0x42b8e8, 0xe17857, 0xc75be8];
+const STRING_COLORS = [0xe6a84f, 0x36c8bf, 0xe06d58, 0x8a9bff, 0x4acb89, 0xbc67df];
 const laneX = (lane: number) => -HIGHWAY_WIDTH / 2 + (lane + 0.5) * (HIGHWAY_WIDTH / LANE_COUNT);
 const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -50,11 +50,11 @@ export function IdleHighway() {
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x050b12, 9.5, 42);
     const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 90);
-    camera.position.set(0, 3.36, 4.05);
-    camera.lookAt(0, -0.3, -25);
+    camera.position.set(0, 3.18, 4.2);
+    camera.lookAt(0, -0.62, -20);
 
     const composer = new EffectComposer(renderer);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.12, 0.82);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.26, 0.12, 0.82);
     composer.addPass(new RenderPass(scene, camera));
     composer.addPass(bloomPass);
 
@@ -131,18 +131,20 @@ export function IdleHighway() {
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const color = STRING_COLORS[lane];
       const x = laneX(lane);
-      const laneTexture = makeGradientTexture(color, 0.078, 0.01, 0.01);
+      const laneTexture = makeGradientTexture(color, 0.066, 0.004, 0.006);
       plane(1.5, HIGHWAY_LENGTH, 0x08101a, x, -0.118, -HIGHWAY_LENGTH / 2 + 0.8, 0.52);
-      plane(1.42, HIGHWAY_LENGTH, 0xffffff, x, -0.112, -HIGHWAY_LENGTH / 2 + 0.8, 1, THREE.NormalBlending, laneTexture);
-      plane(1.72, 18, color, x, -0.24, -7.3, 0.034, THREE.AdditiveBlending);
-      plane(2.1, 3.5, color, x, -0.255, HIT_Z - 0.1, 0.052, THREE.AdditiveBlending);
+      plane(1.34, HIGHWAY_LENGTH, 0xffffff, x, -0.112, -HIGHWAY_LENGTH / 2 + 0.8, 1, THREE.NormalBlending, laneTexture);
+      plane(1.62, 18, color, x, -0.24, -7.3, 0.028, THREE.AdditiveBlending);
+      plane(2.0, 3.4, color, x, -0.255, HIT_Z - 0.1, 0.046, THREE.AdditiveBlending);
 
       const core = box(0.026, 0.038, HIGHWAY_LENGTH, color, x, 0.034, -HIGHWAY_LENGTH / 2 + 0.8);
       const coreMaterial = core.material as THREE.MeshStandardMaterial;
       coreMaterial.emissive = new THREE.Color(color);
       coreMaterial.emissiveIntensity = 2.35;
-      const filamentGlow = plane(0.36, HIGHWAY_LENGTH, color, x, -0.026, -HIGHWAY_LENGTH / 2 + 0.8, STRING_GLOW_INTENSITY, THREE.AdditiveBlending, makeGradientTexture(color, 0.48, 0.025, 0.035));
+      const filamentGlow = plane(0.34, HIGHWAY_LENGTH, color, x, -0.026, -HIGHWAY_LENGTH / 2 + 0.8, STRING_GLOW_INTENSITY, THREE.AdditiveBlending, makeGradientTexture(color, 0.48, 0.014, 0.022));
       filamentGlow.renderOrder = 1;
+      const stringReflection = plane(0.5, HIGHWAY_LENGTH * 0.72, color, x, -0.315, -HIGHWAY_LENGTH * 0.32, 0.052, THREE.AdditiveBlending, makeGradientTexture(color, 0.2, 0.004, 0.01));
+      stringReflection.scale.x = 1.25;
 
       const pulseGeometry = new THREE.PlaneGeometry(0.42, 2.7);
       const pulseMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
@@ -164,37 +166,39 @@ export function IdleHighway() {
     }
 
     const hazeTexture = makeGradientTexture(0x89b9c6, HAZE_AMOUNT, 0.02);
-    const farHaze = plane(HIGHWAY_WIDTH + 5.5, 14, 0xffffff, 0, 0.04, -38, 1, THREE.NormalBlending, hazeTexture);
+    const farHaze = plane(HIGHWAY_WIDTH + 6.2, 18, 0xffffff, 0, 0.055, -32, 1, THREE.NormalBlending, hazeTexture);
     farHaze.rotation.x = -Math.PI / 2;
-    const mistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 10, 7);
+    const mistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 11, 8.5);
     const mistMaterial = new THREE.MeshBasicMaterial({ color: 0x86aebc, transparent: true, opacity: HAZE_AMOUNT * 0.56, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     geometries.push(mistGeometry);
     materials.push(mistMaterial);
     const mist = new THREE.Mesh(mistGeometry, mistMaterial);
-    mist.position.set(0, 2.1, -38);
+    mist.position.set(0, 1.75, -32);
     scene.add(mist);
 
     const ringGeometry = new THREE.RingGeometry(RING_SIZE * 0.62, RING_SIZE * 0.78, 96);
     const fillGeometry = new THREE.CircleGeometry(RING_SIZE * 0.6, 96);
-    const glowGeometry = new THREE.CircleGeometry(RING_SIZE * 1.22, 96);
+    const glowGeometry = new THREE.CircleGeometry(RING_SIZE * 1.05, 96);
     geometries.push(ringGeometry, fillGeometry, glowGeometry);
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const color = STRING_COLORS[lane];
       const x = laneX(lane);
       const fillMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
       const rimMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-      const glowMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+      const glowMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
       materials.push(fillMaterial, rimMaterial, glowMaterial);
       const fill = new THREE.Mesh(fillGeometry, fillMaterial);
       const rim = new THREE.Mesh(ringGeometry, rimMaterial);
       const glow = new THREE.Mesh(glowGeometry, glowMaterial);
       for (const mesh of [fill, rim, glow]) {
         mesh.rotation.x = -Math.PI / 2;
-        mesh.scale.set(1.2, 0.82, 1);
+        mesh.scale.set(1.06, 0.78, 1);
         mesh.position.set(x, mesh === glow ? -0.01 : 0.09, HIT_Z);
         scene.add(mesh);
       }
-      const light = new THREE.PointLight(color, 0.6, 3.4, 2.2);
+      const ringReflection = plane(RING_SIZE * 1.85, RING_SIZE * 1.0, color, x, -0.31, HIT_Z + 0.1, 0.09, THREE.AdditiveBlending);
+      ringReflection.scale.x = 1.25;
+      const light = new THREE.PointLight(color, lane === 3 ? 0.82 : 0.6, 3.4, 2.2);
       light.position.set(x, 0.38, HIT_Z + 0.1);
       scene.add(light);
       rings.push({ rim, glow, fill, light, phase: lane * 0.8, hitUntil: -10 });
@@ -273,9 +277,9 @@ export function IdleHighway() {
         (ring.fill.material as THREE.MeshBasicMaterial).opacity = 0.1 + breathe * 0.035 + hitEase * 0.06;
         (ring.glow.material as THREE.MeshBasicMaterial).opacity = 0.16 + glow * 0.12;
         const scale = 1 + breathe * 0.025 + hitEase * 0.12;
-        ring.rim.scale.set(1.2 * scale, 0.82 * scale, 1);
-        ring.fill.scale.set(1.2 * scale, 0.82 * scale, 1);
-        ring.glow.scale.set(1.2 * (1.08 + hitEase * 0.12), 0.82 * (1.08 + hitEase * 0.12), 1);
+        ring.rim.scale.set(1.06 * scale, 0.78 * scale, 1);
+        ring.fill.scale.set(1.06 * scale, 0.78 * scale, 1);
+        ring.glow.scale.set(1.06 * (1.08 + hitEase * 0.12), 0.78 * (1.08 + hitEase * 0.12), 1);
         ring.light.intensity = 0.35 + breathe * 0.16 + hitEase * 0.42;
       });
 
