@@ -3,6 +3,7 @@ import { ImportedSong } from '../types';
 import { AudioInputDevice } from '../utils/pitchDetector';
 import startBackgroundVideo from '../assets/start-bg.mp4';
 import startBackgroundPoster from '../assets/start-bg-poster.jpg';
+import { IdleHighway } from './IdleHighway';
 
 interface Props {
   song: ImportedSong | null;
@@ -50,6 +51,7 @@ export function StartScreen({ song, loading, busy, error, devices, deviceId, onD
       <div className={`start-video-layer ${videoFailed ? 'is-video-failed' : ''}`} aria-hidden="true" style={{ backgroundImage: `url(${startBackgroundPoster})` }}>
         {!videoFailed && <video ref={videoRef} className="start-bg-video" src={startBackgroundVideo} poster={startBackgroundPoster} autoPlay loop muted playsInline preload="auto" onError={() => setVideoFailed(true)} />}
       </div>
+      <IdleHighway />
       <h1 className="start-wordmark"><span>Guitar</span>Coach</h1>
       <div className="start-card">
         {!song ? (
