@@ -721,3 +721,41 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.12) 16%, #000 38%, #000 100%);
   mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.12) 16%, #000 38%, #000 100%);
 }
+
+/* Start screen depth/spacing polish */
+.start-background {
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.12), rgba(0,0,0,.14) 44%, rgba(0,0,0,.22) 100%),
+    url('/start-background.png') center / cover no-repeat;
+}
+.start-idle-highway {
+  bottom: -22px;
+  height: min(55dvh, 560px);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.06) 10%, rgba(0,0,0,.55) 24%, #000 42%, #000 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.06) 10%, rgba(0,0,0,.55) 24%, #000 42%, #000 100%);
+}
+.start-idle-highway::after {
+  background: linear-gradient(180deg, transparent 0%, rgba(7,20,39,.2) 20%, transparent 46%, rgba(2,5,10,.08) 100%);
+}
+.start-card {
+  gap: 20px;
+  padding: 38px 48px 34px;
+  background: linear-gradient(180deg, rgba(22, 51, 64, .42), rgba(10, 16, 34, .34));
+  backdrop-filter: blur(26px) saturate(1.36);
+  box-shadow:
+    0 0 42px rgba(72, 246, 255, .2),
+    0 0 74px rgba(255, 0, 245, .13),
+    inset 0 1px 0 rgba(255,255,255,.2);
+}
+.start-title { margin-bottom: 2px; }
+.secondary-button { margin-top: 4px; }
+.format-note {
+  margin-top: 0;
+  font-size: 14px;
+  color: #d1d9df;
+}
+.start-card .privacy-note {
+  margin-top: -4px;
+  font-size: 13px;
+  color: #c8d3da;
+}

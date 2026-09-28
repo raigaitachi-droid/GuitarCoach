@@ -33,12 +33,12 @@ export function IdleHighway() {
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x02050b, 24, 62);
+    scene.fog = new THREE.Fog(0x071427, 15, 54);
     const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 90);
     camera.position.set(0, 3.12, 4.35);
     camera.lookAt(0, -0.26, -28);
     const composer = new EffectComposer(renderer);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.32, 0.12, 0.76);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.26, 0.1, 0.78);
     composer.addPass(new RenderPass(scene, camera));
     composer.addPass(bloomPass);
 
@@ -75,9 +75,9 @@ export function IdleHighway() {
 
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const x = laneX(lane);
-      plane(1.48, HIGHWAY_LENGTH, COLORS[lane], x, -0.115, -HIGHWAY_LENGTH / 2, 0.2);
-      plane(1.7, HIGHWAY_LENGTH, COLORS[lane], x, -0.13, -HIGHWAY_LENGTH / 2, 0.075, THREE.AdditiveBlending);
-      plane(1.18, HIGHWAY_LENGTH, COLORS[lane], x, -0.245, -HIGHWAY_LENGTH / 2 + 0.2, 0.055, THREE.AdditiveBlending);
+      plane(1.5, HIGHWAY_LENGTH, COLORS[lane], x, -0.115, -HIGHWAY_LENGTH / 2, 0.13);
+      plane(1.74, 18, COLORS[lane], x, -0.112, -8.5, 0.14, THREE.AdditiveBlending);
+      plane(1.18, 16, COLORS[lane], x, -0.245, -7.5, 0.07, THREE.AdditiveBlending);
       const rail = box(0.052, 0.055, HIGHWAY_LENGTH, COLORS[lane], x, 0.025, -HIGHWAY_LENGTH / 2);
       const railMaterial = rail.material as THREE.MeshStandardMaterial;
       railMaterial.emissive = new THREE.Color(COLORS[lane]);
@@ -91,16 +91,16 @@ export function IdleHighway() {
       plane(0.24, HIGHWAY_LENGTH, 0x2fdfff, x, -0.18, -HIGHWAY_LENGTH / 2, 0.08, THREE.AdditiveBlending);
     }
     for (let lane = 0; lane < LANE_COUNT; lane++) {
-      const geometry = new THREE.RingGeometry(0.36, 0.52, 56);
+      const geometry = new THREE.RingGeometry(0.44, 0.66, 64);
       const material = new THREE.MeshBasicMaterial({ color: COLORS[lane], transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
       geometries.push(geometry);
       materials.push(material);
       const marker = new THREE.Mesh(geometry, material);
       marker.rotation.x = -Math.PI / 2;
-      marker.scale.set(1.36, 0.82, 1);
+      marker.scale.set(1.52, 0.92, 1);
       marker.position.set(laneX(lane), 0.105, -3.2);
       scene.add(marker);
-      plane(1.12, 0.78, COLORS[lane], laneX(lane), -0.16, -3.2, 0.22, THREE.AdditiveBlending);
+      plane(1.42, 0.96, COLORS[lane], laneX(lane), -0.16, -3.2, 0.24, THREE.AdditiveBlending);
     }
 
     let frame = 0;
