@@ -1208,3 +1208,70 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     inset 0 1px 0 rgba(255,255,255,.1),
     inset 0 0 34px rgba(99, 177, 255, .08);
 }
+
+/* Practice highway background stage-atmosphere pass */
+.note-highway {
+  isolation: isolate;
+  background: #02040a;
+}
+
+.note-highway::before {
+  z-index: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, .72) 0%, rgba(2, 7, 15, .68) 28%, rgba(3, 7, 15, .86) 70%, rgba(2, 4, 9, .96) 100%),
+    radial-gradient(ellipse at 50% 47%, rgba(31, 133, 190, .2), transparent 34%),
+    url('./assets/start-bg-poster.jpg');
+  background-size: cover, cover, cover;
+  background-position: center, center, center 34%;
+  filter: blur(4px) brightness(.58) saturate(.72);
+  transform: scale(1.035);
+  opacity: .44;
+  mix-blend-mode: normal;
+}
+
+.note-highway::after {
+  z-index: 1;
+  opacity: 1;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(54, 200, 191, .18), transparent 12%, transparent 100%),
+    radial-gradient(ellipse at 44% 53%, rgba(230, 168, 79, .09), transparent 20%),
+    radial-gradient(ellipse at 58% 53%, rgba(188, 103, 223, .1), transparent 22%),
+    radial-gradient(ellipse at 50% 37%, rgba(92, 156, 255, .14), transparent 30%),
+    linear-gradient(104deg, transparent 0 29%, rgba(74, 203, 137, .045) 40%, transparent 55%),
+    linear-gradient(76deg, transparent 0 45%, rgba(138, 155, 255, .055) 58%, transparent 73%),
+    radial-gradient(circle at 24% 27%, rgba(255, 255, 255, .025) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 73% 38%, rgba(255, 255, 255, .02) 0 1px, transparent 2px),
+    linear-gradient(180deg, rgba(0, 0, 0, .1) 0%, transparent 48%, rgba(0, 0, 0, .24) 100%);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 12px 12px, 18px 18px, 100% 100%;
+  filter: blur(.2px);
+}
+
+.note-highway-canvas {
+  position: relative;
+  z-index: 2;
+}
+
+/* Practice stage background visibility tune */
+.note-highway::before {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, .56) 0%, rgba(2, 7, 15, .58) 30%, rgba(3, 7, 15, .82) 70%, rgba(2, 4, 9, .96) 100%),
+    radial-gradient(ellipse at 50% 43%, rgba(41, 151, 205, .22), transparent 36%),
+    url('./assets/start-bg-poster.jpg');
+  background-size: cover, cover, cover;
+  background-position: center, center, center 30%;
+  filter: blur(4.5px) brightness(.78) saturate(.78);
+  opacity: .68;
+}
+
+.note-highway::after {
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(54, 200, 191, .2), transparent 13%, transparent 100%),
+    radial-gradient(ellipse at 44% 53%, rgba(230, 168, 79, .1), transparent 21%),
+    radial-gradient(ellipse at 58% 53%, rgba(188, 103, 223, .11), transparent 23%),
+    radial-gradient(ellipse at 50% 36%, rgba(92, 156, 255, .16), transparent 31%),
+    linear-gradient(104deg, transparent 0 28%, rgba(74, 203, 137, .055) 40%, transparent 56%),
+    linear-gradient(76deg, transparent 0 44%, rgba(138, 155, 255, .065) 58%, transparent 74%),
+    linear-gradient(180deg, rgba(0, 0, 0, .04) 0%, transparent 48%, rgba(0, 0, 0, .24) 100%);
+  background-size: 100% 100%;
+}
