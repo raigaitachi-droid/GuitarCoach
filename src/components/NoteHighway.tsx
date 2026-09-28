@@ -206,15 +206,17 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       }
       context.globalAlpha = 1;
       context.shadowBlur = 0;
-      context.font = 'bold ' + (isPad ? 70 : text.length < 3 ? 64 : 46) + 'px monospace';
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      context.lineJoin = 'round';
-      context.lineWidth = isPad ? 10 : text.length < 3 ? 9 : 7;
-      context.strokeStyle = 'rgba(0,0,0,.82)';
-      context.strokeText(text, centerX, centerY + (isPad ? 2 : 0));
-      context.fillStyle = '#ffffff';
-      context.fillText(text, centerX, centerY + (isPad ? 2 : 0));
+      if (!isPad) {
+        context.font = 'bold ' + (text.length < 3 ? 64 : 46) + 'px monospace';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.lineJoin = 'round';
+        context.lineWidth = text.length < 3 ? 9 : 7;
+        context.strokeStyle = 'rgba(0,0,0,.82)';
+        context.strokeText(text, centerX, centerY);
+        context.fillStyle = '#ffffff';
+        context.fillText(text, centerX, centerY);
+      }
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
