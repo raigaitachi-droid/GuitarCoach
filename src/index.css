@@ -878,3 +878,20 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     linear-gradient(75deg, transparent 0 60%, rgba(255, 71, 0, .16) 72%, transparent 90%),
     linear-gradient(180deg, #02030a 0%, #070820 38%, #100611 64%, #040507 100%);
 }
+
+/* Practice background atmosphere pass */
+.note-highway::before {
+  background:
+    radial-gradient(ellipse at 50% 17%, rgba(54, 135, 255, .18), transparent 24%),
+    radial-gradient(ellipse at 48% 47%, rgba(59, 174, 255, .07), transparent 34%),
+    linear-gradient(180deg, rgba(0, 36, 96, .13) 0%, transparent 38%, transparent 100%);
+}
+.note-highway::after {
+  opacity: .16;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, .04) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 72% 48%, rgba(255, 255, 255, .03) 0 1px, transparent 1.9px),
+    radial-gradient(ellipse at 50% 52%, transparent 0 36%, rgba(0,0,0,.2) 72%, rgba(0,0,0,.44) 100%),
+    linear-gradient(180deg, rgba(255,255,255,.018) 0 100%);
+  background-size: 7px 7px, 11px 11px, 100% 100%, 100% 100%;
+}

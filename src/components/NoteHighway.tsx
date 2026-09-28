@@ -25,6 +25,7 @@ const PAD_BASE_SCALE = 1.18;
 const FLOOR_REFLECTION_OPACITY = 0.18;
 const PAD_REFLECTION_OPACITY = 0.34;
 const NOTE_CONTACT_OPACITY = 0.22;
+const DUST_PARTICLE_COUNT = 86;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
 
 export function NoteHighway({ notes, playbackMs }: Props) {
@@ -95,6 +96,72 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       return mesh;
     };
 
+    const makeBeamMaterial = (color: number, opacity: number) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 512;
+      const context = canvas.getContext('2d')!;
+      const cssColor = colorStyle(color);
+      const horizontal = context.createLinearGradient(0, 0, canvas.width, 0);
+      horizontal.addColorStop(0, 'rgba(255,255,255,0)');
+      horizontal.addColorStop(0.48, `${cssColor}88`);
+      horizontal.addColorStop(0.5, 'rgba(255,255,255,.38)');
+      horizontal.addColorStop(0.52, `${cssColor}88`);
+      horizontal.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = horizontal;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const vertical = context.createLinearGradient(0, 0, 0, canvas.height);
+      vertical.addColorStop(0, 'rgba(0,0,0,.9)');
+      vertical.addColorStop(0.18, 'rgba(0,0,0,.48)');
+      vertical.addColorStop(0.58, 'rgba(0,0,0,.16)');
+      vertical.addColorStop(1, 'rgba(0,0,0,0)');
+      context.globalCompositeOperation = 'destination-in';
+      context.fillStyle = vertical;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
+      textures.push(texture);
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      });
+      materials.push(material);
+      return material;
+    };
+
+    const makeBackdropGradientMaterial = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 512;
+      const context = canvas.getContext('2d')!;
+      const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, '#02040a');
+      gradient.addColorStop(0.34, '#061122');
+      gradient.addColorStop(0.72, '#080817');
+      gradient.addColorStop(1, '#020307');
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const center = context.createRadialGradient(canvas.width / 2, canvas.height * 0.58, 40, canvas.width / 2, canvas.height * 0.58, 390);
+      center.addColorStop(0, 'rgba(44,127,178,.28)');
+      center.addColorStop(0.48, 'rgba(33,69,126,.13)');
+      center.addColorStop(1, 'rgba(0,0,0,0)');
+      context.fillStyle = center;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
+      textures.push(texture);
+      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.92, depthWrite: false, side: THREE.DoubleSide });
+      materials.push(material);
+      return material;
+    };
+
     const makeFloorGlowMaterial = (color: number, opacity: number, elongated: boolean) => {
       const canvas = document.createElement('canvas');
       canvas.width = elongated ? 128 : 192;
@@ -140,6 +207,60 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       materials.push(material);
       return material;
     };
+
+    const backdropGeometry = new THREE.PlaneGeometry(58, 24);
+    geometries.push(backdropGeometry);
+    const backdrop = new THREE.Mesh(backdropGeometry, makeBackdropGradientMaterial());
+    backdrop.position.set(0, 5.4, -54);
+    scene.add(backdrop);
+
+    const silhouetteMaterial = new THREE.MeshBasicMaterial({ color: 0x02050a, transparent: true, opacity: 0.74, depthWrite: false });
+    materials.push(silhouetteMaterial);
+    const addSilhouette = (width: number, height: number, x: number, y: number, z: number) => {
+      const geometry = new THREE.BoxGeometry(width, height, 0.18);
+      geometries.push(geometry);
+      const mesh = new THREE.Mesh(geometry, silhouetteMaterial);
+      mesh.position.set(x, y, z);
+      scene.add(mesh);
+    };
+    addSilhouette(3.8, 4.8, -12.8, 1.65, -38);
+    addSilhouette(2.4, 3.3, -9.4, 1.1, -43);
+    addSilhouette(3.2, 4.4, 11.8, 1.42, -39);
+    addSilhouette(2.2, 3.1, 8.4, 1.0, -45);
+    addSilhouette(0.16, 9.2, -16.2, 3.2, -43);
+    addSilhouette(0.16, 8.7, 16.0, 3.0, -43);
+
+    const beamSpecs = [
+      { color: 0x4ce7ff, opacity: 0.18, x: -8.6, y: 6.8, z: -34, rotation: 0.38, width: 3.6, height: 15.5 },
+      { color: 0x74e6ff, opacity: 0.13, x: -1.8, y: 7.8, z: -43, rotation: 0.08, width: 4.2, height: 18 },
+      { color: 0x7e65ff, opacity: 0.16, x: 7.4, y: 6.9, z: -36, rotation: -0.34, width: 3.8, height: 15.5 },
+      { color: 0xe6a84f, opacity: 0.1, x: 12.8, y: 4.8, z: -34, rotation: -0.54, width: 2.7, height: 12.5 },
+    ];
+    const lightBeams = beamSpecs.map((spec) => {
+      const geometry = new THREE.PlaneGeometry(spec.width, spec.height);
+      geometries.push(geometry);
+      const beam = new THREE.Mesh(geometry, makeBeamMaterial(spec.color, spec.opacity));
+      beam.position.set(spec.x, spec.y, spec.z);
+      beam.rotation.z = spec.rotation;
+      scene.add(beam);
+      return { beam, baseOpacity: spec.opacity, phase: spec.x * 0.37 };
+    });
+
+    const dustGeometry = new THREE.BufferGeometry();
+    const dustPositions = new Float32Array(DUST_PARTICLE_COUNT * 3);
+    const dustPhases = new Float32Array(DUST_PARTICLE_COUNT);
+    for (let i = 0; i < DUST_PARTICLE_COUNT; i++) {
+      dustPositions[i * 3] = (Math.random() - 0.5) * 25;
+      dustPositions[i * 3 + 1] = 1.2 + Math.random() * 7.2;
+      dustPositions[i * 3 + 2] = -12 - Math.random() * 36;
+      dustPhases[i] = Math.random() * Math.PI * 2;
+    }
+    dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+    geometries.push(dustGeometry);
+    const dustMaterial = new THREE.PointsMaterial({ color: 0xc7f4ff, size: 0.045, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending });
+    materials.push(dustMaterial);
+    const dust = new THREE.Points(dustGeometry, dustMaterial);
+    scene.add(dust);
 
     scene.add(new THREE.HemisphereLight(0xb6e8ff, 0x07030d, 1.7));
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
@@ -474,6 +595,17 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         }
       }
       const now = performance.now();
+      const dustAttribute = dustGeometry.getAttribute('position') as THREE.BufferAttribute;
+      const dustArray = dustAttribute.array as Float32Array;
+      for (let i = 0; i < DUST_PARTICLE_COUNT; i++) {
+        dustArray[i * 3] += Math.sin(now * 0.00018 + dustPhases[i]) * 0.0018;
+        dustArray[i * 3 + 1] += Math.cos(now * 0.00014 + dustPhases[i]) * 0.0012;
+      }
+      dustAttribute.needsUpdate = true;
+      dustMaterial.opacity = 0.14 + Math.sin(now * 0.0006) * 0.035;
+      for (const lightBeam of lightBeams) {
+        (lightBeam.beam.material as THREE.MeshBasicMaterial).opacity = lightBeam.baseOpacity + Math.sin(now * 0.00042 + lightBeam.phase) * 0.025;
+      }
       for (const pulse of stringPulses) {
         const cycleMs = STRING_PULSE_TRAVEL_MS + STRING_PULSE_MIN_DELAY_MS + pulse.laneIndex * 95;
         const progress = ((now + pulse.offsetMs) % cycleMs) / STRING_PULSE_TRAVEL_MS;
