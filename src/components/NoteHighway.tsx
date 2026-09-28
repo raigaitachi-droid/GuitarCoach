@@ -23,7 +23,7 @@ const STRING_PULSE_MIN_DELAY_MS = 260;
 const STRING_PULSE_SPACING_MS = 420;
 const PAD_BASE_SCALE = 1.28;
 const FLOOR_REFLECTION_OPACITY = 0.18;
-const PAD_REFLECTION_OPACITY = 0.34;
+const PAD_REFLECTION_OPACITY = 0.2;
 const NOTE_CONTACT_OPACITY = 0.22;
 const DUST_PARTICLE_COUNT = 86;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
@@ -375,12 +375,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       railMaterial.emissive = new THREE.Color(0x2ba6c9);
       railMaterial.emissiveIntensity = 0.55;
     }
-    const hitLine = box(HIGHWAY_WIDTH - 5.2, 0.01, 0.026, 0x7eeaff, 0, 0.08, TARGET_Z);
-    const hitMaterial = hitLine.material as THREE.MeshStandardMaterial;
-    hitMaterial.transparent = true;
-    hitMaterial.opacity = 0.18;
-    hitMaterial.emissive = new THREE.Color(0x6feeff);
-    hitMaterial.emissiveIntensity = 0.05;
     const farFadeGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 4.8, 20);
     geometries.push(farFadeGeometry);
     const farFadeMaterial = new THREE.MeshBasicMaterial({
@@ -424,43 +418,39 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const centerY = canvas.height / 2;
       context.clearRect(0, 0, canvas.width, canvas.height);
 
-      context.shadowColor = cssColor;
-      context.shadowBlur = isPad ? 24 : 22;
-      context.fillStyle = cssColor;
-      context.beginPath();
       if (isPad) {
-        context.arc(centerX, centerY, 54, 0, Math.PI * 2);
-      } else {
-        context.roundRect(66, 28, 156, 88, 44);
-      }
-      context.fill();
-      context.shadowBlur = 0;
+        const innerTint = context.createRadialGradient(centerX, centerY, 10, centerX, centerY, 62);
+        innerTint.addColorStop(0, `${cssColor}18`);
+        innerTint.addColorStop(0.58, `${cssColor}10`);
+        innerTint.addColorStop(1, 'rgba(255,255,255,0)');
+        context.fillStyle = innerTint;
+        context.beginPath();
+        context.arc(centerX, centerY, 60, 0, Math.PI * 2);
+        context.fill();
 
-      if (isPad) {
-        context.globalCompositeOperation = 'destination-out';
-        context.fillStyle = 'rgba(0,0,0,1)';
-        context.beginPath();
-        context.arc(centerX, centerY, 34, 0, Math.PI * 2);
-        context.fill();
-        context.globalCompositeOperation = 'source-over';
-        context.globalAlpha = 0.42;
-        const inner = context.createRadialGradient(centerX, centerY, 4, centerX, centerY, 47);
-        inner.addColorStop(0, `${cssColor}33`);
-        inner.addColorStop(1, 'rgba(255,255,255,0)');
-        context.fillStyle = inner;
-        context.beginPath();
-        context.arc(centerX, centerY, 49, 0, Math.PI * 2);
-        context.fill();
-        context.globalAlpha = 1;
-        context.lineWidth = 5;
+        context.lineWidth = 12;
         context.strokeStyle = cssColor;
         context.shadowColor = cssColor;
-        context.shadowBlur = 18;
+        context.shadowBlur = 28;
         context.beginPath();
-        context.arc(centerX, centerY, 54, 0, Math.PI * 2);
+        context.arc(centerX, centerY, 56, 0, Math.PI * 2);
         context.stroke();
+
+        context.lineWidth = 3;
+        context.strokeStyle = 'rgba(255,255,255,.74)';
         context.shadowBlur = 0;
+        context.beginPath();
+        context.arc(centerX, centerY, 56, 0, Math.PI * 2);
+        context.stroke();
       } else {
+        context.shadowColor = cssColor;
+        context.shadowBlur = 22;
+        context.fillStyle = cssColor;
+        context.beginPath();
+        context.roundRect(66, 28, 156, 88, 44);
+        context.fill();
+        context.shadowBlur = 0;
+
         const centerGlow = context.createRadialGradient(centerX, centerY, 8, centerX, centerY, 92);
         centerGlow.addColorStop(0, 'rgba(255,255,255,.07)');
         centerGlow.addColorStop(.54, 'rgba(255,255,255,.022)');
@@ -549,7 +539,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       pad.scale.set(PAD_BASE_SCALE, PAD_BASE_SCALE, 1);
       scene.add(pad);
       padLabels.set(string, pad);
-      const padGlowGeometry = new THREE.PlaneGeometry(2.2, 1.3);
+      const padGlowGeometry = new THREE.PlaneGeometry(1.72, 1.02);
       geometries.push(padGlowGeometry);
       const padGlowMaterial = makeFloorGlowMaterial(COLORS[laneIndex], PAD_REFLECTION_OPACITY, false);
       const padGlow = new THREE.Mesh(padGlowGeometry, padGlowMaterial);
@@ -658,7 +648,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           label.material.opacity = THREE.MathUtils.lerp(label.material.opacity, target, 0.16);
           const reflectionMaterial = padReflections.get(string);
           if (reflectionMaterial) {
-            reflectionMaterial.opacity = THREE.MathUtils.lerp(reflectionMaterial.opacity, PAD_REFLECTION_OPACITY + hitPulse * 0.22, 0.12);
+            reflectionMaterial.opacity = THREE.MathUtils.lerp(reflectionMaterial.opacity, PAD_REFLECTION_OPACITY + hitPulse * 0.16, 0.12);
           }
           const breathe = 1 + Math.sin(performance.now() * 0.0014 + string) * 0.025;
           const scalePulse = (1 + hitPulse * 0.32) * breathe;
