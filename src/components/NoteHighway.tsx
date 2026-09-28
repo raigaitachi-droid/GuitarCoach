@@ -53,8 +53,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.12, 0.72);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
-    camera.position.set(0, 3.35, 3.2);
-    camera.lookAt(0, -0.05, -12);
+    camera.position.set(0, 3.05, 3.75);
+    camera.lookAt(0, -0.12, -18);
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
     const textures: THREE.Texture[] = [];
@@ -106,7 +106,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     }
     for (let i = 0; i <= 9; i++) {
       const z = -i * 4.2;
-      plane(HIGHWAY_WIDTH - 0.15, 0.035, 0x8fb8c9, 0, -0.06, z, 0.28);
+      plane(HIGHWAY_WIDTH - 1.25, 0.028, 0x8fb8c9, 0, -0.065, z, 0.14);
     }
     for (let string = 6; string >= 1; string--) {
       const rail = box(0.055, 0.055, HIGHWAY_LENGTH + 5, COLORS[6 - string], highwayLaneX(string), 0.03, -HIGHWAY_LENGTH / 2 + 1);
@@ -121,43 +121,36 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       railMaterial.emissive = new THREE.Color(0x2ba6c9);
       railMaterial.emissiveIntensity = 1.45;
     }
-    const hitLine = box(HIGHWAY_WIDTH + 0.45, 0.08, 0.2, 0xffffff, 0, 0.1, HIT_Z);
+    const hitLine = box(HIGHWAY_WIDTH - 0.8, 0.07, 0.18, 0xffffff, 0, 0.1, HIT_Z);
     const hitMaterial = hitLine.material as THREE.MeshStandardMaterial;
     hitMaterial.emissive = new THREE.Color(0xffffff);
     hitMaterial.emissiveIntensity = 3.4;
-    const hitGlow = box(HIGHWAY_WIDTH + 1.1, 0.018, 0.66, 0xafffff, 0, 0.045, HIT_Z);
-    const hitGlowMaterial = hitGlow.material as THREE.MeshStandardMaterial;
-    hitGlowMaterial.transparent = true;
-    hitGlowMaterial.opacity = 0.24;
-    hitGlowMaterial.emissive = new THREE.Color(0xffffff);
-    hitGlowMaterial.emissiveIntensity = 1.8;
-
     const farFadeGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 4.8, 20);
     geometries.push(farFadeGeometry);
     const farFadeMaterial = new THREE.MeshBasicMaterial({
       color: 0x05070c,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.12,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
     materials.push(farFadeMaterial);
     const farFade = new THREE.Mesh(farFadeGeometry, farFadeMaterial);
     farFade.rotation.x = -Math.PI / 2;
-    farFade.position.set(0, 0.28, -34);
+    farFade.position.set(0, 0.12, -42);
     scene.add(farFade);
     const horizonMistGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 10, 8);
     geometries.push(horizonMistGeometry);
     const horizonMistMaterial = new THREE.MeshBasicMaterial({
       color: 0x071027,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.12,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
     materials.push(horizonMistMaterial);
     const horizonMist = new THREE.Mesh(horizonMistGeometry, horizonMistMaterial);
-    horizonMist.position.set(0, 3.1, -38);
+    horizonMist.position.set(0, 3.6, -46);
     scene.add(horizonMist);
 
     const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad') => {
@@ -226,19 +219,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       pad.scale.set(1.8, 0.9, 1);
       scene.add(pad);
       padLabels.set(string, pad);
-      plane(1.38, 1.38, COLORS[laneIndex], highwayLaneX(string), -0.005, HIT_Z + 0.38, 0.12);
     }
 
     // Share geometry and cache fret textures; create objects only in the visible
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
-    const noteShadowGeometry = new THREE.PlaneGeometry(1.62, 0.7);
-    geometries.push(noteShadowGeometry);
-    const shadowMaterials = COLORS.map((color) => {
-      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide });
-      material.blending = THREE.AdditiveBlending;
-      materials.push(material);
-      return material;
-    });
     const active = new Map<TabNote, THREE.Group>();
     const hitNotes = new Set<string>();
     const pulses: Array<{ mesh: THREE.Mesh; bornAt: number; string: number }> = [];
@@ -300,15 +284,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         if (!group) {
           group = new THREE.Group();
           const laneIndex = LANE_COUNT - note.string;
-          const shadow = new THREE.Mesh(noteShadowGeometry, shadowMaterials[laneIndex]);
-          shadow.rotation.x = -Math.PI / 2;
-          shadow.position.y = -0.2;
-          shadow.position.z = 0.18;
-          shadow.scale.set(1.06, 1.18, 1);
-          group.add(shadow);
           const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note'));
           badge.position.y = 0.55;
-          badge.scale.set(1.68, 0.74, 1);
+          badge.scale.set(1.74, 0.78, 1);
           group.add(badge);
           scene.add(group);
           active.set(note, group);
