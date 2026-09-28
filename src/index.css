@@ -84,20 +84,31 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
 @media (max-width: 800px) { .practice-controls { gap: 10px; flex-wrap: wrap; } .practice-status, .practice-footer { flex-wrap: wrap; } }
 @media (prefers-reduced-motion: reduce) { button, select { transition: none; } }
 .practice-views { position: relative; display: grid; gap: 0; height: 100dvh; }
+.practice-views::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(21dvh + 44px);
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgba(3, 8, 18, .84) 14%, rgba(2, 6, 14, .99) 100%);
+}
 .practice-views .tab-surface {
   position: absolute;
   left: 8px;
   right: 8px;
   bottom: 28px;
-  z-index: 2;
+  z-index: 4;
   min-height: 200px;
   height: 21dvh;
   margin-top: 0;
   border-color: rgba(116, 184, 255, .46);
   border-radius: 14px;
-  background: rgba(4, 19, 42, .78);
+  background: rgba(3, 12, 29, .96);
   box-shadow: 0 0 38px rgba(35, 132, 255, .28), 0 0 18px rgba(121, 0, 255, .22), inset 0 0 36px rgba(99, 177, 255, .13);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
 }
 .note-highway { position: relative; height: 100dvh; overflow: hidden; border: 0; border-radius: 0; background:
   radial-gradient(circle at 10% 18%, rgba(255, 111, 0, .95) 0 8px, transparent 42px),
