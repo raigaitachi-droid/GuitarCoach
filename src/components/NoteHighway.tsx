@@ -37,12 +37,26 @@ const FRET_DIGIT_FONT = '"Inter", "Manrope", "Space Grotesk", "Aptos", "Segoe UI
 const TABULAR_DIGITS = '0123456789';
 const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string, x: number, y: number) => {
   const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).width));
-  let cursor = x - (advance * text.length) / 2 + advance / 2;
-  for (const character of text) {
-    context.strokeText(character, cursor, y);
-    context.fillText(character, cursor, y);
-    cursor += advance;
+  const textMetrics = context.measureText(text || '0');
+  const ascent = textMetrics.actualBoundingBoxAscent || 0;
+  const descent = textMetrics.actualBoundingBoxDescent || 0;
+  const baselineY = y + (ascent - descent) / 2;
+  const totalWidth = advance * text.length;
+  context.save();
+  context.textAlign = 'center';
+  context.textBaseline = 'alphabetic';
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index];
+    const metrics = context.measureText(character);
+    const left = metrics.actualBoundingBoxLeft || metrics.width / 2;
+    const right = metrics.actualBoundingBoxRight || metrics.width / 2;
+    const opticalOffset = (right - left) / 2;
+    const slotCenter = x - totalWidth / 2 + advance * (index + 0.5);
+    const drawX = slotCenter - opticalOffset;
+    context.strokeText(character, drawX, baselineY);
+    context.fillText(character, drawX, baselineY);
   }
+  context.restore();
 };
 
 export function NoteHighway({ notes, playbackMs }: Props) {
@@ -589,7 +603,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       context.lineWidth = isPad ? 12 : (text.length < 3 ? 12 : 9);
       context.strokeStyle = 'rgba(0,0,0,.94)';
       context.fillStyle = '#ffffff';
-      drawCenteredTabularText(context, text, centerX, centerY + (isPad ? 1 : 0));
+      drawCenteredTabularText(context, text, centerX, centerY);
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
