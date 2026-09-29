@@ -179,6 +179,42 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     playbackRef.current = boundaries.startMs;
     setPlaybackMs(boundaries.startMs);
   };
+  const retryPractice = () => {
+    const activeLoop = loopEnabledRef.current && loopRangeRef.current
+      ? noteLoopBoundaries(song.notes, loopRangeRef.current)
+      : null;
+    const startMs = activeLoop?.startMs ?? initialNoteBoundaries?.startMs ?? 0;
+    updateNotes(song.notes.map((note) => ({
+      ...note,
+      hitState: undefined,
+      timingOffsetMs: undefined,
+      mistakeCount: undefined,
+    })));
+    playbackRef.current = startMs;
+    setPlaybackMs(startMs);
+    completedRef.current = false;
+    waitingRef.current = null;
+    setWaiting(null);
+    lastConsumedPluck.current = -1;
+    lastFeedbackPluck.current = -1;
+    lastHitNote.current = null;
+    pendingAttackAudioTime.current = null;
+    pendingChordAttack.current = null;
+    sustainedPitchCooldownUntil.current = -Infinity;
+    setFeedback(null);
+    setLiveStats(emptyLiveStats());
+    setHeardPitch(null);
+    setHeardChord([]);
+    setChordTiming(null);
+    setQuickOnsetVisible(false);
+    if (quickOnsetTimer.current) {
+      window.clearTimeout(quickOnsetTimer.current);
+      quickOnsetTimer.current = null;
+    }
+    micDetector.clearPitchHistory();
+    guitarSynth.stop();
+    setTransport(!inputError);
+  };
   const changeLoop = () => {
     const nextEnabled = !loopEnabledRef.current;
     loopEnabledRef.current = nextEnabled;
@@ -496,7 +532,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     <main className="practice-screen" aria-labelledby="practice-heading">
       <header className="practice-header">
         <div><span className="wordmark">GuitarCoach</span><h1 id="practice-heading">{song.title}</h1></div>
-        <button className="text-button" onClick={finish}>Finish practice</button>
+        <div className="practice-header-actions">
+          <button className="text-button" onClick={retryPractice}>Retry</button>
+          <button className="text-button" onClick={finish}>Finish practice</button>
+        </div>
       </header>
       <div className="practice-controls" aria-label="Playback controls">
         <button className="primary-button play-button" onClick={() => setTransport(!playingRef.current)} disabled={Boolean(inputError)}>{playing ? 'Pause' : 'Play'}</button>

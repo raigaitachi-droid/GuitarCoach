@@ -1470,3 +1470,16 @@ select { border: 1px solid #424d46; border-radius: 5px; background: #1a211d; col
     top: 48%;
   }
 }
+
+.practice-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+.practice-header-actions .text-button {
+  white-space: nowrap;
+}
