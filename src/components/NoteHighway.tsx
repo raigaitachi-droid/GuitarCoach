@@ -40,47 +40,17 @@ const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string
   const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).width));
   const ascent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxAscent || fontSize * 0.75));
   const descent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxDescent || fontSize * 0.2));
-  const padding = Math.ceil(context.lineWidth * 3 + fontSize * 0.28);
-  const scratch = document.createElement('canvas');
-  scratch.width = Math.ceil(advance * Math.max(1, text.length) + padding * 2);
-  scratch.height = Math.ceil(ascent + descent + padding * 2);
-  const scratchContext = scratch.getContext('2d')!;
-  scratchContext.font = context.font;
-  scratchContext.textAlign = 'center';
-  scratchContext.textBaseline = 'alphabetic';
-  scratchContext.lineJoin = context.lineJoin;
-  scratchContext.lineWidth = context.lineWidth;
-  scratchContext.strokeStyle = context.strokeStyle;
-  scratchContext.fillStyle = context.fillStyle;
-
-  const baseline = padding + ascent;
+  const baselineY = y + (ascent - descent) / 2;
   const totalWidth = advance * text.length;
+  context.save();
+  context.textAlign = 'center';
+  context.textBaseline = 'alphabetic';
   for (let index = 0; index < text.length; index++) {
-    const character = text[index];
-    const slotCenter = scratch.width / 2 - totalWidth / 2 + advance * (index + 0.5);
-    scratchContext.strokeText(character, slotCenter, baseline);
-    scratchContext.fillText(character, slotCenter, baseline);
+    const slotCenter = x - totalWidth / 2 + advance * (index + 0.5);
+    context.strokeText(text[index], slotCenter, baselineY);
+    context.fillText(text[index], slotCenter, baselineY);
   }
-
-  const pixels = scratchContext.getImageData(0, 0, scratch.width, scratch.height).data;
-  let minX = scratch.width;
-  let minY = scratch.height;
-  let maxX = -1;
-  let maxY = -1;
-  for (let row = 0; row < scratch.height; row++) {
-    for (let column = 0; column < scratch.width; column++) {
-      if (pixels[(row * scratch.width + column) * 4 + 3] > 8) {
-        minX = Math.min(minX, column);
-        minY = Math.min(minY, row);
-        maxX = Math.max(maxX, column);
-        maxY = Math.max(maxY, row);
-      }
-    }
-  }
-  if (maxX < minX || maxY < minY) return;
-  const width = maxX - minX + 1;
-  const height = maxY - minY + 1;
-  context.drawImage(scratch, minX, minY, width, height, x - width / 2, y - height / 2, width, height);
+  context.restore();
 };
 
 export function NoteHighway({ notes, playbackMs }: Props) {
@@ -558,22 +528,21 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         context.restore();
       } else {
         for (const layer of [
-          { alpha: 0.16, blur: 42, dx: -3, dy: 4 },
-          { alpha: 0.25, blur: 25, dx: 4, dy: -2 },
-          { alpha: 0.52, blur: 12, dx: 0, dy: 0 },
+          { alpha: 0.16, blur: 42 },
+          { alpha: 0.25, blur: 25 },
+          { alpha: 0.52, blur: 12 },
         ]) {
           context.save();
           context.globalAlpha = layer.alpha;
           context.shadowColor = cssColor;
           context.shadowBlur = layer.blur;
           context.fillStyle = cssColor;
-          context.translate(layer.dx, layer.dy);
           drawNotePath();
           context.fill();
           context.restore();
         }
 
-        const body = context.createRadialGradient(centerX - 24, centerY - 18, 12, centerX, centerY, 95);
+        const body = context.createRadialGradient(centerX - 10, centerY - 10, 12, centerX, centerY, 95);
         body.addColorStop(0, colorRgba(color, 0.95));
         body.addColorStop(0.42, colorRgba(color, 0.82));
         body.addColorStop(0.76, colorRgba(color, 0.72));
@@ -586,7 +555,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         drawNotePath();
         context.clip();
         const unevenLight = context.createLinearGradient(66, 28, 222, 116);
-        unevenLight.addColorStop(0, 'rgba(255,255,255,.18)');
+        unevenLight.addColorStop(0, 'rgba(255,255,255,.13)');
         unevenLight.addColorStop(0.36, 'rgba(255,255,255,.045)');
         unevenLight.addColorStop(0.62, 'rgba(0,0,0,.03)');
         unevenLight.addColorStop(1, 'rgba(0,0,0,.13)');
