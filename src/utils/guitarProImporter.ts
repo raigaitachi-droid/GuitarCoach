@@ -156,6 +156,36 @@ function getHammerPullInfo(note: unknown): { isHammerOn?: boolean; isPullOff?: b
   return {};
 }
 
+function getBendInfo(note: unknown): { isBend?: boolean; technique?: TabNote['technique'] } {
+  const candidate = note as {
+    hasBend?: boolean;
+    bendType?: number;
+    isContinuedBend?: boolean;
+    bendPoints?: unknown[] | null;
+    maxBendPoint?: unknown;
+    effects?: {
+      hasBend?: boolean;
+      bendType?: number;
+      isContinuedBend?: boolean;
+      bendPoints?: unknown[] | null;
+      maxBendPoint?: unknown;
+    };
+  };
+  const effectSource = candidate.effects ?? candidate;
+  const bendType = effectSource.bendType ?? candidate.bendType;
+  const bendPoints = effectSource.bendPoints ?? candidate.bendPoints;
+  const hasBend =
+    effectSource.hasBend === true ||
+    candidate.hasBend === true ||
+    effectSource.isContinuedBend === true ||
+    candidate.isContinuedBend === true ||
+    (typeof bendType === 'number' && bendType > 0) ||
+    (Array.isArray(bendPoints) && bendPoints.length > 0) ||
+    Boolean(effectSource.maxBendPoint ?? candidate.maxBendPoint);
+
+  return hasBend ? { isBend: true, technique: 'bend' } : {};
+}
+
 export function isSupportedGuitarProFile(file: File): boolean {
   const name = file.name.toLowerCase();
   return SUPPORTED_EXTENSIONS.some((extension) => name.endsWith(extension));
@@ -249,6 +279,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
           if (note.fret < 0 || note.string < 1) continue;
           const harmonicInfo = getHarmonicInfo(note);
           const hammerPullInfo = getHammerPullInfo(note);
+          const bendInfo = getBendInfo(note);
 
           // alphaTab numbers string 1 from the lowest string; GuitarCoach
           // numbers string 1 from the highest string.
@@ -264,6 +295,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
             expectedMidi: note.realValue,
             ...harmonicInfo,
             ...hammerPullInfo,
+            ...bendInfo,
             measureIndex: playbackIndex + 1,
           });
         }

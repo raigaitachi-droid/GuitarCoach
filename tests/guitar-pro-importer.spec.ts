@@ -29,3 +29,21 @@ test('imports alphaTab playback timing and exposes real bar boundaries', async (
   ]));
   expect(song.durationMs).toBeGreaterThanOrEqual(3500);
 });
+
+test('imports string bends as playable note metadata', async () => {
+  const source = exportedTab('\\title "Bend test" \\tempo 120 . 3.3{b (0 4)}.4');
+  const bytes = new Uint8Array(source.byteLength);
+  bytes.set(source);
+  const file = new File([
+    bytes.buffer,
+  ], 'bend.gp7', { type: 'application/octet-stream' });
+
+  const song = await importGuitarProFile(file);
+
+  expect(song.notes).toHaveLength(1);
+  expect(song.notes[0]).toEqual(expect.objectContaining({
+    fret: 3,
+    isBend: true,
+    technique: 'bend',
+  }));
+});

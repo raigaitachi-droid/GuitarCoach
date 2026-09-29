@@ -28,6 +28,19 @@ const drawCenteredTabularText = (ctx: CanvasRenderingContext2D, text: string, x:
   ctx.restore();
 };
 
+const drawBendMarker = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+  ctx.save();
+  ctx.font = '800 11px ' + FRET_DIGIT_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(3, 8, 12, .92)';
+  ctx.fillStyle = 'rgba(236, 246, 245, .92)';
+  ctx.strokeText('b', x, y);
+  ctx.fillText('b', x, y);
+  ctx.restore();
+};
+
 // Retains the existing scrolling tab geometry, fret labels, sustain lengths,
 // and legato marks. Decorative effects and game overlays are removed.
 export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect }: Props) {
@@ -122,6 +135,9 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         ctx.font = '750 20px ' + FRET_DIGIT_FONT;
         ctx.textAlign = 'center';
         drawCenteredTabularText(ctx, String(note.fret), x, y);
+        if (note.isBend) {
+          drawBendMarker(ctx, x + radius + 5, y - 16);
+        }
         if (note.hitState === 'hit' || note.hitState === 'miss') {
           ctx.font = '12px system-ui, sans-serif';
           ctx.fillText(note.hitState === 'hit' ? '✓' : '×', x, y + 22);

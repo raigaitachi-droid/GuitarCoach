@@ -461,8 +461,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     scene.add(horizonMist);
 
     const textMaterials = new Map<string, THREE.SpriteMaterial>();
-    const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad') => {
-      const key = `${shape}:${color}:${text}`;
+    const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad', isBend = false) => {
+      const key = `${shape}:${color}:${text}:${isBend ? 'bend' : 'plain'}`;
       const cached = textMaterials.get(key);
       if (cached) return cached;
       const canvas = document.createElement('canvas');
@@ -610,6 +610,22 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       context.fillStyle = '#ffffff';
       const digitOffset = badgeDigitOffset(color, shape);
       drawCenteredTabularText(context, text, centerX + digitOffset.x, centerY + digitOffset.y);
+      if (isBend) {
+        const markerX = centerX + (isPad ? 48 : 58);
+        const markerY = centerY - (isPad ? 46 : 34);
+        context.save();
+        context.font = '800 ' + (isPad ? 36 : 30) + 'px ' + FRET_DIGIT_FONT;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.lineWidth = isPad ? 8 : 7;
+        context.strokeStyle = 'rgba(0,0,0,.94)';
+        context.fillStyle = 'rgba(255,255,255,.94)';
+        context.shadowColor = cssColor;
+        context.shadowBlur = isPad ? 10 : 8;
+        context.strokeText('b', markerX, markerY);
+        context.fillText('b', markerX, markerY);
+        context.restore();
+      }
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -720,13 +736,13 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       }
       const playbackAdvanced = current.playbackMs > previousPlaybackMs;
       const visible = new Set<TabNote>();
-      const nextPadFrets = new Map<number, number>();
+      const nextPadLabels = new Map<number, { fret: number; isBend: boolean }>();
       const start = firstHighwayNote(current.notes, current.playbackMs - HIGHWAY_PAST_MS);
       for (let i = start; i < current.notes.length; i++) {
         const note = current.notes[i];
         if (note.timestampMs > current.playbackMs + HIGHWAY_LOOKAHEAD_MS) break;
-        if (!nextPadFrets.has(note.string) && note.timestampMs >= current.playbackMs - HIT_WINDOW_MS) {
-          nextPadFrets.set(note.string, note.fret);
+        if (!nextPadLabels.has(note.string) && note.timestampMs >= current.playbackMs - HIT_WINDOW_MS) {
+          nextPadLabels.set(note.string, { fret: note.fret, isBend: Boolean(note.isBend) });
         }
         if (playbackAdvanced && note.timestampMs > previousPlaybackMs && note.timestampMs <= current.playbackMs + HIT_WINDOW_MS && !hitNotes.has(note.id)) {
           hitNotes.add(note.id);
@@ -741,7 +757,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         if (!group) {
           group = new THREE.Group();
           const laneIndex = LANE_COUNT - note.string;
-          const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note'));
+          const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend)));
           badge.position.y = 0.62;
           badge.scale.set(1.42, 0.9, 1);
           group.add(badge);
@@ -774,7 +790,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           const hitProgress = THREE.MathUtils.clamp(hitAge / 260, 0, 1);
           const hitPulse = hitAge >= 0 && hitAge < 260 ? Math.sin((1 - hitProgress) * Math.PI) : 0;
           const target = playbackAdvanced ? 0.9 + hitPulse * 0.1 : 0.82;
-          label.material = makeBadgeMaterial(String(nextPadFrets.get(string) ?? 0), COLORS[LANE_COUNT - string], 'pad');
+          const padLabel = nextPadLabels.get(string);
+          label.material = makeBadgeMaterial(String(padLabel?.fret ?? 0), COLORS[LANE_COUNT - string], 'pad', Boolean(padLabel?.isBend));
           label.material.opacity = THREE.MathUtils.lerp(label.material.opacity, target, 0.16);
           const reflectionMaterial = padReflections.get(string);
           if (reflectionMaterial) {

@@ -7,6 +7,7 @@ export interface TabNote {
   expectedMidi?: number; // Sounding pitch from the imported score, including tuning.
   isHarmonic?: boolean;
   harmonicType?: 'natural' | 'artificial' | 'pinch' | 'tap' | 'semi' | 'unknown';
+  isBend?: boolean;
   isHammerOn?: boolean;
   isPullOff?: boolean;
   legatoOriginNoteId?: string;
