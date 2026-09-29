@@ -53,6 +53,14 @@ const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string
   context.restore();
 };
 
+const badgeDigitOffset = (color: number, shape: 'note' | 'pad') => {
+  if (color === COLORS[0]) {
+    return { x: shape === 'pad' ? 4 : 3, y: 0 };
+  }
+
+  return { x: 0, y: 0 };
+};
+
 export function NoteHighway({ notes, playbackMs }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sortedNotes = useMemo(() => highwayNotes(notes), [notes]);
@@ -596,7 +604,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       context.lineWidth = isPad ? 12 : (text.length < 3 ? 12 : 9);
       context.strokeStyle = 'rgba(0,0,0,.94)';
       context.fillStyle = '#ffffff';
-      drawCenteredTabularText(context, text, centerX, centerY);
+      const digitOffset = badgeDigitOffset(color, shape);
+      drawCenteredTabularText(context, text, centerX + digitOffset.x, centerY + digitOffset.y);
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
