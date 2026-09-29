@@ -594,6 +594,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {recentFeedback.timing && <span>{recentFeedback.timing}</span>}
         </div>
       )}
+      {recentFeedback?.timing && (
+        <div className={`practice-timing-callout ${recentFeedback.timing.toLowerCase()}`} aria-hidden="true">
+          <span>{recentFeedback.timing === 'EARLY' ? '← EARLY' : 'LATE →'}</span>
+        </div>
+      )}
       <div className="practice-views">
         <NoteHighway notes={notes} playbackMs={playbackMs} />
         <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />

@@ -12,6 +12,7 @@ interface Props {
 }
 
 type BadgeJudgement = 'pending' | 'hit' | 'wrong';
+type PadFeedbackKind = 'hit' | 'wrong';
 
 const COLORS = [0xe6a84f, 0x36c8bf, 0xe06d58, 0x8a9bff, 0x4acb89, 0xbc67df];
 const LANE_COUNT = 6;
@@ -699,7 +700,56 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       return material;
     };
 
+    const makePadFeedbackMaterial = (kind: PadFeedbackKind) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 220;
+      canvas.height = 220;
+      const context = canvas.getContext('2d')!;
+      const color = kind === 'hit' ? '#79ffb0' : '#ff5f73';
+      const center = canvas.width / 2;
+      const gradient = context.createRadialGradient(center, center, 28, center, center, 108);
+      gradient.addColorStop(0, kind === 'hit' ? 'rgba(121,255,176,.18)' : 'rgba(255,95,115,.18)');
+      gradient.addColorStop(0.46, kind === 'hit' ? 'rgba(121,255,176,.08)' : 'rgba(255,95,115,.08)');
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = gradient;
+      context.beginPath();
+      context.arc(center, center, 104, 0, Math.PI * 2);
+      context.fill();
+      for (const layer of [
+        { width: 22, alpha: 0.16, blur: 30, radius: 62 },
+        { width: 13, alpha: 0.34, blur: 18, radius: 62 },
+        { width: 5, alpha: 0.68, blur: 8, radius: 62 },
+      ]) {
+        context.save();
+        context.globalAlpha = layer.alpha;
+        context.strokeStyle = color;
+        context.lineWidth = layer.width;
+        context.shadowColor = color;
+        context.shadowBlur = layer.blur;
+        context.beginPath();
+        context.arc(center, center, layer.radius, 0, Math.PI * 2);
+        context.stroke();
+        context.restore();
+      }
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 8;
+      textures.push(texture);
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        depthTest: false,
+        fog: false,
+        blending: THREE.AdditiveBlending,
+      });
+      materials.push(material);
+      return material;
+    };
+
     const padLabels = new Map<number, THREE.Sprite>();
+    const padFeedbackSprites = new Map<number, { sprite: THREE.Sprite; hitMaterial: THREE.SpriteMaterial; wrongMaterial: THREE.SpriteMaterial }>();
     const padReflections = new Map<number, THREE.MeshBasicMaterial>();
     const noteContacts = new Map<TabNote, THREE.MeshBasicMaterial>();
     for (let string = 6; string >= 1; string--) {
@@ -709,6 +759,13 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       pad.scale.set(PAD_BASE_SCALE, PAD_BASE_SCALE, 1);
       scene.add(pad);
       padLabels.set(string, pad);
+      const hitMaterial = makePadFeedbackMaterial('hit');
+      const wrongMaterial = makePadFeedbackMaterial('wrong');
+      const feedbackSprite = new THREE.Sprite(hitMaterial);
+      feedbackSprite.position.set(highwayLaneX(string), 0.74, TARGET_Z + 0.04);
+      feedbackSprite.scale.set(PAD_BASE_SCALE * 1.28, PAD_BASE_SCALE * 1.28, 1);
+      scene.add(feedbackSprite);
+      padFeedbackSprites.set(string, { sprite: feedbackSprite, hitMaterial, wrongMaterial });
       const padGlowGeometry = new THREE.PlaneGeometry(1.72, 1.02);
       geometries.push(padGlowGeometry);
       const padGlowMaterial = makeFloorGlowMaterial(COLORS[laneIndex], PAD_REFLECTION_OPACITY, false);
@@ -733,7 +790,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
     const active = new Map<TabNote, THREE.Group>();
     const hitNotes = new Set<string>();
+    const judgedNotes = new Set<string>();
     const padHits = new Map<number, number>();
+    const padFeedbacks = new Map<number, { at: number; kind: PadFeedbackKind }>();
     let previousPlaybackMs = playbackMs;
     let frame = 0;
     let lost = false;
@@ -753,10 +812,13 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     resize();
     const draw = () => {
       if (lost) return;
+      const now = performance.now();
       const current = view.current;
       if (current.playbackMs < previousPlaybackMs - 100) {
         hitNotes.clear();
+        judgedNotes.clear();
         padHits.clear();
+        padFeedbacks.clear();
       }
       const playbackAdvanced = current.playbackMs > previousPlaybackMs;
       const visible = new Set<TabNote>();
@@ -774,6 +836,16 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           if (pad) {
             pad.material.opacity = 1;
             padHits.set(note.string, current.playbackMs);
+          }
+        }
+        const judgement = noteJudgement(note);
+        if (judgement !== 'pending' && !judgedNotes.has(note.id)) {
+          judgedNotes.add(note.id);
+          const kind = judgement === 'hit' ? 'hit' : 'wrong';
+          padFeedbacks.set(note.string, { at: now, kind });
+          const padFeedback = padFeedbackSprites.get(note.string);
+          if (padFeedback) {
+            padFeedback.sprite.material = kind === 'hit' ? padFeedback.hitMaterial : padFeedback.wrongMaterial;
           }
         }
         visible.add(note);
@@ -815,20 +887,31 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           const hitAge = current.playbackMs - (padHits.get(string) ?? -1000);
           const hitProgress = THREE.MathUtils.clamp(hitAge / 260, 0, 1);
           const hitPulse = hitAge >= 0 && hitAge < 260 ? Math.sin((1 - hitProgress) * Math.PI) : 0;
+          const feedback = padFeedbacks.get(string);
+          const feedbackAge = feedback ? now - feedback.at : Infinity;
+          const feedbackProgress = THREE.MathUtils.clamp(feedbackAge / 560, 0, 1);
+          const feedbackPulse = feedbackAge < 560 ? Math.sin((1 - feedbackProgress) * Math.PI) : 0;
           const target = playbackAdvanced ? 0.9 + hitPulse * 0.1 : 0.82;
           const padLabel = nextPadLabels.get(string);
           label.material = makeBadgeMaterial(String(padLabel?.fret ?? 0), COLORS[LANE_COUNT - string], 'pad', Boolean(padLabel?.isBend));
           label.material.opacity = THREE.MathUtils.lerp(label.material.opacity, target, 0.16);
           const reflectionMaterial = padReflections.get(string);
           if (reflectionMaterial) {
-            reflectionMaterial.opacity = THREE.MathUtils.lerp(reflectionMaterial.opacity, PAD_REFLECTION_OPACITY + hitPulse * 0.16, 0.12);
+            const feedbackColor = feedback?.kind === 'hit' ? 0x79ffb0 : feedback?.kind === 'wrong' ? 0xff5f73 : COLORS[LANE_COUNT - string];
+            reflectionMaterial.color.set(feedbackPulse > 0 ? feedbackColor : COLORS[LANE_COUNT - string]);
+            reflectionMaterial.opacity = THREE.MathUtils.lerp(reflectionMaterial.opacity, PAD_REFLECTION_OPACITY + hitPulse * 0.16 + feedbackPulse * 0.22, 0.12);
           }
           const breathe = 1 + Math.sin(performance.now() * 0.0014 + string) * 0.025;
-          const scalePulse = (1 + hitPulse * 0.32) * breathe;
+          const scalePulse = (1 + hitPulse * 0.24 + feedbackPulse * 0.42) * breathe;
           label.scale.set(PAD_BASE_SCALE * scalePulse, PAD_BASE_SCALE * scalePulse, 1);
+          const feedbackSprite = padFeedbackSprites.get(string)?.sprite;
+          if (feedbackSprite) {
+            (feedbackSprite.material as THREE.SpriteMaterial).opacity = feedbackPulse * 0.95;
+            const feedbackScale = PAD_BASE_SCALE * (1.12 + feedbackProgress * 0.72);
+            feedbackSprite.scale.set(feedbackScale, feedbackScale, 1);
+          }
         }
       }
-      const now = performance.now();
       const dustAttribute = dustGeometry.getAttribute('position') as THREE.BufferAttribute;
       const dustArray = dustAttribute.array as Float32Array;
       for (let i = 0; i < DUST_PARTICLE_COUNT; i++) {
