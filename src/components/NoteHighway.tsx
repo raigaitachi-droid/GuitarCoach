@@ -58,6 +58,10 @@ const badgeDigitOffset = (color: number, shape: 'note' | 'pad') => {
     return { x: shape === 'pad' ? 4 : 3, y: 0 };
   }
 
+  if (color === COLORS[1]) {
+    return { x: shape === 'pad' ? 4 : 3, y: 0 };
+  }
+
   return { x: 0, y: 0 };
 };
 
