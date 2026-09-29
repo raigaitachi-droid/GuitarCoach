@@ -11,6 +11,8 @@ interface Props {
   playbackMs: number;
 }
 
+type BadgeJudgement = 'pending' | 'hit' | 'wrong';
+
 const COLORS = [0xe6a84f, 0x36c8bf, 0xe06d58, 0x8a9bff, 0x4acb89, 0xbc67df];
 const LANE_COUNT = 6;
 const HIGHWAY_WIDTH = 14.2;
@@ -63,6 +65,12 @@ const badgeDigitOffset = (color: number, shape: 'note' | 'pad') => {
   }
 
   return { x: 0, y: 0 };
+};
+
+const noteJudgement = (note: TabNote): BadgeJudgement => {
+  if (note.hitState === 'hit' || note.hitState === 'close') return 'hit';
+  if (note.hitState === 'miss' || note.hitState === 'wrong' || (note.mistakeCount ?? 0) > 0) return 'wrong';
+  return 'pending';
 };
 
 export function NoteHighway({ notes, playbackMs }: Props) {
@@ -461,8 +469,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     scene.add(horizonMist);
 
     const textMaterials = new Map<string, THREE.SpriteMaterial>();
-    const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad', isBend = false) => {
-      const key = `${shape}:${color}:${text}:${isBend ? 'bend' : 'plain'}`;
+    const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad', isBend = false, judgement: BadgeJudgement = 'pending') => {
+      const key = `${shape}:${color}:${text}:${isBend ? 'bend' : 'plain'}:${judgement}`;
       const cached = textMaterials.get(key);
       if (cached) return cached;
       const canvas = document.createElement('canvas');
@@ -626,6 +634,22 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         context.fillText('↑', markerX, markerY);
         context.restore();
       }
+      if (shape === 'note' && judgement !== 'pending') {
+        const isHit = judgement === 'hit';
+        context.save();
+        context.font = '900 30px ' + FRET_DIGIT_FONT;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.lineWidth = 7;
+        context.strokeStyle = 'rgba(0,0,0,.9)';
+        context.fillStyle = isHit ? 'rgba(165, 255, 203, .96)' : 'rgba(255, 139, 139, .96)';
+        context.shadowColor = isHit ? 'rgba(79, 255, 170, .72)' : 'rgba(255, 76, 94, .7)';
+        context.shadowBlur = 10;
+        const glyph = isHit ? '✓' : '×';
+        context.strokeText(glyph, centerX - 62, centerY - 35);
+        context.fillText(glyph, centerX - 62, centerY - 35);
+        context.restore();
+      }
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -753,11 +777,11 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           }
         }
         visible.add(note);
+        const laneIndex = LANE_COUNT - note.string;
         let group = active.get(note);
         if (!group) {
           group = new THREE.Group();
-          const laneIndex = LANE_COUNT - note.string;
-          const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend)));
+          const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend), noteJudgement(note)));
           badge.position.y = 0.62;
           badge.scale.set(1.42, 0.9, 1);
           group.add(badge);
@@ -780,7 +804,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         const contactMaterial = noteContacts.get(note);
         if (contactMaterial) {
           const near = 1 - THREE.MathUtils.clamp((TARGET_Z - noteZ) / HIGHWAY_LENGTH, 0, 1);
-          contactMaterial.opacity = NOTE_CONTACT_OPACITY * THREE.MathUtils.clamp(near, 0.16, 1);
+          const judgement = noteJudgement(note);
+          contactMaterial.color.set(judgement === 'hit' ? 0x8ff0b3 : judgement === 'wrong' ? 0xff6377 : COLORS[laneIndex]);
+          contactMaterial.opacity = NOTE_CONTACT_OPACITY * THREE.MathUtils.clamp(near, 0.16, 1) * (judgement === 'pending' ? 1 : 1.45);
         }
       }
       for (let string = 1; string <= 6; string++) {

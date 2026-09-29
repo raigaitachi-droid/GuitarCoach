@@ -15,6 +15,17 @@ interface Props {
   onFinish: (result: PracticeResult) => void;
 }
 
+interface LiveFeedbackStats {
+  combo: number;
+  bestCombo: number;
+  attempted: number;
+  correct: number;
+  wrong: number;
+  early: number;
+  late: number;
+  onTime: number;
+}
+
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 function noteName(note: TabNote) {
   const midi = expectedMidi(note);
@@ -46,6 +57,17 @@ function nearestChordTimestamp(notes: TabNote[], playbackMs: number): number | n
   );
 }
 
+const emptyLiveStats = (): LiveFeedbackStats => ({
+  combo: 0,
+  bestCombo: 0,
+  attempted: 0,
+  correct: 0,
+  wrong: 0,
+  early: 0,
+  late: 0,
+  onTime: 0,
+});
+
 export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, onTempoPercentChange, onFinish }: Props) {
   const bars = useMemo(() => practiceBars(song), [song]);
   const startingRange = normalizeLoopRange(initialLoopRange || { startBar: 1, endBar: 1 }, bars.length);
@@ -65,6 +87,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const [waiting, setWaiting] = useState<TabNote | null>(null);
   const waitingRef = useRef<TabNote | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; kind: 'correct' | 'wrong'; timing?: string; at: number } | null>(null);
+  const [liveStats, setLiveStats] = useState<LiveFeedbackStats>(() => emptyLiveStats());
   const [quickOnsetVisible, setQuickOnsetVisible] = useState(false);
   const [heardPitch, setHeardPitch] = useState<Pick<PitchResult, 'noteName' | 'frequency' | 'confidence'> | null>(null);
   const [heardChord, setHeardChord] = useState<number[]>([]);
@@ -96,10 +119,34 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
   const hasChords = scorableIds.size !== song.notes.length;
   const duration = Math.max(song.durationMs, ...song.notes.map((note) => note.timestampMs + Math.max(note.durationMs, TIMING_WINDOW_MS + 100)));
+  const liveAccuracy = liveStats.attempted ? Math.round(liveStats.correct / liveStats.attempted * 100) : null;
 
   // Keep the original event-driven detector and scrolling clock, with one owner
   // for a session. Transport state is synchronous so pause cannot award hits.
   const updateNotes = (next: TabNote[]) => { notesRef.current = next; setNotes(next); };
+  const registerCorrect = (timing: 'early' | 'on-time' | 'late', count = 1) => {
+    setLiveStats((current) => {
+      const combo = current.combo + count;
+      return {
+        ...current,
+        combo,
+        bestCombo: Math.max(current.bestCombo, combo),
+        attempted: current.attempted + count,
+        correct: current.correct + count,
+        early: current.early + (timing === 'early' ? count : 0),
+        late: current.late + (timing === 'late' ? count : 0),
+        onTime: current.onTime + (timing === 'on-time' ? count : 0),
+      };
+    });
+  };
+  const registerWrong = (count = 1) => {
+    setLiveStats((current) => ({
+      ...current,
+      combo: 0,
+      attempted: current.attempted + count,
+      wrong: current.wrong + count,
+    }));
+  };
   const setTransport = (next: boolean) => {
     playingRef.current = next;
     setPlaying(next);
@@ -122,6 +169,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     pendingAttackAudioTime.current = null;
     sustainedPitchCooldownUntil.current = -Infinity;
     setFeedback(null);
+    setLiveStats(emptyLiveStats());
     guitarSynth.stop();
   };
   const restartLoop = (range: NoteLoopRange) => {
@@ -305,6 +353,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
               kind: chord.passed ? 'correct' : 'wrong',
               at: performance.now(),
             });
+            if (chord.passed) registerCorrect('on-time', chord.expected.length);
+            else registerWrong(Math.max(1, chord.missed.length));
           }
           pendingChordAttack.current = null;
         }
@@ -350,6 +400,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
             : note
           ));
           setFeedback({ text: `Wrong note · play ${noteName(judgement.expected)}`, kind: 'wrong', at: performance.now() });
+          registerWrong();
         }
         return;
       }
@@ -365,6 +416,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       waitingRef.current = null;
       setWaiting(null);
       setFeedback({ text: 'Correct note', kind: 'correct', timing: judgement.timing === 'on-time' ? undefined : judgement.timing.toUpperCase(), at: performance.now() });
+      registerCorrect(judgement.timing);
     });
   }, [withAudio, scorableIds]);
 
@@ -405,6 +457,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
             const judged = notesRef.current.map((note) => missedIds.has(note.id) ? { ...note, hitState: 'miss' as const } : note);
             updateNotes(judged);
             setFeedback({ text: 'Missed note', kind: 'wrong', at: now });
+            registerWrong(missedIds.size);
           }
         }
         if (!withAudio && !wrapped) {
@@ -437,6 +490,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const recentFeedback = feedback && performance.now() - feedback.at < 1200 ? feedback : null;
   const currentNote = [...notes].reverse().find((note) => note.timestampMs <= playbackMs);
   const currentBar = barAt(bars, playbackMs)?.index || currentNote?.measureIndex || 1;
+  const accuracyLabel = liveAccuracy === null ? '--' : `${liveAccuracy}%`;
 
   return (
     <main className="practice-screen" aria-labelledby="practice-heading">
@@ -476,8 +530,28 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>
+      <section className="practice-feedback-hud" aria-label="Live practice feedback">
+        <div className="hud-primary">
+          <span>Combo</span>
+          <strong>{liveStats.combo}</strong>
+        </div>
+        <div className="hud-grid">
+          <span><b>{accuracyLabel}</b> accuracy</span>
+          <span><b>{liveStats.correct}</b> correct</span>
+          <span><b>{liveStats.wrong}</b> wrong</span>
+          <span><b>{liveStats.bestCombo}</b> best</span>
+          <span><b>{liveStats.early}</b> early</span>
+          <span><b>{liveStats.late}</b> late</span>
+        </div>
+      </section>
+      {recentFeedback && (
+        <div className={`practice-feedback-burst ${recentFeedback.kind}`} aria-hidden="true">
+          <strong>{recentFeedback.text}</strong>
+          {recentFeedback.timing && <span>{recentFeedback.timing}</span>}
+        </div>
+      )}
       <div className="practice-views">
-        <NoteHighway notes={song.notes} playbackMs={playbackMs} />
+        <NoteHighway notes={notes} playbackMs={playbackMs} />
         <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />
       </div>
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
