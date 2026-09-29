@@ -533,7 +533,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       <header className="practice-header">
         <div><span className="wordmark">GuitarCoach</span><h1 id="practice-heading">{song.title}</h1></div>
         <div className="practice-header-actions">
-          <button className="text-button" onClick={retryPractice}>Retry</button>
+          <button className="retry-button" onClick={retryPractice} aria-label="Retry practice" title="Retry practice">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18.8 9.2a7.2 7.2 0 1 0 .2 5.1" />
+              <path d="M18.9 4.8v4.7h-4.7" />
+            </svg>
+          </button>
           <button className="text-button" onClick={finish}>Finish practice</button>
         </div>
       </header>
