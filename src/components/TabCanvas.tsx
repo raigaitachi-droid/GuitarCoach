@@ -30,14 +30,14 @@ const drawCenteredTabularText = (ctx: CanvasRenderingContext2D, text: string, x:
 
 const drawBendMarker = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
   ctx.save();
-  ctx.font = '800 11px ' + FRET_DIGIT_FONT;
+  ctx.font = '800 13px ' + FRET_DIGIT_FONT;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 4;
   ctx.strokeStyle = 'rgba(3, 8, 12, .92)';
   ctx.fillStyle = 'rgba(236, 246, 245, .92)';
-  ctx.strokeText('b', x, y);
-  ctx.fillText('b', x, y);
+  ctx.strokeText('↑', x, y);
+  ctx.fillText('↑', x, y);
   ctx.restore();
 };
 
@@ -136,7 +136,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         ctx.textAlign = 'center';
         drawCenteredTabularText(ctx, String(note.fret), x, y);
         if (note.isBend) {
-          drawBendMarker(ctx, x + radius + 5, y - 16);
+          drawBendMarker(ctx, x + radius + 5, y - 17);
         }
         if (note.hitState === 'hit' || note.hitState === 'miss') {
           ctx.font = '12px system-ui, sans-serif';

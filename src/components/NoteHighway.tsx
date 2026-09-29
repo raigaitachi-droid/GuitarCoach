@@ -612,9 +612,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       drawCenteredTabularText(context, text, centerX + digitOffset.x, centerY + digitOffset.y);
       if (isBend) {
         const markerX = centerX + (isPad ? 48 : 58);
-        const markerY = centerY - (isPad ? 46 : 34);
+        const markerY = centerY - (isPad ? 48 : 36);
         context.save();
-        context.font = '800 ' + (isPad ? 36 : 30) + 'px ' + FRET_DIGIT_FONT;
+        context.font = '800 ' + (isPad ? 38 : 32) + 'px ' + FRET_DIGIT_FONT;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.lineWidth = isPad ? 8 : 7;
@@ -622,8 +622,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         context.fillStyle = 'rgba(255,255,255,.94)';
         context.shadowColor = cssColor;
         context.shadowBlur = isPad ? 10 : 8;
-        context.strokeText('b', markerX, markerY);
-        context.fillText('b', markerX, markerY);
+        context.strokeText('↑', markerX, markerY);
+        context.fillText('↑', markerX, markerY);
         context.restore();
       }
 
