@@ -17,22 +17,13 @@ const FRET_DIGIT_FONT = '"Inter", "Manrope", "Space Grotesk", "Aptos", "Segoe UI
 const TABULAR_DIGITS = '0123456789';
 const drawCenteredTabularText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number) => {
   const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => ctx.measureText(digit).width));
-  const textMetrics = ctx.measureText(text || '0');
-  const ascent = textMetrics.actualBoundingBoxAscent || 0;
-  const descent = textMetrics.actualBoundingBoxDescent || 0;
-  const baselineY = y + (ascent - descent) / 2;
   const totalWidth = advance * text.length;
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
+  ctx.textBaseline = 'middle';
   for (let index = 0; index < text.length; index++) {
-    const character = text[index];
-    const metrics = ctx.measureText(character);
-    const left = metrics.actualBoundingBoxLeft || metrics.width / 2;
-    const right = metrics.actualBoundingBoxRight || metrics.width / 2;
-    const opticalOffset = (right - left) / 2;
     const slotCenter = x - totalWidth / 2 + advance * (index + 0.5);
-    ctx.fillText(character, slotCenter - opticalOffset, baselineY);
+    ctx.fillText(text[index], slotCenter, y);
   }
   ctx.restore();
 };

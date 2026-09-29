@@ -36,27 +36,51 @@ const colorRgba = (color: number, alpha: number) => {
 const FRET_DIGIT_FONT = '"Inter", "Manrope", "Space Grotesk", "Aptos", "Segoe UI", system-ui, sans-serif';
 const TABULAR_DIGITS = '0123456789';
 const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+  const fontSize = Number(context.font.match(/(\d+(?:\.\d+)?)px/)?.[1] || 72);
   const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).width));
-  const textMetrics = context.measureText(text || '0');
-  const ascent = textMetrics.actualBoundingBoxAscent || 0;
-  const descent = textMetrics.actualBoundingBoxDescent || 0;
-  const baselineY = y + (ascent - descent) / 2;
+  const ascent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxAscent || fontSize * 0.75));
+  const descent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxDescent || fontSize * 0.2));
+  const padding = Math.ceil(context.lineWidth * 3 + fontSize * 0.28);
+  const scratch = document.createElement('canvas');
+  scratch.width = Math.ceil(advance * Math.max(1, text.length) + padding * 2);
+  scratch.height = Math.ceil(ascent + descent + padding * 2);
+  const scratchContext = scratch.getContext('2d')!;
+  scratchContext.font = context.font;
+  scratchContext.textAlign = 'center';
+  scratchContext.textBaseline = 'alphabetic';
+  scratchContext.lineJoin = context.lineJoin;
+  scratchContext.lineWidth = context.lineWidth;
+  scratchContext.strokeStyle = context.strokeStyle;
+  scratchContext.fillStyle = context.fillStyle;
+
+  const baseline = padding + ascent;
   const totalWidth = advance * text.length;
-  context.save();
-  context.textAlign = 'center';
-  context.textBaseline = 'alphabetic';
   for (let index = 0; index < text.length; index++) {
     const character = text[index];
-    const metrics = context.measureText(character);
-    const left = metrics.actualBoundingBoxLeft || metrics.width / 2;
-    const right = metrics.actualBoundingBoxRight || metrics.width / 2;
-    const opticalOffset = (right - left) / 2;
-    const slotCenter = x - totalWidth / 2 + advance * (index + 0.5);
-    const drawX = slotCenter - opticalOffset;
-    context.strokeText(character, drawX, baselineY);
-    context.fillText(character, drawX, baselineY);
+    const slotCenter = scratch.width / 2 - totalWidth / 2 + advance * (index + 0.5);
+    scratchContext.strokeText(character, slotCenter, baseline);
+    scratchContext.fillText(character, slotCenter, baseline);
   }
-  context.restore();
+
+  const pixels = scratchContext.getImageData(0, 0, scratch.width, scratch.height).data;
+  let minX = scratch.width;
+  let minY = scratch.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let row = 0; row < scratch.height; row++) {
+    for (let column = 0; column < scratch.width; column++) {
+      if (pixels[(row * scratch.width + column) * 4 + 3] > 8) {
+        minX = Math.min(minX, column);
+        minY = Math.min(minY, row);
+        maxX = Math.max(maxX, column);
+        maxY = Math.max(maxY, row);
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return;
+  const width = maxX - minX + 1;
+  const height = maxY - minY + 1;
+  context.drawImage(scratch, minX, minY, width, height, x - width / 2, y - height / 2, width, height);
 };
 
 export function NoteHighway({ notes, playbackMs }: Props) {
