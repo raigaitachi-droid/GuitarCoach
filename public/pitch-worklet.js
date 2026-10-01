@@ -10,25 +10,24 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     // Do not analyse a ring buffer that still contains the previous note.
     this.samplesSinceOnset = Infinity;
     this.pendingOnset = false;
-    this.quickOnsetWindowSize = 256;
-    this.quickOnsetSamples = 0;
-    this.quickOnsetSquares = 0;
-    this.previousQuickOnsetRms = 0;
-    this.lastQuickOnsetFrame = -99999;
-    this.quickOnsetRefractoryFrames = Math.round(sampleRate * 0.04);
+    // Measure attack energy across more than one low-E cycle, rather than
+    // mistaking the peaks of 128-sample audio blocks for new physical picks.
+    this.attackWindowSize = Math.round(sampleRate * 0.024 / 128) * 128;
+    this.attackSamples = 0;
+    this.attackSquares = 0;
+    this.attackHfSquares = 0;
+    this.previousAttackRms = 0;
     this.blockCounter = 0;
     this.noiseThreshold = options.processorOptions?.noiseThreshold || 0.002;
     this.mutedUntilFrame = 0;
 
     // Advanced guitar attack & re-pluck tracking
-    this.shortRms = 0; // Fast envelope (~5-8 ms)
     this.decayRms = 0; // Slow envelope tracking decaying resonance (~120 ms)
     this.decayHfRms = 0; // High-frequency difference baseline
     this.lastOnsetFrame = -99999;
-    this.pluckCount = 1;
+    this.pluckCount = 0;
     this.minFramesBetweenPlucks = Math.round(sampleRate * 0.065); // 65ms minimum spacing between distinct picks
     this.expectedString = null;
-    this.lastOnsetExpectedString = null;
 
     this.port.onmessage = (event) => {
       if (event.data?.type === 'threshold') {
@@ -65,32 +64,6 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       this.samplesSinceLastSnapshot++;
       this.samplesSinceOnset++;
       sumSquares += sample * sample;
-      this.quickOnsetSquares += sample * sample;
-      this.quickOnsetSamples++;
-
-      if (this.quickOnsetSamples === this.quickOnsetWindowSize) {
-        const quickRms = Math.sqrt(this.quickOnsetSquares / this.quickOnsetWindowSize);
-        const quickOnsetFrame = currentFrame + i + 1;
-        const isQuickOnset =
-          quickOnsetFrame >= this.mutedUntilFrame &&
-          quickOnsetFrame - this.lastQuickOnsetFrame >= this.quickOnsetRefractoryFrames &&
-          quickRms > this.noiseThreshold &&
-          quickRms > this.previousQuickOnsetRms * 2.5;
-
-        if (isQuickOnset) {
-          this.lastQuickOnsetFrame = quickOnsetFrame;
-          this.port.postMessage({
-            type: 'ONSET_TRIGGERED',
-            rms: quickRms,
-            audioTimeMs: (quickOnsetFrame / sampleRate) * 1000,
-          });
-        }
-
-        this.previousQuickOnsetRms = quickRms;
-        this.quickOnsetSquares = 0;
-        this.quickOnsetSamples = 0;
-      }
-
       if (i > 0) {
         const diff = sample - channel[i - 1];
         sumHfDiff += diff * diff;
@@ -98,65 +71,40 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     }
 
     const rms = Math.sqrt(sumSquares / channel.length);
-    const hfRms = Math.sqrt(sumHfDiff / channel.length);
     const crestFactor = blockPeak / (rms + 1e-6);
 
-    // Fast envelope follower (attack tracking, ~6 ms)
-    this.shortRms = this.shortRms * 0.45 + rms * 0.55;
-
-    // Slow envelope follower (string decay tracking, ~120 ms)
-    if (this.shortRms < this.decayRms) {
-      this.decayRms = this.decayRms * 0.965 + this.shortRms * 0.035;
-    } else {
-      this.decayRms = this.decayRms * 0.82 + this.shortRms * 0.18;
-    }
-    this.decayHfRms = this.decayHfRms * 0.94 + hfRms * 0.06;
-
-    // Physical Guitar Pluck / Re-pluck Detection:
-    // 1) Initial attack from silence: sudden jump above noise floor
-    // 2) Re-pluck on an already ringing string: energy surges above decaying tail (+25-30% jump)
-    // 3) High crest factor / pick transient spike: sharp plectrum release impulse
-    const framesSinceLastOnset = currentFrame - this.lastOnsetFrame;
-    const canTriggerNewPluck = framesSinceLastOnset >= this.minFramesBetweenPlucks;
-    const isCrossStringTransition =
-      this.expectedString !== null &&
-      this.lastOnsetExpectedString !== null &&
-      this.expectedString !== this.lastOnsetExpectedString;
-    const repluckEnergyRatio = isCrossStringTransition ? 1.18 : 1.28;
-    const repluckHfRatio = isCrossStringTransition ? 1.42 : 1.55;
-    const repluckCrestThreshold = isCrossStringTransition ? 2.25 : 2.45;
-
-    const isInitialPluck =
-      rms >= this.noiseThreshold &&
-      this.decayRms <= this.noiseThreshold * 1.25 &&
-      canTriggerNewPluck;
-
-    const isRePluckOnRingingString =
-      canTriggerNewPluck &&
-      rms >= this.noiseThreshold &&
-      (
-        rms > this.decayRms * repluckEnergyRatio ||
-        (hfRms > this.decayHfRms * repluckHfRatio && rms > this.decayRms * 1.10) ||
-        (crestFactor >= repluckCrestThreshold && rms > this.decayRms * 1.08)
-      );
-
-    const onset = isInitialPluck || isRePluckOnRingingString;
-
-    if (onset) {
-      this.pluckCount++;
-      this.lastOnsetFrame = currentFrame;
-      this.decayRms = Math.max(this.decayRms, rms);
-      if (currentFrame >= this.mutedUntilFrame) {
+    this.attackSquares += sumSquares;
+    this.attackHfSquares += sumHfDiff;
+    this.attackSamples += channel.length;
+    if (this.attackSamples >= this.attackWindowSize) {
+      const attackRms = Math.sqrt(this.attackSquares / this.attackSamples);
+      const attackHfRms = Math.sqrt(this.attackHfSquares / this.attackSamples);
+      const canTrigger = currentFrame - this.lastOnsetFrame >= this.minFramesBetweenPlucks;
+      const initial = attackRms >= this.noiseThreshold && this.previousAttackRms < this.noiseThreshold;
+      const rising = attackRms > this.previousAttackRms * 1.10;
+      const repluck = attackRms >= this.noiseThreshold && rising &&
+        (attackRms > this.decayRms * 1.02 ||
+         (attackHfRms > this.decayHfRms * 1.55 && attackRms > this.decayRms * 1.10));
+      if (canTrigger && (initial || repluck) && currentFrame >= this.mutedUntilFrame) {
+        this.pluckCount++;
+        this.lastOnsetFrame = currentFrame;
         this.pendingOnset = true;
         this.samplesSinceOnset = 0;
-        this.lastOnsetExpectedString = this.expectedString;
+        this.port.postMessage({ type: 'ONSET_TRIGGERED', rms: attackRms, audioTimeMs: currentFrame / sampleRate * 1000 });
       }
+      this.decayRms = attackRms > this.decayRms ? attackRms : this.decayRms * 0.8 + attackRms * 0.2;
+      this.decayHfRms = attackHfRms > this.decayHfRms ? attackHfRms : this.decayHfRms * 0.8 + attackHfRms * 0.2;
+      this.previousAttackRms = attackRms;
+      this.attackSamples = 0;
+      this.attackSquares = 0;
+      this.attackHfSquares = 0;
     }
 
     this.blockCounter++;
 
     if (
       currentFrame >= this.mutedUntilFrame &&
+      this.pluckCount > 0 &&
       this.filled === this.bufferSize &&
       rms >= this.noiseThreshold &&
       this.samplesSinceLastSnapshot >= this.hopSize &&

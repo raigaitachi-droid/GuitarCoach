@@ -13,7 +13,6 @@ use tauri::{ipc::Channel, AppHandle, Emitter, State};
 const TARGET_SAMPLE_RATE: u32 = 48_000;
 const BUFFER_SIZE: usize = 2_048;
 const HOP_SIZE: usize = BUFFER_SIZE / 2;
-const QUICK_ONSET_WINDOW: usize = 256;
 const BLOCK_SIZE: usize = 128;
 
 #[derive(Clone, Serialize)]
@@ -77,22 +76,20 @@ struct AudioProcessor {
   samples_since_snapshot: usize,
   // Do not analyse a ring buffer that still contains the previous note.
   samples_since_onset: u64,
-  quick_samples: usize,
-  quick_squares: f64,
-  previous_quick_rms: f32,
-  last_quick_onset_frame: u64,
-  quick_onset_refractory_frames: u64,
+  attack_window_size: usize,
+  attack_samples: usize,
+  attack_squares: f64,
+  attack_hf_squares: f64,
+  previous_attack_rms: f32,
   block: Vec<f32>,
   block_counter: u64,
   pending_onset: bool,
-  short_rms: f32,
   decay_rms: f32,
   decay_hf_rms: f32,
   last_onset_frame: u64,
   min_frames_between_plucks: u64,
   pluck_count: u64,
   expected_string: Option<u8>,
-  last_onset_expected_string: Option<u8>,
 }
 
 impl AudioProcessor {
@@ -107,22 +104,20 @@ impl AudioProcessor {
       filled: 0,
       samples_since_snapshot: 0,
       samples_since_onset: u64::MAX,
-      quick_samples: 0,
-      quick_squares: 0.0,
-      previous_quick_rms: 0.0,
-      last_quick_onset_frame: 0,
-      quick_onset_refractory_frames: (sample_rate as f32 * 0.04).round() as u64,
+      attack_window_size: ((sample_rate as f64 * 0.024 / BLOCK_SIZE as f64).round() as usize) * BLOCK_SIZE,
+      attack_samples: 0,
+      attack_squares: 0.0,
+      attack_hf_squares: 0.0,
+      previous_attack_rms: 0.0,
       block: Vec::with_capacity(BLOCK_SIZE),
       block_counter: 0,
       pending_onset: false,
-      short_rms: 0.0,
       decay_rms: 0.0,
       decay_hf_rms: 0.0,
       last_onset_frame: 0,
       min_frames_between_plucks: (sample_rate as f32 * 0.065).round() as u64,
-      pluck_count: 1,
+      pluck_count: 0,
       expected_string: None,
-      last_onset_expected_string: None,
     }
   }
 
@@ -158,26 +153,6 @@ impl AudioProcessor {
       self.samples_since_snapshot += 1;
       self.samples_since_onset = self.samples_since_onset.saturating_add(1);
 
-      self.quick_squares += (sample * sample) as f64;
-      self.quick_samples += 1;
-      if self.quick_samples == QUICK_ONSET_WINDOW {
-        let quick_rms = (self.quick_squares / QUICK_ONSET_WINDOW as f64).sqrt() as f32;
-        let is_quick_onset = !self.muted()
-          && self.sample_clock.saturating_sub(self.last_quick_onset_frame) >= self.quick_onset_refractory_frames
-          && quick_rms > self.noise_threshold
-          && quick_rms > self.previous_quick_rms * 2.5;
-        if is_quick_onset {
-          self.last_quick_onset_frame = self.sample_clock;
-          events.push(CaptureEvent::Onset(OnsetPayload {
-            rms: quick_rms,
-            audio_time_ms: self.audio_time_ms(),
-          }));
-        }
-        self.previous_quick_rms = quick_rms;
-        self.quick_squares = 0.0;
-        self.quick_samples = 0;
-      }
-
       self.block.push(sample);
       if self.block.len() == BLOCK_SIZE {
         let block = std::mem::take(&mut self.block);
@@ -201,46 +176,41 @@ impl AudioProcessor {
       }
     }
     let rms = (sum_squares / block.len() as f64).sqrt() as f32;
-    let hf_rms = (sum_hf_diff / block.len() as f64).sqrt() as f32;
     let crest_factor = peak / (rms + 0.000_001);
 
-    self.short_rms = self.short_rms * 0.45 + rms * 0.55;
-    self.decay_rms = if self.short_rms < self.decay_rms {
-      self.decay_rms * 0.965 + self.short_rms * 0.035
-    } else {
-      self.decay_rms * 0.82 + self.short_rms * 0.18
-    };
-    self.decay_hf_rms = self.decay_hf_rms * 0.94 + hf_rms * 0.06;
-
-    let can_trigger_new_pluck = self.sample_clock.saturating_sub(self.last_onset_frame) >= self.min_frames_between_plucks;
-    let cross_string_transition = self.expected_string.is_some()
-      && self.last_onset_expected_string.is_some()
-      && self.expected_string != self.last_onset_expected_string;
-    let repluck_energy_ratio = if cross_string_transition { 1.18 } else { 1.28 };
-    let repluck_hf_ratio = if cross_string_transition { 1.42 } else { 1.55 };
-    let repluck_crest_threshold = if cross_string_transition { 2.25 } else { 2.45 };
-    let initial_pluck = rms >= self.noise_threshold
-      && self.decay_rms <= self.noise_threshold * 1.25
-      && can_trigger_new_pluck;
-    let repluck = can_trigger_new_pluck
-      && rms >= self.noise_threshold
-      && (rms > self.decay_rms * repluck_energy_ratio
-        || (hf_rms > self.decay_hf_rms * repluck_hf_ratio && rms > self.decay_rms * 1.10)
-        || (crest_factor >= repluck_crest_threshold && rms > self.decay_rms * 1.08));
-    let onset = initial_pluck || repluck;
-    if onset {
-      self.pluck_count += 1;
-      self.last_onset_frame = self.sample_clock;
-      self.decay_rms = self.decay_rms.max(rms);
-      if !self.muted() {
+    // Aggregate energy over 24 ms; individual 128-sample blocks are shorter
+    // than a low-E cycle and used to manufacture repeat picks from ringing.
+    self.attack_squares += sum_squares;
+    self.attack_hf_squares += sum_hf_diff;
+    self.attack_samples += block.len();
+    let mut events = Vec::new();
+    if self.attack_samples >= self.attack_window_size {
+      let attack_rms = (self.attack_squares / self.attack_samples as f64).sqrt() as f32;
+      let attack_hf_rms = (self.attack_hf_squares / self.attack_samples as f64).sqrt() as f32;
+      let can_trigger = self.pluck_count == 0 || self.sample_clock.saturating_sub(self.last_onset_frame) >= self.min_frames_between_plucks;
+      let initial = attack_rms >= self.noise_threshold && self.previous_attack_rms < self.noise_threshold;
+      let rising = attack_rms > self.previous_attack_rms * 1.10;
+      let repluck = attack_rms >= self.noise_threshold && rising
+        && (attack_rms > self.decay_rms * 1.02
+          || (attack_hf_rms > self.decay_hf_rms * 1.55 && attack_rms > self.decay_rms * 1.10));
+      if can_trigger && (initial || repluck) && !self.muted() {
+        self.pluck_count += 1;
+        self.last_onset_frame = self.sample_clock;
         self.pending_onset = true;
         self.samples_since_onset = 0;
-        self.last_onset_expected_string = self.expected_string;
+        events.push(CaptureEvent::Onset(OnsetPayload { rms: attack_rms, audio_time_ms: self.audio_time_ms() }));
       }
+      self.decay_rms = if attack_rms > self.decay_rms { attack_rms } else { self.decay_rms * 0.8 + attack_rms * 0.2 };
+      self.decay_hf_rms = if attack_hf_rms > self.decay_hf_rms { attack_hf_rms } else { self.decay_hf_rms * 0.8 + attack_hf_rms * 0.2 };
+      self.previous_attack_rms = attack_rms;
+      self.attack_samples = 0;
+      self.attack_squares = 0.0;
+      self.attack_hf_squares = 0.0;
     }
 
     self.block_counter += 1;
     if !self.muted()
+      && self.pluck_count > 0
       && self.filled == BUFFER_SIZE
       && rms >= self.noise_threshold
       && self.samples_since_snapshot >= HOP_SIZE
@@ -252,7 +222,7 @@ impl AudioProcessor {
       self.samples_since_snapshot %= HOP_SIZE;
       let pending_onset = self.pending_onset;
       self.pending_onset = false;
-      return vec![CaptureEvent::Samples(SamplesPayload {
+      events.push(CaptureEvent::Samples(SamplesPayload {
         samples,
         rms,
         peak,
@@ -260,13 +230,55 @@ impl AudioProcessor {
         onset: pending_onset,
         pluck_id: self.pluck_count,
         audio_time_ms: self.audio_time_ms(),
-      })];
+      }));
+      return events;
     }
 
     if self.block_counter % 8 == 0 {
-      return vec![CaptureEvent::Level(LevelPayload { rms })];
+      events.push(CaptureEvent::Level(LevelPayload { rms }));
     }
-    Vec::new()
+    events
+  }
+}
+
+#[cfg(test)]
+mod attack_tests {
+  use super::*;
+  use std::collections::HashSet;
+
+  fn picks(sample_rate: u32, frequency: f64, attacks: &[f64], gain: f64) -> usize {
+    let mut processor = AudioProcessor::new(sample_rate);
+    let mut ids = HashSet::new();
+    for frame in (0..sample_rate * 2).step_by(BLOCK_SIZE) {
+      let mut input = [0.0_f32; BLOCK_SIZE];
+      for (index, sample) in input.iter_mut().enumerate() {
+        let time = (frame as usize + index) as f64 / sample_rate as f64;
+        if let Some(attack) = attacks.iter().rev().find(|attack| **attack <= time) {
+          let age = time - attack;
+          let phase = 2.0 * std::f64::consts::PI * frequency * age;
+          let envelope = gain * (1.0 - (-age / 0.003).exp()) * (-age / 0.8).exp();
+          *sample = (envelope * (phase.sin() + 0.35 * (2.0 * phase + 0.4).sin() + 0.15 * (3.0 * phase + 0.7).sin())) as f32;
+        }
+      }
+      processor.set_expected_string(Some(if frame < sample_rate / 2 { 6 } else { 5 }));
+      for event in processor.ingest(&input) {
+        if let CaptureEvent::Samples(payload) = event { ids.insert(payload.pluck_id); }
+      }
+    }
+    ids.len()
+  }
+
+  #[test]
+  fn ringing_is_not_a_new_pick_and_real_repicks_still_work() {
+    for rate in [44_100, 48_000, 96_000] {
+      for frequency in [82.41, 110.0, 196.0, 329.63] {
+        assert_eq!(picks(rate, frequency, &[0.1], 0.1), 1, "{frequency} Hz at {rate}");
+      }
+      assert_eq!(picks(rate, 82.41, &[0.1, 0.7], 0.1), 2, "repick at {rate}");
+      assert_eq!(picks(rate, 82.41, &[0.1, 0.25, 0.4], 0.1), 3, "quick repicks at {rate}");
+      assert_eq!(picks(rate, 82.41, &[0.1], 0.006), 1, "quiet input at {rate}");
+      assert_eq!(picks(rate, 82.41, &[0.0], 0.1), 1, "immediate input at {rate}");
+    }
   }
 }
 

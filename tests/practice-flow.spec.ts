@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -24,14 +24,14 @@ async function silentGuitar(page: Page) {
       const destination = context.createMediaStreamDestination();
       source.connect(destination);
       source.start();
-      state.pluck = (midi, level = 0.15) => {
+      state.pluck = (midi, level = 0.15, duration = 0.3) => {
         const oscillator = context.createOscillator();
         const gain = context.createGain();
         oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
         gain.gain.value = level;
         oscillator.connect(gain).connect(destination);
         oscillator.start();
-        oscillator.stop(context.currentTime + 0.3);
+        oscillator.stop(context.currentTime + duration);
       };
       state.chord = (midis) => {
         for (const midi of midis) {
@@ -148,7 +148,7 @@ test('a disconnected input pauses practice with a human error', async ({ page })
   await page.goto('/');
   await loadRiff(page);
   await page.getByRole('button', { name: 'Start Practice' }).click();
-  await expect(page.getByRole('status')).toContainText('Listening');
+  await expect(page.getByRole('status')).toContainText(/Listening|Waiting for/);
   await page.evaluate(() => (window as any).testGuitar.disconnect());
   await expect(page.getByRole('status')).toHaveText('Your guitar input disconnected. Check the cable and try again.');
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeDisabled();
@@ -218,6 +218,26 @@ test('a quiet guitar-input signal can still release Wait Mode', async ({ page })
   await expect(page.getByRole('status')).toContainText('Correct note');
 });
 
+test('one sustained pick cannot clear successive identical notes', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Repeated E" \\tempo 120 . 0.6.4 0.6.4 0.6.4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'repeated.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.15, 2));
+  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  const position = await page.getByRole('progressbar').getAttribute('value');
+  await page.waitForTimeout(2200);
+  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', position!);
+  await page.evaluate(() => (window as any).testGuitar.pluck(40));
+  await expect(page.locator('.hud-primary strong')).toHaveText('2');
+});
+
 test('Coach Mode turns on a bar loop and keeps BPM directly adjustable', async ({ page }) => {
   await silentGuitar(page);
   await page.goto('/');
@@ -250,6 +270,8 @@ test('a loop snaps to nearby notes when dragged through empty tab space', async 
 });
 
 test('the background polyphonic preview reports a played chord without touching score state', async ({ page }) => {
+  // Cold TensorFlow/model startup can outlast the suite's 30-second default.
+  test.setTimeout(60_000);
   await silentGuitar(page);
   await page.goto('/');
   await loadRiff(page);

@@ -35,3 +35,11 @@
 6. **Native release verification.** Build/test the Windows installer separately. Existing local Tauri configuration/build artifacts were outside this change.
 
 This is a source review plus automated browser validation, not a hardware certification or a claim that all gameplay edge cases are complete.
+
+## Follow-up: one pick counted repeatedly
+
+The 128-sample attack detector confused the rising parts of low-frequency string cycles with new picks. A deterministic damped low-E signal produced 16 separate pick IDs at 44.1 kHz. Advancing the expected string also lowered the old detector's thresholds, allowing the same ringing signal to retrigger.
+
+Browser and native capture now aggregate attack energy over approximately 24 ms, require a rise relative to the preceding energy window, and keep the attack threshold independent of the expected tab string. Fast attack notifications are emitted only for confirmed picks. Pitch snapshots cannot be emitted before the first confirmed pick, avoiding an initial unconfirmed/confirmed duplicate.
+
+Regression coverage includes ringing notes at 82.41–329.63 Hz; sample rates 44.1/48/96 kHz; quiet DI signals; a second pick over a ringing tail; rapid 150 ms repeated picks; and a browser session with consecutive identical notes and a sustained input. The same signal cases are tested against the native Rust processor. Real guitar/interface validation remains necessary.
