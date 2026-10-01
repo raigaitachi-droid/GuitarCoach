@@ -37,6 +37,7 @@ function midiName(midi: number) {
 }
 
 function barAt(bars: ReturnType<typeof practiceBars>, playbackMs: number) {
+  if (bars.length && playbackMs < bars[0].startMs) return bars[0];
   return bars.find((bar) => playbackMs >= bar.startMs && playbackMs < bar.endMs) || bars.at(-1);
 }
 
@@ -118,7 +119,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
   const hasChords = scorableIds.size !== song.notes.length;
-  const duration = Math.max(song.durationMs, ...song.notes.map((note) => note.timestampMs + Math.max(note.durationMs, TIMING_WINDOW_MS + 100)));
+  const duration = useMemo(() => song.notes.reduce((end, note) =>
+    Math.max(end, note.timestampMs + Math.max(note.durationMs, TIMING_WINDOW_MS + 100)), song.durationMs
+  ), [song]);
   const liveAccuracy = liveStats.attempted ? Math.round(liveStats.correct / liveStats.attempted * 100) : null;
 
   // Keep the original event-driven detector and scrolling clock, with one owner
@@ -167,6 +170,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastFeedbackPluck.current = -1;
     lastHitNote.current = null;
     pendingAttackAudioTime.current = null;
+    pendingChordAttack.current = null;
     sustainedPitchCooldownUntil.current = -Infinity;
     setFeedback(null);
     setLiveStats(emptyLiveStats());
@@ -306,6 +310,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
 
   useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(null), 1200);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
+  useEffect(() => {
     if (!withAudio) {
       micDetector.setExpectedString(null);
       return;
@@ -428,6 +438,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       });
       if (judgement.kind === 'ignored') return;
       if (judgement.kind === 'wrong') {
+        // A previously accepted pick may still ring while Wait Mode advances
+        // to the next note. It must not create a wrong attempt for that note.
+        if (result.pluckId === lastConsumedPluck.current) return;
         if (result.confidence < 0.68) return;
         if (result.pluckId !== lastFeedbackPluck.current) {
           lastFeedbackPluck.current = result.pluckId;

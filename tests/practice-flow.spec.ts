@@ -1,4 +1,4 @@
-﻿import { expect, Page, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import * as alphaTab from '@coderline/alphatab';
 
 function guitarProFile() {
@@ -57,7 +57,7 @@ async function silentGuitar(page: Page) {
 }
 
 async function loadRiff(page: Page, extension = '.gp') {
-  await page.getByLabel('Guitar Pro file').setInputFiles({ name: `riff${extension}`, mimeType: 'application/octet-stream', buffer: guitarProFile() });
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: `riff${extension}`, mimeType: 'application/octet-stream', buffer: guitarProFile() });
   await expect(page.getByRole('heading', { name: 'Test riff' })).toBeVisible();
 }
 
@@ -89,10 +89,10 @@ test('minimal start, demo, pause, result, replay, and new tab', async ({ page })
 
 test('file errors recover; a real GP file reaches natural completion', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('Guitar Pro file').setInputFiles({ name: 'bad.txt', mimeType: 'text/plain', buffer: Buffer.from('not a tab') });
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'bad.txt', mimeType: 'text/plain', buffer: Buffer.from('not a tab') });
   await expect(page.getByRole('alert')).toContainText('Choose a Guitar Pro file');
-  await page.getByLabel('Guitar Pro file').setInputFiles({ name: 'bad.gp', mimeType: 'application/octet-stream', buffer: Buffer.from('not a tab') });
-  await expect(page.getByRole('alert')).toContainText('We couldnвЂ™t open that tab');
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'bad.gp', mimeType: 'application/octet-stream', buffer: Buffer.from('not a tab') });
+  await expect(page.getByRole('alert')).toContainText('We couldn’t open that tab');
   await loadRiff(page);
   await page.getByRole('button', { name: 'Continue without audio' }).click();
   await expect(page.getByRole('heading', { name: 'Test riff' })).toBeVisible();
@@ -175,16 +175,37 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   const waitingPosition = await page.getByRole('progressbar').getAttribute('value');
-  await page.evaluate(() => (window as any).testGuitar.pluck(41));
-  await expect(page.getByRole('status')).toContainText('Wrong note В· play E2');
+  // Attack estimates deliberately tolerate one semitone; use a pitch outside
+  // that tolerance to test the wrong-note path.
+  await page.evaluate(() => (window as any).testGuitar.pluck(43));
+  await expect(page.getByRole('status')).toContainText('Wrong note · play E2');
   await page.waitForTimeout(250);
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', waitingPosition!);
   await page.evaluate(() => (window as any).testGuitar.pluck(40));
   await expect(page.getByRole('status')).toContainText('Correct note');
-  await expect(page.getByText(/Heard E2 В· 82\.4 Hz/)).toBeVisible();
+  await expect(page.getByText(/Heard E2 · 82\.4 Hz/)).toBeVisible();
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(page.locator('.practice-feedback-burst')).toHaveCount(0, { timeout: 2500 });
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByRole('heading', { name: '100% accuracy' })).toBeVisible();
   await expect(page.getByText('1 of 1 single notes played correctly.')).toBeVisible();
+});
+
+test('retry clears judged notes and feedback while keeping the input connected', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await page.evaluate(() => (window as any).testGuitar.pluck(40));
+  await expect(page.getByRole('status')).toContainText('Correct note');
+  await page.getByRole('button', { name: 'Retry practice' }).click();
+  await expect(page.locator('.practice-feedback-burst')).toHaveCount(0);
+  await expect(page.locator('.hud-primary strong')).toHaveText('0');
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  expect(await page.evaluate(() => (window as any).testGuitar.active)).toBe(1);
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('No single notes were assessed. Play a little longer to get feedback.')).toBeVisible();
 });
 
 test('a quiet guitar-input signal can still release Wait Mode', async ({ page }) => {

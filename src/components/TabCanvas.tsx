@@ -170,10 +170,18 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         ctx.fillStyle = isDragging ? '#b8a8e5' : '#d9bd82';
         ctx.fillRect(Math.round(endX) - 2, 32, 4, rect.height - 58);
       }
-      frame = requestAnimationFrame(draw);
+      if (!document.hidden) frame = requestAnimationFrame(draw);
     };
+    const onVisibility = () => {
+      cancelAnimationFrame(frame);
+      if (!document.hidden) frame = requestAnimationFrame(draw);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   const noteAtPointer = (event: PointerEvent<HTMLCanvasElement>) => {

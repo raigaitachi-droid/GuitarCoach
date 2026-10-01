@@ -751,7 +751,17 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const padLabels = new Map<number, THREE.Sprite>();
     const padFeedbackSprites = new Map<number, { sprite: THREE.Sprite; hitMaterial: THREE.SpriteMaterial; wrongMaterial: THREE.SpriteMaterial }>();
     const padReflections = new Map<number, THREE.MeshBasicMaterial>();
-    const noteContacts = new Map<TabNote, THREE.MeshBasicMaterial>();
+    const contactGeometry = new THREE.PlaneGeometry(1.42, 0.72);
+    geometries.push(contactGeometry);
+    const contactMaterials = new Map<number, THREE.MeshBasicMaterial>();
+    const contactMaterialFor = (color: number) => {
+      let material = contactMaterials.get(color);
+      if (!material) {
+        material = makeFloorGlowMaterial(color, NOTE_CONTACT_OPACITY, false);
+        contactMaterials.set(color, material);
+      }
+      return material;
+    };
     for (let string = 6; string >= 1; string--) {
       const laneIndex = LANE_COUNT - string;
       const pad = new THREE.Sprite(makeBadgeMaterial('0', COLORS[laneIndex], 'pad'));
@@ -788,9 +798,9 @@ export function NoteHighway({ notes, playbackMs }: Props) {
 
     // Share geometry and cache fret textures; create objects only in the visible
     // window. The existing tab clock owns pause, tempo, waiting and loop rewinds.
-    const active = new Map<TabNote, THREE.Group>();
+    const active = new Map<string, THREE.Group>();
     const hitNotes = new Set<string>();
-    const judgedNotes = new Set<string>();
+    const judgedNotes = new Map<string, string>();
     const padHits = new Map<number, number>();
     const padFeedbacks = new Map<number, { at: number; kind: PadFeedbackKind }>();
     let previousPlaybackMs = playbackMs;
@@ -821,7 +831,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         padFeedbacks.clear();
       }
       const playbackAdvanced = current.playbackMs > previousPlaybackMs;
-      const visible = new Set<TabNote>();
+      const visible = new Set<string>();
       const nextPadLabels = new Map<number, { fret: number; isBend: boolean }>();
       const start = firstHighwayNote(current.notes, current.playbackMs - HIGHWAY_PAST_MS);
       for (let i = start; i < current.notes.length; i++) {
@@ -839,8 +849,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           }
         }
         const judgement = noteJudgement(note);
-        if (judgement !== 'pending' && !judgedNotes.has(note.id)) {
-          judgedNotes.add(note.id);
+        const judgementKey = `${judgement}:${note.mistakeCount ?? 0}`;
+        if (judgement === 'pending') judgedNotes.delete(note.id);
+        else if (judgedNotes.get(note.id) !== judgementKey) {
+          judgedNotes.set(note.id, judgementKey);
           const kind = judgement === 'hit' ? 'hit' : 'wrong';
           padFeedbacks.set(note.string, { at: now, kind });
           const padFeedback = padFeedbackSprites.get(note.string);
@@ -848,32 +860,30 @@ export function NoteHighway({ notes, playbackMs }: Props) {
             padFeedback.sprite.material = kind === 'hit' ? padFeedback.hitMaterial : padFeedback.wrongMaterial;
           }
         }
-        visible.add(note);
+        visible.add(note.id);
         const laneIndex = LANE_COUNT - note.string;
-        let group = active.get(note);
+        let group = active.get(note.id);
         if (!group) {
           group = new THREE.Group();
           const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend), noteJudgement(note)));
           badge.position.y = 0.62;
           badge.scale.set(1.42, 0.9, 1);
           group.add(badge);
-          const contactGeometry = new THREE.PlaneGeometry(1.42, 0.72);
-          geometries.push(contactGeometry);
-          const contactMaterial = makeFloorGlowMaterial(COLORS[laneIndex], NOTE_CONTACT_OPACITY, false);
+          const contactMaterial = contactMaterialFor(COLORS[laneIndex]).clone();
           const contact = new THREE.Mesh(contactGeometry, contactMaterial);
           contact.rotation.x = -Math.PI / 2;
           group.add(contact);
-          noteContacts.set(note, contactMaterial);
           scene.add(group);
-          active.set(note, group);
+          active.set(note.id, group);
         }
+        (group.children[0] as THREE.Sprite).material = makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend), judgement);
         const noteZ = highwayNoteZ(note.timestampMs, current.playbackMs) + TARGET_Z;
         const depthLift = THREE.MathUtils.clamp((noteZ - TARGET_Z) / 34, 0, 1) * 0.54;
         const noteY = 0.22 + depthLift;
         group.position.set(highwayLaneX(note.string), noteY, noteZ);
         const contact = group.children[1];
         if (contact) contact.position.y = -noteY - 0.355;
-        const contactMaterial = noteContacts.get(note);
+        const contactMaterial = (contact as THREE.Mesh).material as THREE.MeshBasicMaterial;
         if (contactMaterial) {
           const near = 1 - THREE.MathUtils.clamp((TARGET_Z - noteZ) / HIGHWAY_LENGTH, 0, 1);
           const judgement = noteJudgement(note);
@@ -938,12 +948,16 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         const length = THREE.MathUtils.lerp(1.3, 2.65, distanceGain);
         pulse.sprite.scale.set(width, length, 1);
       }
-      for (const [note, group] of active) {
-        if (!visible.has(note)) { scene.remove(group); active.delete(note); noteContacts.delete(note); }
+      for (const [noteId, group] of active) {
+        if (!visible.has(noteId)) {
+          ((group.children[1] as THREE.Mesh).material as THREE.Material).dispose();
+          scene.remove(group);
+          active.delete(noteId);
+        }
       }
       composer.render();
       previousPlaybackMs = current.playbackMs;
-      frame = requestAnimationFrame(draw);
+      if (!document.hidden) frame = requestAnimationFrame(draw);
     };
     const contextLost = (event: Event) => {
       event.preventDefault();
@@ -955,21 +969,32 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       lost = false;
       setUnavailable(false);
       resize();
-      frame = requestAnimationFrame(draw);
+      if (!document.hidden) frame = requestAnimationFrame(draw);
     };
+    const onVisibility = () => {
+      cancelAnimationFrame(frame);
+      if (!document.hidden && !lost) frame = requestAnimationFrame(draw);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     renderer.domElement.addEventListener('webglcontextlost', contextLost);
     renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
     frame = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(frame);
+      document.removeEventListener('visibilitychange', onVisibility);
       observer.disconnect();
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
       scene.clear();
+      for (const group of active.values()) {
+        ((group.children[1] as THREE.Mesh).material as THREE.Material).dispose();
+      }
       active.clear();
       textures.forEach((texture) => texture.dispose());
       materials.forEach((material) => material.dispose());
       geometries.forEach((geometry) => geometry.dispose());
+      bloomPass.dispose();
+      renderPass.dispose();
       composer.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
