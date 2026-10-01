@@ -26,6 +26,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
     this.decayHfRms = 0; // High-frequency difference baseline
     this.lastOnsetFrame = -99999;
     this.pluckCount = 0;
+    this.attackStrength = 0;
     this.minFramesBetweenPlucks = Math.round(sampleRate * 0.065); // 65ms minimum spacing between distinct picks
     this.expectedString = null;
 
@@ -87,6 +88,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
          (attackHfRms > this.decayHfRms * 1.55 && attackRms > this.decayRms * 1.10));
       if (canTrigger && (initial || repluck) && currentFrame >= this.mutedUntilFrame) {
         this.pluckCount++;
+        this.attackStrength = attackRms / Math.max(this.previousAttackRms, this.noiseThreshold * 0.5);
         this.lastOnsetFrame = currentFrame;
         this.pendingOnset = true;
         this.samplesSinceOnset = 0;
@@ -124,6 +126,8 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
           crestFactor,
           onset: this.pendingOnset,
           pluckId: this.pluckCount,
+          attackStrength: this.attackStrength,
+          attackAgeMs: (currentFrame - this.lastOnsetFrame) / sampleRate * 1000,
           audioTimeMs: (currentFrame / sampleRate) * 1000,
         },
         [snapshot.buffer]

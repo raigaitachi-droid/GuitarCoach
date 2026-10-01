@@ -15,6 +15,8 @@ interface CaptureMessage {
   crestFactor?: number;
   onset?: boolean;
   pluckId?: number;
+  attackStrength?: number;
+  attackAgeMs?: number;
   audioTimeMs?: number;
 }
 
@@ -32,6 +34,9 @@ export interface PitchResult {
   audioTimeMs: number;
   onset: boolean;
   pluckId: number;
+  /** Windowed energy increase at the physical attack; retained for its samples. */
+  attackStrength?: number;
+  attackAgeMs?: number;
   crestFactor?: number;
   confidence: number;
   isVoiceLike?: boolean;
@@ -355,6 +360,8 @@ export class MicrophonePitchDetector {
       Number(message.crestFactor || 1.8)
     );
     this.latestResult = result;
+    if (result) result.attackStrength = message.attackStrength;
+    if (result) result.attackAgeMs = message.attackAgeMs;
     this.emit(result);
   }
 

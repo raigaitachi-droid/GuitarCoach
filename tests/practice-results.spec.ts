@@ -1,12 +1,26 @@
 import { expect, test } from '@playwright/test';
 import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
+import { shouldSuppressRepeatedWrongPitch } from '../src/utils/practiceSession';
 
 const notes: TabNote[] = [
   { id: 'hit', string: 1, fret: 0, timestampMs: 1000, durationMs: 500, hitState: 'hit' },
   { id: 'miss', string: 2, fret: 0, timestampMs: 1500, durationMs: 500, hitState: 'miss' },
   { id: 'future', string: 3, fret: 0, timestampMs: 2000, durationMs: 500 },
 ];
+
+test('a ringing sound cannot generate repeat penalties through false attack IDs', () => {
+  const previous = { midiNumber: 40, pluckId: 3 };
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 40, pluckId: 4, attackStrength: 1.12 })).toBe(true);
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 52, pluckId: 5, attackStrength: 1.2 })).toBe(true);
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 59, pluckId: 6, attackStrength: 1.1 })).toBe(true);
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 40, pluckId: 7, attackStrength: 2 })).toBe(false);
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 43, pluckId: 8, attackStrength: 1.2 })).toBe(false);
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 43, pluckId: 3, attackStrength: 2 })).toBe(true);
+  expect(shouldSuppressRepeatedWrongPitch(null, { midiNumber: 40, pluckId: 1, attackStrength: 1.1 })).toBe(false);
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 89, pluckId: 4, attackStrength: 1.2, attackAgeMs: 900 })).toBe(true);
+  expect(shouldSuppressRepeatedWrongPitch(previous, { midiNumber: 45, pluckId: 5, attackStrength: 2, attackAgeMs: 60 })).toBe(false);
+});
 
 test('partial sessions count judged notes and playback-only never claims accuracy', () => {
   expect(summarizePractice(notes, 70, true)).toMatchObject({ accuracy: 50, correct: 1, attempted: 2, tempoPercent: 70 });

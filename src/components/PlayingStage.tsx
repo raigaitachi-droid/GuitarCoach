@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImportedSong, TabNote } from '../types';
 import { guitarSynth } from '../utils/guitarSynth';
 import { micDetector, PitchResult } from '../utils/pitchDetector';
-import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedChord, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice, SUSTAINED_PITCH_COOLDOWN_MS, TIMING_WINDOW_MS } from '../utils/practiceSession';
+import { advanceLoop, applyWaitGate, assessLoopPass, expectedMidi, judgeDetectedChord, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressRepeatedWrongPitch, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice, SUSTAINED_PITCH_COOLDOWN_MS, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 import { NoteHighway } from './NoteHighway';
 
@@ -112,6 +112,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastConsumedPluck = useRef(-1);
   const lastFeedbackPluck = useRef(-1);
   const lastHitNote = useRef<TabNote | null>(null);
+  const lastJudgedAttack = useRef<{ midiNumber: number; pluckId: number } | null>(null);
   const pendingAttackAudioTime = useRef<number | null>(null);
   const sustainedPitchCooldownUntil = useRef(-Infinity);
   const pendingChordAttack = useRef<{ audioTimeMs: number; expectedTimestampMs: number; timingOffsetMs: number } | null>(null);
@@ -169,6 +170,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastConsumedPluck.current = -1;
     lastFeedbackPluck.current = -1;
     lastHitNote.current = null;
+    lastJudgedAttack.current = null;
     pendingAttackAudioTime.current = null;
     pendingChordAttack.current = null;
     sustainedPitchCooldownUntil.current = -Infinity;
@@ -202,6 +204,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastConsumedPluck.current = -1;
     lastFeedbackPluck.current = -1;
     lastHitNote.current = null;
+    lastJudgedAttack.current = null;
     pendingAttackAudioTime.current = null;
     pendingChordAttack.current = null;
     sustainedPitchCooldownUntil.current = -Infinity;
@@ -347,7 +350,6 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
               timingOffsetMs: Math.round(playbackRef.current - expectedTimestampMs),
             }
           : null;
-        lastHitNote.current = null;
         setHeardPitch(null);
         setHeardChord([]);
         setQuickOnsetVisible(true);
@@ -440,10 +442,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (judgement.kind === 'wrong') {
         // A previously accepted pick may still ring while Wait Mode advances
         // to the next note. It must not create a wrong attempt for that note.
-        if (result.pluckId === lastConsumedPluck.current) return;
+        if (result.pluckId === lastConsumedPluck.current || shouldSuppressRepeatedWrongPitch(lastJudgedAttack.current, result)) return;
         if (result.confidence < 0.68) return;
         if (result.pluckId !== lastFeedbackPluck.current) {
           lastFeedbackPluck.current = result.pluckId;
+          lastJudgedAttack.current = { midiNumber: result.midiNumber, pluckId: result.pluckId };
           updateNotes(notesRef.current.map((note) => note.id === judgement.expected.id
             ? { ...note, mistakeCount: (note.mistakeCount || 0) + 1 }
             : note
@@ -458,6 +461,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (result.pluckId === lastConsumedPluck.current &&
           !(lastHitNote.current && (matched.isHammerOn || matched.isPullOff) && expectedMidi(matched) !== expectedMidi(lastHitNote.current))) return;
       lastConsumedPluck.current = result.pluckId;
+      lastJudgedAttack.current = { midiNumber: result.midiNumber, pluckId: result.pluckId };
       lastHitNote.current = matched;
       sustainedPitchCooldownUntil.current = result.audioTimeMs + SUSTAINED_PITCH_COOLDOWN_MS;
       micDetector.clearPitchHistory();

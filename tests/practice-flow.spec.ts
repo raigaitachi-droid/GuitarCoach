@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -24,11 +24,18 @@ async function silentGuitar(page: Page) {
       const destination = context.createMediaStreamDestination();
       source.connect(destination);
       source.start();
-      state.pluck = (midi, level = 0.15, duration = 0.3) => {
+      state.pluck = (midi, level = 0.15, duration = 0.3, ripple = false) => {
         const oscillator = context.createOscillator();
         const gain = context.createGain();
         oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
         gain.gain.value = level;
+        if (ripple) {
+          const curve = Float32Array.from({ length: 512 }, (_, index) => {
+            const age = index / 511 * duration;
+            return level * (0.8 + 0.2 * Math.sin(2 * Math.PI * 7 * age)) * Math.exp(-age / 0.8);
+          });
+          gain.gain.setValueCurveAtTime(curve, context.currentTime, duration);
+        }
         oscillator.connect(gain).connect(destination);
         oscillator.start();
         oscillator.stop(context.currentTime + duration);
@@ -236,6 +243,25 @@ test('one sustained pick cannot clear successive identical notes', async ({ page
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', position!);
   await page.evaluate(() => (window as any).testGuitar.pluck(40));
   await expect(page.locator('.hud-primary strong')).toHaveText('2');
+});
+
+test('microphone-like ringing ripples cannot penalize the next different note', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.15, 2, true));
+  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('status')).toContainText('Waiting for F♯2');
+  await page.waitForTimeout(2200);
+  await expect(page.locator('.hud-grid span').filter({ hasText: 'wrong' }).locator('b')).toHaveText('0');
+  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('status')).toContainText('Waiting for F♯2');
+  await page.evaluate(() => (window as any).testGuitar.pluck(45));
+  await expect(page.getByRole('status')).toContainText('Wrong note');
+  await page.waitForTimeout(500);
+  await expect(page.locator('.hud-grid span').filter({ hasText: 'wrong' }).locator('b')).toHaveText('1');
 });
 
 test('Coach Mode turns on a bar loop and keeps BPM directly adjustable', async ({ page }) => {

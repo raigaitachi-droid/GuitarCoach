@@ -45,6 +45,27 @@ export const FIRST_ONSET_SEMITONE_TOLERANCE = 1;
 export const ATTACK_PITCH_EXPIRY_MS = 140;
 export const SUSTAINED_PITCH_COOLDOWN_MS = 180;
 
+export interface JudgedAttack {
+  midiNumber: number;
+  pluckId: number;
+}
+
+// Decay/overtones can manufacture a new pluck ID. A wrong-note penalty needs
+// evidence beyond that ID when it is the same sound we already assessed.
+export function shouldSuppressRepeatedWrongPitch(
+  previous: JudgedAttack | null,
+  detected: JudgedAttack & { attackStrength?: number; attackAgeMs?: number }
+): boolean {
+  // A changed pitch estimate in an old analysis window is not a new pick.
+  // Keep a brief window for the transient to settle into a reliable pitch.
+  if ((detected.attackAgeMs ?? 0) > ATTACK_PITCH_EXPIRY_MS) return true;
+  if (!previous) return false;
+  if (detected.pluckId === previous.pluckId) return true;
+  const interval = Math.abs(detected.midiNumber - previous.midiNumber);
+  const sameRingingSound = [0, 12, 19, 24, 28, 31, 36].some((harmonic) => Math.abs(interval - harmonic) <= 1);
+  return sameRingingSound && (detected.attackStrength ?? 0) < 1.4;
+}
+
 export function shouldSuppressStalePitchAfterAttack(
   attackAudioTimeMs: number | null,
   pitchAudioTimeMs: number,

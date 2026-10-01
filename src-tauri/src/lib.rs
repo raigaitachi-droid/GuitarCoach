@@ -49,6 +49,8 @@ struct SamplesPayload {
   crest_factor: f32,
   onset: bool,
   pluck_id: u64,
+  attack_strength: f32,
+  attack_age_ms: f64,
   audio_time_ms: f64,
 }
 
@@ -89,6 +91,7 @@ struct AudioProcessor {
   last_onset_frame: u64,
   min_frames_between_plucks: u64,
   pluck_count: u64,
+  attack_strength: f32,
   expected_string: Option<u8>,
 }
 
@@ -117,6 +120,7 @@ impl AudioProcessor {
       last_onset_frame: 0,
       min_frames_between_plucks: (sample_rate as f32 * 0.065).round() as u64,
       pluck_count: 0,
+      attack_strength: 0.0,
       expected_string: None,
     }
   }
@@ -195,6 +199,7 @@ impl AudioProcessor {
           || (attack_hf_rms > self.decay_hf_rms * 1.55 && attack_rms > self.decay_rms * 1.10));
       if can_trigger && (initial || repluck) && !self.muted() {
         self.pluck_count += 1;
+        self.attack_strength = attack_rms / self.previous_attack_rms.max(self.noise_threshold * 0.5);
         self.last_onset_frame = self.sample_clock;
         self.pending_onset = true;
         self.samples_since_onset = 0;
@@ -229,6 +234,8 @@ impl AudioProcessor {
         crest_factor,
         onset: pending_onset,
         pluck_id: self.pluck_count,
+        attack_strength: self.attack_strength,
+        attack_age_ms: self.sample_clock.saturating_sub(self.last_onset_frame) as f64 / self.sample_rate as f64 * 1000.0,
         audio_time_ms: self.audio_time_ms(),
       }));
       return events;
