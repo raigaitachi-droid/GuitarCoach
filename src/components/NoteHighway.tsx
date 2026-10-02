@@ -125,14 +125,26 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     let stageDisposed = false;
     const stageTexture = new THREE.TextureLoader().load(stagePoster, texture => {
       if (stageDisposed) return;
+      // Neutralize the blue stage photograph only, never the live notes/strings.
+      const plate = document.createElement('canvas');
+      plate.width = texture.image.width;
+      plate.height = texture.image.height;
+      const context = plate.getContext('2d');
+      if (context) {
+        context.filter = 'saturate(18%)';
+        context.drawImage(texture.image, 0, 0);
+      }
+      const background = context ? new THREE.CanvasTexture(plate) : texture;
+      background.colorSpace = THREE.SRGBColorSpace;
+      if (background !== texture) textures.push(background);
       // Use the stage above the baked start-screen road; the game road stays live.
-      texture.repeat.set(1, 0.60);
-      texture.offset.set(0, 0.40);
-      scene.background = texture;
+      background.repeat.set(1, 0.60);
+      background.offset.set(0, 0.40);
+      scene.background = background;
     });
     stageTexture.colorSpace = THREE.SRGBColorSpace;
     textures.push(stageTexture);
-    scene.backgroundIntensity = 0.72;
+    scene.backgroundIntensity = 0.62;
     const box = (width: number, height: number, depth: number, color: number, x: number, y: number, z: number) => {
       const geometry = new THREE.BoxGeometry(width, height, depth);
       const material = new THREE.MeshStandardMaterial({ color, roughness: 0.48, metalness: 0.08 });
