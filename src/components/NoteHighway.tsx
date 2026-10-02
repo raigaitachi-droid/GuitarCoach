@@ -43,13 +43,16 @@ const colorRgba = (color: number, alpha: number) => {
 const FRET_DIGIT_FONT = '"Inter", "Manrope", "Space Grotesk", "Aptos", "Segoe UI", system-ui, sans-serif';
 const TABULAR_DIGITS = '0123456789';
 const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+  context.save();
+  // Bounding-box metrics are relative to the current baseline. Measure using
+  // the same alphabetic baseline that will be used to paint the digits.
+  context.textBaseline = 'alphabetic';
   const fontSize = Number(context.font.match(/(\d+(?:\.\d+)?)px/)?.[1] || 72);
   const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).width));
   const ascent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxAscent ?? fontSize * 0.75));
   const descent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxDescent ?? fontSize * 0.2));
   const baselineY = y + (ascent - descent) / 2;
   const totalWidth = advance * text.length;
-  context.save();
   context.textAlign = 'center';
   context.textBaseline = 'alphabetic';
   for (let index = 0; index < text.length; index++) {
