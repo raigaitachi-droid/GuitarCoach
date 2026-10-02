@@ -45,8 +45,8 @@ const TABULAR_DIGITS = '0123456789';
 const drawCenteredTabularText = (context: CanvasRenderingContext2D, text: string, x: number, y: number) => {
   const fontSize = Number(context.font.match(/(\d+(?:\.\d+)?)px/)?.[1] || 72);
   const advance = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).width));
-  const ascent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxAscent || fontSize * 0.75));
-  const descent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxDescent || fontSize * 0.2));
+  const ascent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxAscent ?? fontSize * 0.75));
+  const descent = Math.max(...Array.from(TABULAR_DIGITS, (digit) => context.measureText(digit).actualBoundingBoxDescent ?? fontSize * 0.2));
   const baselineY = y + (ascent - descent) / 2;
   const totalWidth = advance * text.length;
   context.save();
@@ -513,59 +513,52 @@ export function NoteHighway({ notes, playbackMs }: Props) {
 
       const drawNotePath = () => {
         context.beginPath();
-        context.roundRect(66, 28, 156, 88, 44);
+        context.roundRect(66, 28, 156, 88, 12);
       };
-      const drawPadPath = (radius: number) => {
+      const drawPadPath = () => {
         context.beginPath();
-        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        context.roundRect(centerX - 61, centerY - 42, 122, 84, 12);
       };
       const noiseSeed = (color % 997) + text.length * 29 + (isPad ? 83 : 0);
 
       if (isPad) {
-        const innerTint = context.createRadialGradient(centerX - 5, centerY - 7, 8, centerX, centerY, 68);
-        innerTint.addColorStop(0, colorRgba(color, 0.16));
-        innerTint.addColorStop(0.52, colorRgba(color, 0.07));
-        innerTint.addColorStop(1, 'rgba(255,255,255,0)');
-        context.fillStyle = innerTint;
-        drawPadPath(62);
-        context.fill();
-
         for (const layer of [
-          { width: 24, alpha: 0.12, blur: 36, radius: 55 },
-          { width: 16, alpha: 0.28, blur: 22, radius: 55 },
-          { width: 9, alpha: 0.58, blur: 10, radius: 55 },
+          { alpha: 0.14, blur: 26 },
+          { alpha: 0.20, blur: 12 },
         ]) {
           context.save();
           context.globalAlpha = layer.alpha;
-          context.strokeStyle = cssColor;
-          context.lineWidth = layer.width;
+          context.fillStyle = cssColor;
           context.shadowColor = cssColor;
           context.shadowBlur = layer.blur;
-          drawPadPath(layer.radius);
-          context.stroke();
+          drawPadPath();
+          context.fill();
           context.restore();
         }
 
+        context.fillStyle = 'rgba(5,12,20,.88)';
+        drawPadPath();
+        context.fill();
+        context.fillStyle = colorRgba(color, 0.12);
+        drawPadPath();
+        context.fill();
+        // A short lit base marks the fixed target without a circular halo.
         context.save();
+        context.strokeStyle = colorRgba(color, 0.85);
+        context.lineWidth = 3;
         context.lineCap = 'round';
-        context.lineWidth = 4;
         context.shadowColor = cssColor;
         context.shadowBlur = 8;
-        for (let i = 0; i < 9; i++) {
-          const start = ((noiseSeed + i * 37) % 360) * Math.PI / 180;
-          const length = (18 + ((noiseSeed + i * 19) % 32)) * Math.PI / 180;
-          context.globalAlpha = 0.12 + ((i % 3) * 0.04);
-          context.strokeStyle = i % 4 === 0 ? 'rgba(255,255,255,.68)' : cssColor;
-          context.beginPath();
-          context.arc(centerX, centerY, 55 + (i % 2) * 1.6, start, start + length);
-          context.stroke();
-        }
+        context.beginPath();
+        context.moveTo(centerX - 42, centerY + 40);
+        context.lineTo(centerX + 42, centerY + 40);
+        context.stroke();
         context.restore();
 
         context.save();
         context.globalAlpha = 0.18;
         context.fillStyle = cssColor;
-        drawPadPath(50);
+        drawPadPath();
         context.clip();
         for (let i = 0; i < 34; i++) {
           const x = centerX - 48 + ((noiseSeed + i * 47) % 96);
@@ -740,12 +733,11 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       gradient.addColorStop(1, 'rgba(255,255,255,0)');
       context.fillStyle = gradient;
       context.beginPath();
-      context.arc(center, center, 104, 0, Math.PI * 2);
+      context.roundRect(center - 78, center - 55, 156, 110, 16);
       context.fill();
       for (const layer of [
-        { width: 22, alpha: 0.16, blur: 30, radius: 62 },
-        { width: 13, alpha: 0.34, blur: 18, radius: 62 },
-        { width: 5, alpha: 0.68, blur: 8, radius: 62 },
+        { width: 8, alpha: 0.16, blur: 24 },
+        { width: 3, alpha: 0.42, blur: 10 },
       ]) {
         context.save();
         context.globalAlpha = layer.alpha;
@@ -754,7 +746,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         context.shadowColor = color;
         context.shadowBlur = layer.blur;
         context.beginPath();
-        context.arc(center, center, layer.radius, 0, Math.PI * 2);
+        context.roundRect(center - 61, center - 42, 122, 84, 12);
         context.stroke();
         context.restore();
       }
