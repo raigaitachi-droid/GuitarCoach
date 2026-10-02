@@ -264,13 +264,13 @@ test('microphone-like ringing ripples cannot penalize the next different note', 
   await expect(page.locator('.hud-grid span').filter({ hasText: 'wrong' }).locator('b')).toHaveText('1');
 });
 
-test('Coach Mode turns on a bar loop and keeps BPM directly adjustable', async ({ page }) => {
+test('manual loop and BPM controls remain available without Coach Mode', async ({ page }) => {
   await silentGuitar(page);
   await page.goto('/');
   await loadRiff(page);
   await page.getByRole('button', { name: 'Start Practice' }).click();
-  await page.getByRole('button', { name: 'Coach Mode Off' }).click();
-  await expect(page.getByRole('button', { name: 'Coach Mode On' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Coach Mode/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Loop Off' }).click();
   await expect(page.getByRole('button', { name: 'Loop On' })).toBeVisible();
   await page.getByRole('button', { name: 'Increase tempo' }).click();
   await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('125');
