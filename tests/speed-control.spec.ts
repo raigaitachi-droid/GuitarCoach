@@ -1,0 +1,37 @@
+import { expect, test } from '@playwright/test';
+
+test('speed presets, BPM and keyboard slider stay synchronized without seeking', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Try demo song' }).click();
+  await page.getByRole('button', { name: 'Continue without audio' }).click();
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  const progress = await page.getByRole('progressbar').getAttribute('value');
+  const trigger = page.getByRole('button', { name: 'Playback speed', exact: true });
+  await trigger.click();
+  const panel = page.getByRole('dialog', { name: 'Playback speed settings' });
+  await panel.getByRole('button', { name: '50%', exact: true }).click();
+  await expect(trigger).toContainText('50%');
+  await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('41');
+  const slider = page.getByRole('slider', { name: 'Playback speed percent' });
+  await slider.focus();
+  await slider.press('End');
+  await expect(trigger).toContainText('175%');
+  await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('144');
+  await slider.press('Home');
+  await expect(trigger).toContainText('15%');
+  await panel.getByRole('button', { name: 'Original · 100%' }).click();
+  await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('82');
+  await page.getByRole('button', { name: 'Increase tempo' }).click();
+  await expect(page.getByLabel('Tempo', { exact: true })).toHaveValue('87');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', progress!);
+  await slider.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await page.setViewportSize({ width: 480, height: 850 });
+  await trigger.click();
+  const bounds = await panel.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(480);
+  await page.getByRole('img', { name: /3D guitar note highway/ }).click({ position: { x: 400, y: 600 } });
+  await expect(panel).toHaveCount(0);
+});

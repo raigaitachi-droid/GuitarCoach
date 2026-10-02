@@ -5,6 +5,7 @@ import { micDetector, PitchResult } from '../utils/pitchDetector';
 import { advanceLoop, applyWaitGate, expectedMidi, judgeDetectedChord, judgeDetectedPitch, loopBoundaries, missedNoteIds, noteLoopBoundaries, noteLoopRangeForBars, NoteLoopRange, normalizeLoopRange, normalizeNoteLoopRange, practiceBars, PracticeLoopRange, PracticeResult, resetLoopPass, shouldSuppressRepeatedWrongPitch, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice, SUSTAINED_PITCH_COOLDOWN_MS, TIMING_WINDOW_MS } from '../utils/practiceSession';
 import { TabCanvas } from './TabCanvas';
 import { NoteHighway } from './NoteHighway';
+import { SpeedControl } from './SpeedControl';
 
 interface Props {
   song: ImportedSong;
@@ -251,12 +252,6 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     selectingLoopRef.current = false;
     setSelectingLoop(false);
     restartLoop(range);
-  };
-  const setTempoBpm = (bpm: number) => {
-    const bounded = Math.min(300, Math.max(20, Math.round(bpm)));
-    const nextPercent = bounded / Math.max(1, song.tempo) * 100;
-    tempoRef.current = nextPercent / 100;
-    onTempoPercentChange(nextPercent);
   };
   const finish = () => {
     if (completedRef.current) return;
@@ -519,12 +514,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           <svg viewBox="0 0 24 24" aria-hidden="true">{playing ? <path d="M8 6v12M16 6v12" /> : <path d="m9 6 9 6-9 6Z" />}</svg>
           {playing ? 'Pause' : 'Play'}
         </button>
-        <div className="tempo-control"><span>Tempo</span>
-          <button className="tempo-step" aria-label="Decrease tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current - 5)} disabled={Boolean(inputError)}>−</button>
-          <input aria-label="Tempo" type="number" min="20" max="300" value={Math.round(song.tempo * tempoPercent / 100)} onChange={(event) => setTempoBpm(Number(event.target.value))} disabled={Boolean(inputError)} />
-          <span>BPM</span>
-          <button className="tempo-step" aria-label="Increase tempo" onClick={() => setTempoBpm(song.tempo * tempoRef.current + 5)} disabled={Boolean(inputError)}>+</button>
-        </div>
+        <SpeedControl originalBpm={song.tempo} percent={tempoPercent} disabled={Boolean(inputError)} onChange={percent => {
+          tempoRef.current = percent / 100;
+          onTempoPercentChange(percent);
+        }} />
         <button className="toggle-button" aria-pressed={loopEnabled} onClick={changeLoop} disabled={Boolean(inputError)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10V7h15m-3-3 3 3-3 3M20 14v3H5m3 3-3-3 3-3" /></svg>
           Loop <span>{loopEnabled ? 'On' : 'Off'}</span>

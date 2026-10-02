@@ -49,6 +49,7 @@ test('3D scene moves, freezes with transport, resizes, and remounts alongside th
   const progress = await page.getByRole('progressbar').getAttribute('value');
   await page.waitForTimeout(250);
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', progress!);
+  await page.getByRole('button', { name: 'Playback speed', exact: true }).click();
   await page.getByLabel('Tempo', { exact: true }).fill('60');
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', progress!);
   await page.setViewportSize({ width: 480, height: 850 });
