@@ -31,7 +31,7 @@ const NOTE_CONTACT_OPACITY = 0.22;
 const DUST_PARTICLE_COUNT = 28;
 // Keep the fret badges in focus; the road is a supporting light source.
 const ROAD_LANE_TINT = 0.10;
-const STRING_EMISSION = 2.0;
+const STRING_FILAMENT_WIDTH = 0.48;
 const ROAD_BLOOM_STRENGTH = 0.24;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
 const colorRgba = (color: number, alpha: number) => {
@@ -423,21 +423,44 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const z = -i * 4.2;
       plane(HIGHWAY_WIDTH - 3.3, 0.016, 0x5a7890, 0, -0.065, z, i === 0 ? 0.035 : 0.055);
     }
+    // Bake the fine core and layered halo once, shared across each string's length.
+    const filamentGeometry = new THREE.PlaneGeometry(STRING_FILAMENT_WIDTH, HIGHWAY_LENGTH + 5);
+    geometries.push(filamentGeometry);
     for (let string = 6; string >= 1; string--) {
       const laneIndex = 6 - string;
-      const x = highwayLaneX(string);
-      const railGlow = box(0.13, 0.045, HIGHWAY_LENGTH + 5, COLORS[laneIndex], x, 0.018, -HIGHWAY_LENGTH / 2 + 1);
-      const railGlowMaterial = railGlow.material as THREE.MeshStandardMaterial;
-      railGlowMaterial.transparent = true;
-      railGlowMaterial.opacity = 0.32;
-      railGlowMaterial.emissive = new THREE.Color(COLORS[laneIndex]);
-      railGlowMaterial.emissiveIntensity = 1.3;
-      const rail = box(0.032, 0.032, HIGHWAY_LENGTH + 5, 0xf4fbff, x, 0.055, -HIGHWAY_LENGTH / 2 + 1);
-      const railMaterial = rail.material as THREE.MeshStandardMaterial;
-      railMaterial.color = new THREE.Color(0xf4fbff).lerp(new THREE.Color(COLORS[laneIndex]), 0.42);
-      railMaterial.emissive = new THREE.Color(COLORS[laneIndex]);
-      railMaterial.emissiveIntensity = STRING_EMISSION;
-      plane(0.34, HIGHWAY_LENGTH + 5, COLORS[laneIndex], x, -0.04, -HIGHWAY_LENGTH / 2 + 1, 0.20);
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 512;
+      const context = canvas.getContext('2d')!;
+      const pixels = context.createImageData(canvas.width, canvas.height);
+      const color = COLORS[laneIndex];
+      const channels = [(color >> 16) & 255, (color >> 8) & 255, color & 255];
+      for (let row = 0; row < canvas.height; row++) {
+        const distance = row / (canvas.height - 1);
+        const fade = THREE.MathUtils.smoothstep(distance, 0, 0.22);
+        const brightness = fade * (0.28 + 0.68 * Math.sqrt(distance));
+        for (let column = 0; column < canvas.width; column++) {
+          const offset = column / (canvas.width - 1) - 0.5;
+          const core = Math.exp(-offset * offset * 2600);
+          const light = Math.min(1, core + Math.exp(-offset * offset * 180) * 0.26 + Math.exp(-offset * offset * 24) * 0.075);
+          const pixel = (row * canvas.width + column) * 4;
+          for (let channel = 0; channel < 3; channel++) {
+            pixels.data[pixel + channel] = channels[channel] + (255 - channels[channel]) * core * 0.52;
+          }
+          pixels.data[pixel + 3] = light * brightness * 255;
+        }
+      }
+      context.putImageData(pixels, 0, 0);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      textures.push(texture);
+      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+      materials.push(material);
+      const filament = new THREE.Mesh(filamentGeometry, material);
+      filament.rotation.x = -Math.PI / 2;
+      filament.position.set(highwayLaneX(string), 0.055, -HIGHWAY_LENGTH / 2 + 1);
+      scene.add(filament);
     }
     for (const x of [-HIGHWAY_WIDTH / 2, HIGHWAY_WIDTH / 2]) {
       const rail = box(0.045, 0.085, HIGHWAY_LENGTH + 7, 0x657684, x, 0.025, -HIGHWAY_LENGTH / 2 + 1);
@@ -699,7 +722,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = 8;
       textures.push(texture);
-      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false, blending: THREE.AdditiveBlending });
+      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
       materials.push(material);
       return material;
     };
@@ -790,10 +813,13 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       padReflections.set(string, padGlowMaterial);
     }
 
+    const pulseGeometry = new THREE.PlaneGeometry(1, 1);
+    geometries.push(pulseGeometry);
     const stringPulses = Array.from({ length: STRING_PULSE_COUNT }, (_, index) => {
       const laneIndex = index % LANE_COUNT;
       const string = LANE_COUNT - laneIndex;
-      const sprite = new THREE.Sprite(makePulseMaterial(COLORS[laneIndex]));
+      const sprite = new THREE.Mesh(pulseGeometry, makePulseMaterial(COLORS[laneIndex]));
+      sprite.rotation.x = -Math.PI / 2;
       sprite.position.set(highwayLaneX(string), 0.52, -HIGHWAY_LENGTH - 8);
       sprite.scale.set(0.26, 2.15, 1);
       scene.add(sprite);
@@ -944,10 +970,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         const eased = activePulse ? 1 - Math.pow(1 - progress, 2.7) : 0;
         pulse.sprite.position.z = THREE.MathUtils.lerp(-HIGHWAY_LENGTH - 5, TARGET_Z + 0.28, eased);
         pulse.sprite.position.x = highwayLaneX(pulse.string);
-        pulse.sprite.position.y = THREE.MathUtils.lerp(0.36, 0.66, eased);
+        pulse.sprite.position.y = 0.075;
         const distanceGain = THREE.MathUtils.clamp(eased * 1.3, 0, 1);
         const comet = activePulse ? Math.sin(progress * Math.PI) : 0;
-        (pulse.sprite.material as THREE.SpriteMaterial).opacity = comet * (0.18 + distanceGain * 0.68);
+        pulse.sprite.material.opacity = comet * (0.18 + distanceGain * 0.68);
         const width = THREE.MathUtils.lerp(0.16, 0.34, distanceGain);
         const length = THREE.MathUtils.lerp(1.3, 2.65, distanceGain);
         pulse.sprite.scale.set(width, length, 1);
