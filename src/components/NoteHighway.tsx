@@ -29,6 +29,10 @@ const FLOOR_REFLECTION_OPACITY = 0.18;
 const PAD_REFLECTION_OPACITY = 0.2;
 const NOTE_CONTACT_OPACITY = 0.22;
 const DUST_PARTICLE_COUNT = 28;
+// Keep the fret badges in focus; the road is a supporting light source.
+const ROAD_LANE_TINT = 0.10;
+const STRING_EMISSION = 2.0;
+const ROAD_BLOOM_STRENGTH = 0.24;
 const colorStyle = (color: number) => '#' + color.toString(16).padStart(6, '0');
 const colorRgba = (color: number, alpha: number) => {
   const red = (color >> 16) & 255;
@@ -106,7 +110,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const camera = new THREE.PerspectiveCamera(57, 1, 0.1, 90);
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.3, 0.12, 0.8);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), ROAD_BLOOM_STRENGTH, 0.12, 0.88);
     composer.addPass(renderPass);
     composer.addPass(bloomPass);
     camera.position.set(0, 3.12, 4.72);
@@ -412,8 +416,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       reflection.rotation.x = -Math.PI / 2;
       reflection.position.set(x, -0.435, -HIGHWAY_LENGTH / 2 + 1.1);
       scene.add(reflection);
-      plane(1.46, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.118, -HIGHWAY_LENGTH / 2 + 1, 0.16);
-      plane(1.7, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.116, -HIGHWAY_LENGTH / 2 + 1, 0.06);
+      plane(1.46, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.118, -HIGHWAY_LENGTH / 2 + 1, ROAD_LANE_TINT);
+      plane(1.7, HIGHWAY_LENGTH + 5, COLORS[lane], x, -0.116, -HIGHWAY_LENGTH / 2 + 1, 0.035);
     }
     for (let i = 0; i <= 9; i++) {
       const z = -i * 4.2;
@@ -425,21 +429,21 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       const railGlow = box(0.13, 0.045, HIGHWAY_LENGTH + 5, COLORS[laneIndex], x, 0.018, -HIGHWAY_LENGTH / 2 + 1);
       const railGlowMaterial = railGlow.material as THREE.MeshStandardMaterial;
       railGlowMaterial.transparent = true;
-      railGlowMaterial.opacity = 0.42;
+      railGlowMaterial.opacity = 0.32;
       railGlowMaterial.emissive = new THREE.Color(COLORS[laneIndex]);
       railGlowMaterial.emissiveIntensity = 1.3;
       const rail = box(0.032, 0.032, HIGHWAY_LENGTH + 5, 0xf4fbff, x, 0.055, -HIGHWAY_LENGTH / 2 + 1);
       const railMaterial = rail.material as THREE.MeshStandardMaterial;
       railMaterial.color = new THREE.Color(0xf4fbff).lerp(new THREE.Color(COLORS[laneIndex]), 0.42);
       railMaterial.emissive = new THREE.Color(COLORS[laneIndex]);
-      railMaterial.emissiveIntensity = 3.15;
-      plane(0.34, HIGHWAY_LENGTH + 5, COLORS[laneIndex], x, -0.04, -HIGHWAY_LENGTH / 2 + 1, 0.3);
+      railMaterial.emissiveIntensity = STRING_EMISSION;
+      plane(0.34, HIGHWAY_LENGTH + 5, COLORS[laneIndex], x, -0.04, -HIGHWAY_LENGTH / 2 + 1, 0.20);
     }
     for (const x of [-HIGHWAY_WIDTH / 2, HIGHWAY_WIDTH / 2]) {
-      const rail = box(0.045, 0.085, HIGHWAY_LENGTH + 7, 0x4ca8c5, x, 0.025, -HIGHWAY_LENGTH / 2 + 1);
+      const rail = box(0.045, 0.085, HIGHWAY_LENGTH + 7, 0x657684, x, 0.025, -HIGHWAY_LENGTH / 2 + 1);
       const railMaterial = rail.material as THREE.MeshStandardMaterial;
-      railMaterial.emissive = new THREE.Color(0x2ba6c9);
-      railMaterial.emissiveIntensity = 0.55;
+      railMaterial.emissive = new THREE.Color(0x657684);
+      railMaterial.emissiveIntensity = 0.28;
     }
     const farFadeGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH + 4.8, 20);
     geometries.push(farFadeGeometry);
@@ -551,7 +555,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         for (const layer of [
           { alpha: 0.16, blur: 42 },
           { alpha: 0.25, blur: 25 },
-          { alpha: 0.52, blur: 12 },
+          { alpha: 0.38, blur: 12 },
         ]) {
           context.save();
           context.globalAlpha = layer.alpha;
@@ -564,10 +568,10 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         }
 
         const body = context.createRadialGradient(centerX - 10, centerY - 10, 12, centerX, centerY, 95);
-        body.addColorStop(0, colorRgba(color, 0.95));
+        body.addColorStop(0, colorRgba(color, 0.88));
         body.addColorStop(0.42, colorRgba(color, 0.82));
-        body.addColorStop(0.76, colorRgba(color, 0.72));
-        body.addColorStop(1, colorRgba(color, 0.58));
+        body.addColorStop(0.76, colorRgba(color, 0.76));
+        body.addColorStop(1, colorRgba(color, 0.66));
         context.fillStyle = body;
         drawNotePath();
         context.fill();
