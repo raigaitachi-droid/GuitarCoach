@@ -4,6 +4,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { TabNote } from '../types';
+import stagePoster from '../assets/start-bg-poster.jpg';
 import { firstHighwayNote, HIGHWAY_LENGTH, HIGHWAY_LOOKAHEAD_MS, HIGHWAY_PAST_MS, highwayLaneX, highwayNotes, highwayNoteZ } from '../utils/noteHighway';
 
 interface Props {
@@ -121,6 +122,17 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const geometries: THREE.BufferGeometry[] = [];
     const materials: THREE.Material[] = [];
     const textures: THREE.Texture[] = [];
+    let stageDisposed = false;
+    const stageTexture = new THREE.TextureLoader().load(stagePoster, texture => {
+      if (stageDisposed) return;
+      // Use the stage above the baked start-screen road; the game road stays live.
+      texture.repeat.set(1, 0.60);
+      texture.offset.set(0, 0.40);
+      scene.background = texture;
+    });
+    stageTexture.colorSpace = THREE.SRGBColorSpace;
+    textures.push(stageTexture);
+    scene.backgroundIntensity = 0.72;
     const box = (width: number, height: number, depth: number, color: number, x: number, y: number, z: number) => {
       const geometry = new THREE.BoxGeometry(width, height, depth);
       const material = new THREE.MeshStandardMaterial({ color, roughness: 0.48, metalness: 0.08 });
@@ -147,102 +159,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       mesh.position.set(x, y, z);
       scene.add(mesh);
       return mesh;
-    };
-
-    const makeBeamMaterial = (color: number, opacity: number) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 256;
-      canvas.height = 768;
-      const context = canvas.getContext('2d')!;
-      const cssColor = colorStyle(color);
-      const verticalGlow = context.createLinearGradient(0, 0, 0, canvas.height);
-      verticalGlow.addColorStop(0, `${cssColor}55`);
-      verticalGlow.addColorStop(0.22, `${cssColor}2e`);
-      verticalGlow.addColorStop(0.72, `${cssColor}10`);
-      verticalGlow.addColorStop(1, 'rgba(255,255,255,0)');
-      context.fillStyle = verticalGlow;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-
-      const softCore = context.createRadialGradient(canvas.width / 2, canvas.height * 0.08, 8, canvas.width / 2, canvas.height * 0.5, canvas.width * 0.74);
-      softCore.addColorStop(0, 'rgba(255,255,255,.22)');
-      softCore.addColorStop(0.24, `${cssColor}38`);
-      softCore.addColorStop(0.72, `${cssColor}0d`);
-      softCore.addColorStop(1, 'rgba(255,255,255,0)');
-      context.globalCompositeOperation = 'screen';
-      context.fillStyle = softCore;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-
-      const softMask = context.createLinearGradient(0, 0, canvas.width, 0);
-      softMask.addColorStop(0, 'rgba(0,0,0,0)');
-      softMask.addColorStop(0.22, 'rgba(0,0,0,.34)');
-      softMask.addColorStop(0.5, 'rgba(0,0,0,.78)');
-      softMask.addColorStop(0.78, 'rgba(0,0,0,.34)');
-      softMask.addColorStop(1, 'rgba(0,0,0,0)');
-      context.globalCompositeOperation = 'destination-in';
-      context.fillStyle = softMask;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = 8;
-      textures.push(texture);
-      const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        transparent: true,
-        opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide,
-        blending: THREE.AdditiveBlending,
-      });
-      materials.push(material);
-      return material;
-    };
-
-    const makeBackdropGradientMaterial = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1024;
-      canvas.height = 512;
-      const context = canvas.getContext('2d')!;
-      const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, '#02040a');
-      gradient.addColorStop(0.34, '#061122');
-      gradient.addColorStop(0.72, '#080817');
-      gradient.addColorStop(1, '#020307');
-      context.fillStyle = gradient;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      const center = context.createRadialGradient(canvas.width / 2, canvas.height * 0.58, 36, canvas.width / 2, canvas.height * 0.58, 430);
-      center.addColorStop(0, 'rgba(54,200,191,.34)');
-      center.addColorStop(0.24, 'rgba(72,130,215,.22)');
-      center.addColorStop(0.56, 'rgba(33,69,126,.14)');
-      center.addColorStop(1, 'rgba(0,0,0,0)');
-      context.fillStyle = center;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-
-      context.globalCompositeOperation = 'screen';
-      const risingGlow = context.createRadialGradient(canvas.width / 2, canvas.height * 0.7, 20, canvas.width / 2, canvas.height * 0.34, 360);
-      risingGlow.addColorStop(0, 'rgba(84,220,220,.28)');
-      risingGlow.addColorStop(0.22, 'rgba(138,155,255,.18)');
-      risingGlow.addColorStop(0.46, 'rgba(188,103,223,.1)');
-      risingGlow.addColorStop(0.72, 'rgba(230,168,79,.055)');
-      risingGlow.addColorStop(1, 'rgba(0,0,0,0)');
-      context.fillStyle = risingGlow;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-
-      const centerColumn = context.createLinearGradient(0, canvas.height * 0.18, 0, canvas.height * 0.72);
-      centerColumn.addColorStop(0, 'rgba(90,145,255,0)');
-      centerColumn.addColorStop(0.34, 'rgba(74,203,137,.055)');
-      centerColumn.addColorStop(0.62, 'rgba(54,200,191,.145)');
-      centerColumn.addColorStop(1, 'rgba(224,109,88,.05)');
-      context.fillStyle = centerColumn;
-      context.fillRect(canvas.width * 0.33, canvas.height * 0.18, canvas.width * 0.34, canvas.height * 0.58);
-      context.globalCompositeOperation = 'source-over';
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = 8;
-      textures.push(texture);
-      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.92, depthWrite: false, side: THREE.DoubleSide });
-      materials.push(material);
-      return material;
     };
 
     const makeFloorGlowMaterial = (color: number, opacity: number, elongated: boolean) => {
@@ -290,80 +206,6 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       materials.push(material);
       return material;
     };
-
-    const backdropGeometry = new THREE.PlaneGeometry(58, 24);
-    geometries.push(backdropGeometry);
-    const backdrop = new THREE.Mesh(backdropGeometry, makeBackdropGradientMaterial());
-    backdrop.position.set(0, 5.4, -54);
-    scene.add(backdrop);
-
-    const silhouetteMaterial = new THREE.MeshBasicMaterial({ color: 0x02050a, transparent: true, opacity: 0.58, depthWrite: false });
-    materials.push(silhouetteMaterial);
-    const addSilhouette = (width: number, height: number, x: number, y: number, z: number) => {
-      const geometry = new THREE.BoxGeometry(width, height, 0.18);
-      geometries.push(geometry);
-      const mesh = new THREE.Mesh(geometry, silhouetteMaterial);
-      mesh.position.set(x, y, z);
-      scene.add(mesh);
-      return mesh;
-    };
-    const addAmp = (x: number, y: number, z: number, scale = 1) => {
-      addSilhouette(3.4 * scale, 3.8 * scale, x, y, z);
-      addSilhouette(3.1 * scale, 0.18 * scale, x, y + 1.1 * scale, z - 0.03);
-      addSilhouette(2.7 * scale, 0.16 * scale, x, y + 0.18 * scale, z - 0.03);
-      addSilhouette(0.16 * scale, 3.2 * scale, x - 1.15 * scale, y, z - 0.04);
-      addSilhouette(0.16 * scale, 3.2 * scale, x + 1.15 * scale, y, z - 0.04);
-    };
-    const addTruss = (x: number, z: number) => {
-      addSilhouette(0.16, 9.6, x, 3.35, z);
-      addSilhouette(0.16, 9.6, x + 0.72, 3.35, z);
-      for (let i = 0; i < 5; i++) {
-        const brace = addSilhouette(0.13, 1.05, x + 0.36, -0.5 + i * 1.75, z - 0.02);
-        brace.rotation.z = i % 2 === 0 ? 0.58 : -0.58;
-      }
-    };
-    const addDrumKit = () => {
-      const drumMaterial = silhouetteMaterial;
-      const kickGeometry = new THREE.CircleGeometry(1.0, 32);
-      geometries.push(kickGeometry);
-      const kick = new THREE.Mesh(kickGeometry, drumMaterial);
-      kick.position.set(0, 1.05, -47.5);
-      scene.add(kick);
-      const tomGeometry = new THREE.CircleGeometry(0.42, 24);
-      geometries.push(tomGeometry);
-      const leftTom = new THREE.Mesh(tomGeometry, drumMaterial);
-      leftTom.position.set(-0.9, 1.78, -47.3);
-      scene.add(leftTom);
-      const rightTom = new THREE.Mesh(tomGeometry, drumMaterial);
-      rightTom.position.set(0.92, 1.78, -47.3);
-      scene.add(rightTom);
-      addSilhouette(2.8, 0.1, 0, 2.42, -47.4);
-      addSilhouette(0.08, 1.2, -1.7, 1.85, -47.4);
-      addSilhouette(0.08, 1.2, 1.7, 1.85, -47.4);
-    };
-    addAmp(-13.0, 1.35, -38, 1.08);
-    addAmp(-9.4, 1.0, -44, 0.78);
-    addAmp(12.2, 1.3, -39, 0.98);
-    addAmp(8.4, 0.95, -45, 0.72);
-    addTruss(-16.4, -42);
-    addTruss(15.6, -42);
-    addDrumKit();
-
-    const beamSpecs = [
-      { color: 0x4ce7ff, opacity: 0.065, x: -8.7, y: 7.1, z: -35, rotation: 0.3, width: 7.8, height: 16.8 },
-      { color: 0x74e6ff, opacity: 0.082, x: -1.6, y: 8.2, z: -44, rotation: 0.06, width: 9.4, height: 21.0 },
-      { color: 0x7e65ff, opacity: 0.078, x: 7.3, y: 7.5, z: -36, rotation: -0.31, width: 8.8, height: 18.8 },
-      { color: 0xe6a84f, opacity: 0.032, x: 13.0, y: 5.8, z: -34, rotation: -0.48, width: 6.5, height: 13.8 },
-    ];
-    const lightBeams = beamSpecs.map((spec) => {
-      const geometry = new THREE.PlaneGeometry(spec.width, spec.height);
-      geometries.push(geometry);
-      const beam = new THREE.Mesh(geometry, makeBeamMaterial(spec.color, spec.opacity));
-      beam.position.set(spec.x, spec.y, spec.z);
-      beam.rotation.z = spec.rotation;
-      scene.add(beam);
-      return { beam, baseOpacity: spec.opacity, phase: spec.x * 0.37 };
-    });
 
     const dustGeometry = new THREE.BufferGeometry();
     const dustPositions = new Float32Array(DUST_PARTICLE_COUNT * 3);
@@ -955,9 +797,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
       }
       dustAttribute.needsUpdate = true;
       dustMaterial.opacity = 0.04 + Math.sin(now * 0.0006) * 0.012;
-      for (const lightBeam of lightBeams) {
-        (lightBeam.beam.material as THREE.MeshBasicMaterial).opacity = lightBeam.baseOpacity + Math.sin(now * 0.00042 + lightBeam.phase) * 0.012;
-      }
+
       for (const pulse of stringPulses) {
         const cycleMs = STRING_PULSE_TRAVEL_MS + STRING_PULSE_MIN_DELAY_MS + pulse.laneIndex * 95;
         const progress = ((now + pulse.offsetMs) % cycleMs) / STRING_PULSE_TRAVEL_MS;
@@ -1005,6 +845,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
     frame = requestAnimationFrame(draw);
     return () => {
+      stageDisposed = true;
+      scene.background = null;
       cancelAnimationFrame(frame);
       document.removeEventListener('visibilitychange', onVisibility);
       observer.disconnect();

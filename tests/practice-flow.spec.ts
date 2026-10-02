@@ -300,6 +300,36 @@ test('a loop snaps to nearby notes when dragged through empty tab space', async 
   await expect(page.getByText(/Loop Note/)).toBeVisible();
 });
 
+test('loop selection scrolls past the visible notes at the edge and with the wheel', async ({ page }) => {
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Long loop" \\tempo 120 . ' + Array(8).fill('0.6.4 2.6.4 3.6.4 5.6.4').join(' | '), new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.goto('/');
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'long.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Continue without audio' }).click();
+  await page.getByRole('button', { name: 'Loop Off' }).click();
+  const tab = page.getByRole('img', { name: 'Drag from the first note to the last note to set the loop' });
+  const box = (await tab.boundingBox())!;
+  const position = await page.getByRole('progressbar').getAttribute('value');
+  await page.mouse.move(box.x + box.width * 0.18, box.y + 28);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 2, box.y + 28);
+  await page.waitForTimeout(2000);
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', position!);
+  await page.mouse.up();
+  const label = await page.locator('.bar-position').innerText();
+  const range = label.match(/Loop Note (\d+)–Note (\d+)/)!;
+  expect(Number(range[2]) - Number(range[1])).toBeGreaterThan(9);
+  await page.getByRole('button', { name: 'Select notes' }).click();
+  await page.mouse.move(box.x + box.width * 0.18, box.y + 28);
+  await page.mouse.down();
+  await page.mouse.wheel(2000, 0);
+  await page.waitForTimeout(200);
+  await page.mouse.up();
+  const wheelRange = (await page.locator('.bar-position').innerText()).match(/Loop Note (\d+)–Note (\d+)/)!;
+  expect(Number(wheelRange[2]) - Number(wheelRange[1])).toBeGreaterThan(9);
+});
+
 test('the background polyphonic preview reports a played chord without touching score state', async ({ page }) => {
   // Cold TensorFlow/model startup can outlast the suite's 30-second default.
   test.setTimeout(60_000);

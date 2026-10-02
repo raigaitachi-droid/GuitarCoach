@@ -48,14 +48,59 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
   const view = useRef({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect });
   const draggedNote = useRef<TabNote | null>(null);
   const draggedEndNote = useRef<TabNote | null>(null);
+  const selectionOffsetMs = useRef(0);
+  const pointerX = useRef<number | null>(null);
   view.current = { notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect };
+
+  useEffect(() => {
+    selectionOffsetMs.current = 0;
+    draggedNote.current = null;
+    draggedEndNote.current = null;
+    pointerX.current = null;
+  }, [selectingLoop]);
+
+  const scrollSelection = (amountMs: number) => {
+    const current = view.current;
+    const endMs = current.notes.reduce((end, note) => Math.max(end, note.timestampMs + note.durationMs), 0);
+    selectionOffsetMs.current = Math.max(-current.playbackMs,
+      Math.min(Math.max(0, endMs - current.playbackMs), selectionOffsetMs.current + amountMs));
+  };
+
+  const nearestNoteAtX = (x: number, width: number) => {
+    const now = view.current.playbackMs + selectionOffsetMs.current;
+    const hitX = width * 0.18;
+    const time = now + (x - hitX) / (width - hitX) * 4500;
+    let nearest: TabNote | null = null;
+    let distance = Infinity;
+    for (const note of view.current.notes) {
+      const nextDistance = Math.abs(note.timestampMs - time);
+      if (nextDistance < distance || (nextDistance === distance && note.string < (nearest?.string ?? 7))) {
+        nearest = note;
+        distance = nextDistance;
+      }
+    }
+    return nearest;
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let frame = 0;
-    const draw = () => {
+    let previousFrame = performance.now();
+    const draw = (frameTime: number) => {
       const rect = canvas.parentElement!.getBoundingClientRect();
+      const elapsed = Math.min(50, Math.max(0, frameTime - previousFrame));
+      previousFrame = frameTime;
+      if (view.current.selectingLoop && draggedNote.current && pointerX.current !== null) {
+        const x = pointerX.current;
+        const edge = 56;
+        const velocity = x > rect.width - edge ? Math.min(1, (x - rect.width + edge) / edge)
+          : x < edge ? -Math.min(1, (edge - x) / edge) : 0;
+        if (velocity) {
+          scrollSelection(velocity * elapsed * 3.2);
+        }
+        draggedEndNote.current = nearestNoteAtX(Math.max(44, Math.min(rect.width - 24, x)), rect.width);
+      }
       const dpr = window.devicePixelRatio || 1;
       if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
         canvas.width = Math.round(rect.width * dpr);
@@ -71,7 +116,8 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       panelWash.addColorStop(1, 'rgba(2, 7, 13, .34)');
       ctx.fillStyle = panelWash;
       ctx.fillRect(0, 0, rect.width, rect.height);
-      const { notes, playbackMs: now, waitingId, loopStartId, loopEndId, selectingLoop } = view.current;
+      const { notes, playbackMs, waitingId, loopStartId, loopEndId, selectingLoop } = view.current;
+      const now = playbackMs + (selectingLoop ? selectionOffsetMs.current : 0);
       const hitX = rect.width * 0.18;
       const visibleWindowMs = 4500;
       const laneHeight = (rect.height - 80) / 6;
@@ -177,10 +223,18 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       if (!document.hidden) frame = requestAnimationFrame(draw);
     };
     document.addEventListener('visibilitychange', onVisibility);
+    const onWheel = (event: WheelEvent) => {
+      if (!view.current.selectingLoop) return;
+      event.preventDefault();
+      const pixels = (event.deltaX || event.deltaY) * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientWidth : 1);
+      scrollSelection(pixels * 4500 / Math.max(1, canvas.clientWidth * 0.82));
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
     frame = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(frame);
       document.removeEventListener('visibilitychange', onVisibility);
+      canvas.removeEventListener('wheel', onWheel);
     };
   }, []);
 
@@ -188,18 +242,8 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const hitX = rect.width * 0.18;
-    const visibleWindowMs = 4500;
-    const xAt = (time: number) => hitX + (time - view.current.playbackMs) / visibleWindowMs * (rect.width - hitX);
-    const x = event.clientX - rect.left;
-    const candidate = view.current.notes
-      .filter((note) => xAt(note.timestampMs) >= 48 && xAt(note.timestampMs) <= rect.width + 24)
-      // Snap by horizontal timeline position. This means the guitarist can
-      // begin/end a drag in the empty space between strings and still select
-      // the musically nearest note.
-      .map((note) => ({ note, distance: Math.abs(xAt(note.timestampMs) - x) }))
-      .sort((a, b) => a.distance - b.distance || a.note.string - b.note.string)[0];
-    return candidate?.note || null;
+    const x = Math.max(44, Math.min(rect.width - 24, event.clientX - rect.left));
+    return nearestNoteAtX(x, rect.width);
   };
 
   const selecting = Boolean(selectingLoop);
@@ -209,6 +253,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
     if (!note) return;
     draggedNote.current = note;
     draggedEndNote.current = note;
+    pointerX.current = event.clientX - event.currentTarget.getBoundingClientRect().left;
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
@@ -218,18 +263,23 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
     const end = noteAtPointer(event) || draggedEndNote.current;
     draggedNote.current = null;
     draggedEndNote.current = null;
+    pointerX.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (end) view.current.onLoopSelect(start, end);
     event.preventDefault();
   };
   const previewDrag = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!draggedNote.current) return;
+    pointerX.current = event.clientX - event.currentTarget.getBoundingClientRect().left;
     draggedEndNote.current = noteAtPointer(event);
   };
   const cancelDrag = () => {
     draggedNote.current = null;
     draggedEndNote.current = null;
+    pointerX.current = null;
   };
   return <div className={selecting ? 'tab-surface is-selecting-loop' : 'tab-surface'}>
+    {selecting && <span className="loop-scroll-hint">Drag to an edge to scroll · scroll to browse</span>}
     <canvas ref={canvasRef} onPointerDown={startDrag} onPointerMove={previewDrag} onPointerUp={finishDrag} onPointerCancel={cancelDrag} role="img" aria-label={selecting ? 'Drag from the first note to the last note to set the loop' : 'Scrolling guitar tablature. Fret numbers appear on six strings; correct notes turn green and missed notes turn red.'} />
   </div>;
 }
