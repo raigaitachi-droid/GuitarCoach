@@ -189,7 +189,8 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   // Attack estimates deliberately tolerate one semitone; use a pitch outside
   // that tolerance to test the wrong-note path.
   await page.evaluate(() => (window as any).testGuitar.pluck(43));
-  await expect(page.getByRole('status')).toContainText('Wrong note · play E2');
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toHaveCount(0);
   await page.waitForTimeout(250);
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', waitingPosition!);
   await page.evaluate(() => (window as any).testGuitar.pluck(40));
@@ -198,8 +199,49 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(page.locator('.practice-feedback-burst')).toHaveCount(0, { timeout: 2500 });
   await page.getByRole('button', { name: 'Finish practice' }).click();
-  await expect(page.getByRole('heading', { name: '100% accuracy' })).toBeVisible();
-  await expect(page.getByText('1 of 1 single notes played correctly.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Practice complete' })).toBeVisible();
+  await expect(page.getByText('1 note practiced · no timing or score.')).toBeVisible();
+});
+
+test('wait mode recognizes high E and chord tones without a game score', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Wait chord" \\tempo 120 . 0.1.4 (0.6 2.5).4 3.6.4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'wait-chord.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for E4');
+  // An adjacent fret must never clear the target just because it is an onset.
+  await page.evaluate(() => (window as any).testGuitar.pluck(65));
+  await page.waitForTimeout(400);
+  await expect(page.getByRole('status')).toContainText('Waiting for E4');
+  await page.evaluate(() => (window as any).testGuitar.pluck(64));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  await page.waitForTimeout(400);
+  await page.evaluate(() => (window as any).testGuitar.pluck(40));
+  await expect(page.getByRole('status')).toContainText('Waiting for B2');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  // Pick individually: overlapping synthesized sines form a polyphonic input.
+  await page.waitForTimeout(350);
+  await page.evaluate(() => (window as any).testGuitar.pluck(47));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2000');
+  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toHaveCount(0);
+});
+
+test('turning wait mode off restores game feedback and combo HUD', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  await loadRiff(page);
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await page.getByRole('button', { name: 'Wait Mode On' }).click();
+  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toBeVisible();
+  await page.evaluate(() => (window as any).testGuitar.pluck(50));
+  await expect(page.getByRole('status')).toContainText('Wrong note');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  // The advancing game can also assess a missed note while the assertion waits.
+  expect(Number(await page.locator('.hud-grid span').filter({ hasText: 'wrong' }).locator('b').innerText())).toBeGreaterThan(0);
 });
 
 test('retry clears judged notes and feedback while keeping the input connected', async ({ page }) => {
@@ -212,11 +254,11 @@ test('retry clears judged notes and feedback while keeping the input connected',
   await expect(page.getByRole('status')).toContainText('Correct note');
   await page.getByRole('button', { name: 'Retry practice' }).click();
   await expect(page.locator('.practice-feedback-burst')).toHaveCount(0);
-  await expect(page.locator('.hud-primary strong')).toHaveText('0');
+  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toHaveCount(0);
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   expect(await page.evaluate(() => (window as any).testGuitar.active)).toBe(1);
   await page.getByRole('button', { name: 'Finish practice' }).click();
-  await expect(page.getByText('No single notes were assessed. Play a little longer to get feedback.')).toBeVisible();
+  await expect(page.getByText('0 notes practiced · no timing or score.')).toBeVisible();
 });
 
 test('a quiet guitar-input signal can still release Wait Mode', async ({ page }) => {
@@ -239,14 +281,14 @@ test('one sustained pick cannot clear successive identical notes', async ({ page
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.15, 2));
-  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   const position = await page.getByRole('progressbar').getAttribute('value');
   await page.waitForTimeout(2200);
-  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toHaveCount(0);
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', position!);
   await page.evaluate(() => (window as any).testGuitar.pluck(40));
-  await expect(page.locator('.hud-primary strong')).toHaveText('2');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2000');
 });
 
 test('microphone-like ringing ripples cannot penalize the next different note', async ({ page }) => {
@@ -256,16 +298,15 @@ test('microphone-like ringing ripples cannot penalize the next different note', 
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.15, 2, true));
-  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
   await expect(page.getByRole('status')).toContainText('Waiting for F♯2');
   await page.waitForTimeout(2200);
-  await expect(page.locator('.hud-grid span').filter({ hasText: 'wrong' }).locator('b')).toHaveText('0');
-  await expect(page.locator('.hud-primary strong')).toHaveText('1');
+  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toHaveCount(0);
   await expect(page.getByRole('status')).toContainText('Waiting for F♯2');
   await page.evaluate(() => (window as any).testGuitar.pluck(45));
-  await expect(page.getByRole('status')).toContainText('Wrong note');
+  await expect(page.getByRole('status')).toContainText('Waiting for F♯2');
   await page.waitForTimeout(500);
-  await expect(page.locator('.hud-grid span').filter({ hasText: 'wrong' }).locator('b')).toHaveText('1');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
 });
 
 test('manual loop and BPM controls remain available without Coach Mode', async ({ page }) => {

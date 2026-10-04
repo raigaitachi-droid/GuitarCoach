@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { advanceLoop, applyWaitGate, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
-import { shouldSuppressRepeatedWrongPitch } from '../src/utils/practiceSession';
+import { judgeDetectedChord, shouldSuppressRepeatedWrongPitch } from '../src/utils/practiceSession';
 
 const notes: TabNote[] = [
   { id: 'hit', string: 1, fret: 0, timestampMs: 1000, durationMs: 500, hitState: 'hit' },
@@ -31,6 +31,21 @@ test('partial sessions count judged notes and playback-only never claims accurac
 test('a simultaneous chord is excluded from monophonic scoring', () => {
   const chord = [...notes, { ...notes[2], id: 'chord-note', string: 4 }];
   expect([...singleNoteIds(chord)]).toEqual(['hit', 'miss']);
+});
+
+test('wait mode accepts exact chord tones without timing penalties or onset semitone shortcuts', () => {
+  const chord: TabNote[] = [
+    { id: 'e', string: 6, fret: 0, timestampMs: 1000, durationMs: 500 },
+    { id: 'b', string: 5, fret: 2, timestampMs: 1000, durationMs: 500 },
+  ];
+  const base = { notes: chord, scorableIds: singleNoteIds(chord), playbackMs: 1000,
+    tempoScale: 0.5, inputLatencyMs: 300, waitingNoteId: 'e' };
+  expect(judgeDetectedPitch({ ...base, detected: { midiNumber: 47, cents: 10 } }))
+    .toMatchObject({ kind: 'correct', note: chord[1], timing: 'on-time', timingOffsetMs: 0 });
+  expect(judgeDetectedPitch({ ...base, detected: { midiNumber: 41, cents: 0, onset: true } })).toMatchObject({ kind: 'wrong' });
+  expect(judgeDetectedChord(chord, 1000, [41, 48], 0)).toMatchObject({ kind: 'resolved', matched: [], passed: false });
+  expect(summarizePractice([{ ...chord[0], hitState: 'hit' }], 100, true, true))
+    .toMatchObject({ accuracy: null, correct: 1, waitMode: true });
 });
 
 test('pitch judgement applies latency, timing windows, and cents tolerance consistently', () => {
@@ -87,6 +102,9 @@ test('wait mode stops on the first unresolved single note and releases only afte
   expect(applyWaitGate([first, second], scorableIds, 1400)).toEqual({ playbackMs: 1000, waitingNote: first });
   expect(applyWaitGate([{ ...first, hitState: 'hit' }, second], scorableIds, 1400)).toEqual({ playbackMs: 1400, waitingNote: null });
   expect(applyWaitGate([{ ...first, hitState: 'hit' }, second], scorableIds, 1600)).toEqual({ playbackMs: 1500, waitingNote: second });
+  // Selecting a later loop must not drag the transport back to unplayed notes
+  // before that loop or ask for a different, off-screen note.
+  expect(applyWaitGate([first, second], scorableIds, 1600, 1500)).toEqual({ playbackMs: 1500, waitingNote: second });
 });
 
 test('loop uses exact bar boundaries and resets only its selected pass', () => {

@@ -115,6 +115,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastHeardPitchUpdate = useRef(0);
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
+  const waitNoteIds = useMemo(() => new Set(song.notes.map((note) => note.id)), [song]);
   const hasChords = scorableIds.size !== song.notes.length;
   const duration = useMemo(() => song.notes.reduce((end, note) =>
     Math.max(end, note.timestampMs + Math.max(note.durationMs, TIMING_WINDOW_MS + 100)), song.durationMs
@@ -125,6 +126,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   // for a session. Transport state is synchronous so pause cannot award hits.
   const updateNotes = (next: TabNote[]) => { notesRef.current = next; setNotes(next); };
   const registerCorrect = (timing: 'early' | 'on-time' | 'late', count = 1) => {
+    if (waitModeRef.current) return;
     setLiveStats((current) => {
       const combo = current.combo + count;
       return {
@@ -140,6 +142,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     });
   };
   const registerWrong = (count = 1) => {
+    if (waitModeRef.current) return;
     setLiveStats((current) => ({
       ...current,
       combo: 0,
@@ -158,6 +161,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setWaitMode(waitModeRef.current);
     waitingRef.current = null;
     setWaiting(null);
+    setFeedback(null);
+    setLiveStats(emptyLiveStats());
   };
   const clearLoopPass = (boundaries: NonNullable<ReturnType<typeof loopBoundaries>>) => {
     updateNotes(resetLoopPass(notesRef.current, boundaries));
@@ -257,7 +262,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     if (completedRef.current) return;
     completedRef.current = true;
     setTransport(false);
-    onFinishRef.current(summarizePractice(notesRef.current, Math.round(tempoRef.current * 100), withAudio));
+    onFinishRef.current(summarizePractice(notesRef.current, Math.round(tempoRef.current * 100), withAudio, waitModeRef.current));
   };
 
   useEffect(() => { tempoRef.current = tempoPercent / 100; }, [tempoPercent]);
@@ -274,12 +279,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       micDetector.setExpectedString(null);
       return;
     }
-    const unresolved = notes.filter((note) => scorableIds.has(note.id) && !note.hitState);
+    const unresolved = notes.filter((note) => (waitMode ? waitNoteIds : scorableIds).has(note.id) && !note.hitState);
     const expected = waiting || unresolved.sort((a, b) =>
       Math.abs(a.timestampMs - playbackMs) - Math.abs(b.timestampMs - playbackMs)
     )[0];
     micDetector.setExpectedString(expected?.string ?? null);
-  }, [withAudio, notes, playbackMs, waiting, scorableIds]);
+  }, [withAudio, notes, playbackMs, waiting, scorableIds, waitMode, waitNoteIds]);
 
   useEffect(() => {
     if (!withAudio) return;
@@ -329,9 +334,26 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           const chord = judgeDetectedChord(
             notesRef.current,
             pending.expectedTimestampMs,
-            result.polyphonicMidiNumbers
+            result.polyphonicMidiNumbers,
+            waitModeRef.current ? 0 : undefined
           );
           if (chord.kind === 'resolved') {
+            if (waitModeRef.current) {
+              // Practice each unresolved chord tone; a partial reading must
+              // never mark the remaining strings missed or award them for free.
+              if (waitingRef.current?.timestampMs === pending.expectedTimestampMs && chord.matched.length) {
+                const matchedIds = new Set(chord.matched.map((note) => note.id));
+                updateNotes(notesRef.current.map((note) => matchedIds.has(note.id)
+                  ? { ...note, hitState: 'hit', timingOffsetMs: undefined } : note));
+                if (matchedIds.has(waitingRef.current.id)) {
+                  waitingRef.current = null;
+                  setWaiting(null);
+                }
+                setFeedback({ text: 'Correct note', kind: 'correct', at: performance.now() });
+              }
+              pendingChordAttack.current = null;
+              return;
+            }
             const hitIds = new Set(chord.matched.map((note) => note.id));
             const chordIds = new Set(chord.expected.map((note) => note.id));
             // Once the chord clears its 50% threshold, award the chord as one
@@ -380,6 +402,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       // note needs a cleaner pitch estimate so background noise cannot produce
       // distracting false-red feedback.
       if (result.isVoiceLike || (!result.onset && result.confidence < 0.56)) return;
+      if (waitModeRef.current && !waitingRef.current) return;
       const judgement = judgeDetectedPitch({
         notes: notesRef.current,
         scorableIds,
@@ -391,6 +414,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       });
       if (judgement.kind === 'ignored') return;
       if (judgement.kind === 'wrong') {
+        if (waitModeRef.current) return;
         // A previously accepted pick may still ring while Wait Mode advances
         // to the next note. It must not create a wrong attempt for that note.
         if (result.pluckId === lastConsumedPluck.current || shouldSuppressRepeatedWrongPitch(lastJudgedAttack.current, result)) return;
@@ -416,10 +440,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       lastHitNote.current = matched;
       sustainedPitchCooldownUntil.current = result.audioTimeMs + SUSTAINED_PITCH_COOLDOWN_MS;
       micDetector.clearPitchHistory();
-      updateNotes(notesRef.current.map((note) => note.id === matched.id ? { ...note, hitState: 'hit', timingOffsetMs: judgement.timingOffsetMs } : note));
+      updateNotes(notesRef.current.map((note) => note.id === matched.id ? { ...note, hitState: 'hit', timingOffsetMs: waitModeRef.current ? undefined : judgement.timingOffsetMs } : note));
       waitingRef.current = null;
       setWaiting(null);
-      setFeedback({ text: 'Correct note', kind: 'correct', timing: judgement.timing === 'on-time' ? undefined : judgement.timing.toUpperCase(), at: performance.now() });
+      setFeedback({ text: 'Correct note', kind: 'correct', timing: waitModeRef.current || judgement.timing === 'on-time' ? undefined : judgement.timing.toUpperCase(), at: performance.now() });
       registerCorrect(judgement.timing);
     });
   }, [withAudio, scorableIds]);
@@ -447,7 +471,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           clearLoopPass(activeLoop);
         }
         if (waitModeRef.current && withAudio) {
-          const gated = applyWaitGate(notesRef.current, scorableIds, next);
+          const gated = applyWaitGate(notesRef.current, waitNoteIds, next, activeLoop?.startMs);
           next = gated.playbackMs;
           if (waitingRef.current?.id !== gated.waitingNote?.id) {
             waitingRef.current = gated.waitingNote;
@@ -476,7 +500,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     };
     frame = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(frame); guitarSynth.stop(); };
-  }, [song, bars, duration, withAudio, scorableIds]);
+  }, [song, bars, duration, withAudio, scorableIds, waitNoteIds]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -546,7 +570,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>
-      <section className="practice-feedback-hud" aria-label="Live practice feedback">
+      {!waitMode && <section className="practice-feedback-hud" aria-label="Live practice feedback">
         <div className="hud-primary">
           <span>Combo</span>
           <strong>{liveStats.combo}</strong>
@@ -559,7 +583,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           <span><b>{liveStats.early}</b> early</span>
           <span><b>{liveStats.late}</b> late</span>
         </div>
-      </section>
+      </section>}
       {recentFeedback && (
         <div className={`practice-feedback-burst ${recentFeedback.kind}`} aria-hidden="true">
           <strong>{recentFeedback.text}</strong>
@@ -576,7 +600,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />
       </div>
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
-      <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>{polyphonicError ? 'Single-note feedback only · chord preview is unavailable.' : 'Chord scoring: at least 50% of expected tones.'}</span>}</footer>
+      <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>{waitMode ? 'Play every chord tone · you can pick the strings individually.' : polyphonicError ? 'Single-note feedback only · chord preview is unavailable.' : 'Chord scoring: at least 50% of expected tones.'}</span>}</footer>
     </main>
   );
 }

@@ -28,9 +28,9 @@
 ## Remaining work worth prioritizing
 
 1. **Unify accuracy semantics.** The HUD counts wrong attempts as separate events; the final result counts judged notes. Correcting a note can therefore yield different percentages. Decide which metric to present and label both consistently.
-2. **Complete chord practice.** Wait Mode gates single notes, and automatic miss assignment also uses single-note IDs. Unplayed chords need an explicit policy; Coach Mode likewise assesses single notes. Chord matching currently allows ±1 semitone and awards the whole chord after a 50% match. These are product decisions needing real-guitar validation.
+2. **Complete chord practice.** Wait Mode now gates every unresolved chord tone; game-mode automatic misses still use single-note IDs. Game chord matching allows ±1 semitone and awards the whole chord after a 50% match. Wait Mode requires exact pitches and retains unresolved tones after partial recognition. Real-guitar chord validation remains necessary.
 3. **Technique scoring.** Bends are drawn as arrows but the matcher does not evaluate a continuous bend pitch trajectory. Visual support is not complete technique assessment.
-4. **Audio calibration.** Validate timing, false hits and quiet DI input on real microphones/USB interfaces; synthetic browser tones do not replace hardware testing. Attack pitch matching deliberately tolerates one semitone.
+4. **Audio calibration.** Validate timing, false hits and quiet DI input on real microphones/USB interfaces; synthetic browser tones do not replace hardware testing. Game-mode attack matching tolerates one semitone; Wait Mode does not.
 5. **Loading/performance.** The initial JS bundle includes Three.js; alphaTab and TensorFlow are sizable additional bundles. Profile on a modest laptop before claiming steady 60 fps; consider loading the practice screen on demand.
 6. **Native release verification.** Build/test the Windows installer separately. Existing local Tauri configuration/build artifacts were outside this change.
 
@@ -53,3 +53,11 @@ Capture now supplies the windowed energy-rise ratio and elapsed time since the d
 ### Toolbar update and Coach Mode removal
 
 Removed Coach Mode UI, state, automatic tempo changes, and its unused loop-assessment helper. Manual tempo, loop selection, and Wait Mode remain. The transport now uses SVG icons, consistent 44px controls, a connected tempo group, and restrained teal active states. Verified actual rendered screens with and without microphone input. Type checking and production build pass. The browser suite passed 51 of 52 checks; the polyphonic-preview check timed out in the full run, isolated rerun, and a comparison using the previous committed production code. That existing failure remains unresolved and is not hidden or skipped.
+
+### Wait Mode and pitch recognition correction — 2026-10-04
+
+Wait Mode now confirms the expected pitch without wrong penalties, combo, accuracy or early/late judgements. Results show practiced-note counts. Every chord tone is gated, with individual picking supported; partial polyphonic readings only confirm their exact matched tones. Selected loops no longer wait for unresolved notes preceding the loop.
+
+The detector previously selected the absolute correlation maximum among several repeating periods. With identical guitar-like test signals, the old detector misidentified 17 of 33 note/sample-rate combinations (including E4 as A2 at 48 kHz). Selecting the first sufficiently strong local peak resolves all 33 combinations across three phases. Low E at 96 kHz also exceeded the old half-window period limit; analysis now uses the available overlapping samples.
+
+Validation covers 44.1/48/96 kHz, real browser worklet capture, quiet input, repeated notes, ringing tails, exact chord tones, loop selection, and restoration of game feedback when Wait Mode is disabled. The wider run excludes the previously documented Basic Pitch preview timeout; this unrelated limitation remains unresolved. Synthetic input does not certify recognition on every physical microphone/guitar.

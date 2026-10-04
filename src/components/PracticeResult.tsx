@@ -20,6 +20,8 @@ export function PracticeResult({ songTitle, result, weakSection, onPracticeWeakS
         <p className="muted">
           {!result.hadAudio
             ? 'Connect your guitar input to get feedback.'
+            : result.waitMode
+            ? `${result.correct} ${result.correct === 1 ? 'note' : 'notes'} practiced · no timing or score.`
             : result.attempted === 0
             ? 'No single notes were assessed. Play a little longer to get feedback.'
             : `${result.correct} of ${result.attempted} single notes played correctly.`}

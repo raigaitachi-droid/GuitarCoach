@@ -464,7 +464,9 @@ export class MicrophonePitchDetector {
     const minPeriod = Math.floor(sampleRate / 1350);
     const maxPeriod = Math.min(
       Math.floor(sampleRate / 68),
-      Math.floor(buffer.length / 2)
+      // At 96 kHz low E has a 1165-sample period, longer than half
+      // this 2048-sample window. Keep the available overlapping samples.
+      buffer.length - minPeriod
     );
 
     let bestCorrelation = 0;
@@ -505,6 +507,19 @@ export class MicrophonePitchDetector {
     // it when it matches the note currently due in the tab.
     const minRequiredCorrelation = onset ? 0.50 : 0.56;
     if (bestPeriod < 0 || bestCorrelation < minRequiredCorrelation) return null;
+
+    // A string repeats at T, 2T, 3T... Choosing the absolute maximum can
+    // report a lower octave just because a longer period fits marginally better.
+    // Prefer the first strong local peak, without treating weak harmonics as T.
+    for (let period = minPeriod + 1; period < bestPeriod; period++) {
+      if (correlations[period] >= Math.max(minRequiredCorrelation, bestCorrelation * 0.98) &&
+          correlations[period] >= correlations[period - 1] &&
+          correlations[period] > correlations[period + 1]) {
+        bestPeriod = period;
+        bestCorrelation = correlations[period];
+        break;
+      }
+    }
 
     let adjustedPeriod = bestPeriod;
     if (bestPeriod > minPeriod && bestPeriod < maxPeriod) {

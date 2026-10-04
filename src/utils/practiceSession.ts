@@ -7,6 +7,7 @@ export interface PracticeResult {
   notes: TabNote[];
   tempoPercent: number;
   hadAudio: boolean;
+  waitMode?: boolean;
 }
 
 export interface WeakSection {
@@ -17,16 +18,17 @@ export interface WeakSection {
 }
 
 // Only judged notes count. Stopping early must not penalize the unplayed tail.
-export function summarizePractice(notes: TabNote[], tempoPercent: number, hadAudio: boolean): PracticeResult {
+export function summarizePractice(notes: TabNote[], tempoPercent: number, hadAudio: boolean, waitMode = false): PracticeResult {
   const attempted = hadAudio ? notes.filter((note) => (note.hitState && note.hitState !== 'unhit') || note.mistakeCount) : [];
   const correct = attempted.filter((note) => note.hitState === 'hit' || note.hitState === 'close').length;
   return {
-    accuracy: attempted.length ? Math.round(correct / attempted.length * 100) : null,
+    accuracy: !waitMode && attempted.length ? Math.round(correct / attempted.length * 100) : null,
     correct,
     attempted: attempted.length,
     notes: notes.map((note) => ({ ...note })),
     tempoPercent,
     hadAudio,
+    waitMode,
   };
 }
 
@@ -136,7 +138,8 @@ export type ChordJudgement =
 export function judgeDetectedChord(
   notes: TabNote[],
   expectedTimestampMs: number,
-  detectedMidiNumbers: number[]
+  detectedMidiNumbers: number[],
+  semitoneTolerance = CHORD_MATCH_SEMITONE_TOLERANCE
 ): ChordJudgement {
   const expected = notes.filter((note) =>
     note.timestampMs === expectedTimestampMs && !note.hitState
@@ -151,7 +154,7 @@ export function judgeDetectedChord(
     let bestDistance = Infinity;
     for (let index = 0; index < unmatchedDetected.length; index++) {
       const distance = Math.abs(unmatchedDetected[index] - target);
-      if (distance <= CHORD_MATCH_SEMITONE_TOLERANCE && distance < bestDistance) {
+      if (distance <= semitoneTolerance && distance < bestDistance) {
         bestDistance = distance;
         bestIndex = index;
       }
@@ -193,8 +196,9 @@ export function judgeDetectedPitch({
   const scale = Math.max(0.01, tempoScale);
   const effectivePlaybackMs = playbackMs - inputLatencyMs * scale;
   const windowMs = TIMING_WINDOW_MS * scale;
-  const candidates = (waitingNoteId
-    ? notes.filter((note) => note.id === waitingNoteId && !note.hitState)
+  const waitingNote = waitingNoteId ? notes.find((note) => note.id === waitingNoteId) : undefined;
+  const candidates = (waitingNote
+    ? notes.filter((note) => note.timestampMs === waitingNote.timestampMs && !note.hitState)
     : notes.filter((note) =>
         scorableIds.has(note.id) &&
         !note.hitState &&
@@ -206,13 +210,13 @@ export function judgeDetectedPitch({
 
   const matched = candidates.find((note) => {
     const midiDifference = Math.abs(detected.midiNumber - expectedMidi(note));
-    return detected.onset
+    return detected.onset && !waitingNote
       ? midiDifference <= FIRST_ONSET_SEMITONE_TOLERANCE
       : midiDifference === 0 && Math.abs(detected.cents) <= PITCH_TOLERANCE_CENTS;
   });
   if (!matched) return { kind: 'wrong', expected: candidates[0] };
 
-  const timingOffsetMs = Math.round((effectivePlaybackMs - matched.timestampMs) / scale);
+  const timingOffsetMs = waitingNote ? 0 : Math.round((effectivePlaybackMs - matched.timestampMs) / scale);
   const timing = timingOffsetMs < -TIMING_FEEDBACK_THRESHOLD_MS
     ? 'early'
     : timingOffsetMs > TIMING_FEEDBACK_THRESHOLD_MS
@@ -234,9 +238,9 @@ export interface WaitGateResult {
   waitingNote: TabNote | null;
 }
 
-export function applyWaitGate(notes: TabNote[], scorableIds: Set<string>, proposedPlaybackMs: number): WaitGateResult {
+export function applyWaitGate(notes: TabNote[], scorableIds: Set<string>, proposedPlaybackMs: number, startMs = -Infinity): WaitGateResult {
   const waitingNote = notes.find((note) =>
-    scorableIds.has(note.id) && !note.hitState && note.timestampMs <= proposedPlaybackMs
+    scorableIds.has(note.id) && !note.hitState && note.timestampMs >= startMs && note.timestampMs <= proposedPlaybackMs
   ) || null;
 
   return waitingNote
