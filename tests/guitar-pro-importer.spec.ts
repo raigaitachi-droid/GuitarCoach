@@ -58,3 +58,13 @@ test('imports natural 7th-fret harmonics with their sounding pitches and correct
   ]);
   expect(song.notes[2].isHarmonic).toBe(false);
 });
+
+test('imports explicit hammer-on and pull-off links in slow passages', async () => {
+  const source = exportedTab('\\title "Legato" \\tempo 40 . 5.3{h}.4 7.3{h}.4 5.3.4 5.2.4');
+  const song = await importGuitarProFile(new File([new Uint8Array(source)], 'legato.gp'));
+  const [picked, hammer, pull, separate] = song.notes;
+  expect(hammer).toMatchObject({ isHammerOn: true, technique: 'hammer-on', legatoOriginNoteId: picked.id });
+  expect(pull).toMatchObject({ isPullOff: true, technique: 'pull-off', legatoOriginNoteId: hammer.id });
+  expect(hammer.timestampMs - picked.timestampMs).toBe(1500);
+  expect(separate.legatoOriginNoteId).toBeUndefined();
+});

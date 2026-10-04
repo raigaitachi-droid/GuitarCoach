@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, harmonic: (_openMidi: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, hold: (_midi: number) => {}, changePitch: (_midi: number) => {}, harmonic: (_openMidi: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -24,6 +24,18 @@ async function silentGuitar(page: Page) {
       const destination = context.createMediaStreamDestination();
       source.connect(destination);
       source.start();
+      let heldOscillator: OscillatorNode | null = null;
+      state.hold = (midi) => {
+        heldOscillator = context.createOscillator();
+        const gain = context.createGain();
+        gain.gain.value = 0.1;
+        heldOscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+        heldOscillator.connect(gain).connect(destination);
+        heldOscillator.start();
+      };
+      state.changePitch = (midi) => {
+        heldOscillator?.frequency.linearRampToValueAtTime(440 * Math.pow(2, (midi - 69) / 12), context.currentTime + 0.015);
+      };
       state.pluck = (midi, level = 0.15, duration = 0.3, ripple = false) => {
         const oscillator = context.createOscillator();
         const gain = context.createGain();
@@ -433,4 +445,29 @@ test('wait mode accepts seventh-fret B and G harmonics over residual open-string
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByText('2 notes practiced · no timing or score.')).toBeVisible();
+});
+
+test('wait mode accepts linked hammer and pull pitch changes without another pick', async ({ page }, testInfo) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Legato riff" \\tempo 120 . 5.3{h}.4 7.3{h}.4 5.3.4 5.3.4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'legato.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for C4');
+  await page.evaluate(() => (window as any).testGuitar.hold(60));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  await expect(page.getByRole('status')).toContainText('Waiting for D4');
+  await page.screenshot({ path: testInfo.outputPath('legato-highway.png') });
+  await page.evaluate(() => (window as any).testGuitar.changePitch(62));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2000');
+  await expect(page.getByRole('status')).toContainText('Waiting for C4');
+  await page.evaluate(() => (window as any).testGuitar.changePitch(60));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2500');
+  await page.waitForTimeout(1500);
+  // Holding the pull-off destination cannot clear the next ordinary repeated note.
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2500');
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('3 notes practiced · no timing or score.')).toBeVisible();
 });

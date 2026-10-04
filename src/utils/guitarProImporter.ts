@@ -260,6 +260,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
   const tempo = Math.max(1, Math.round(score.tempo || 120));
   const playback = buildPlaybackTimeline(score);
   const notes: TabNote[] = [];
+  const sourceNotes = new Map<string, alphaTab.model.Note>();
   let noteIndex = 0;
 
   for (const [playbackIndex, playbackBar] of playback.bars.entries()) {
@@ -300,6 +301,7 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
             ...bendInfo,
             measureIndex: playbackIndex + 1,
           });
+          sourceNotes.set(notes[notes.length - 1].id, note);
         }
       }
     }
@@ -307,18 +309,18 @@ export async function importGuitarProFile(file: File): Promise<ImportedSong> {
 
   notes.sort((a, b) => a.timestampMs - b.timestampMs || a.string - b.string);
 
-  // Link legato chains between consecutive notes on the same string
-  for (let i = 1; i < notes.length; i += 1) {
-    const current = notes[i];
+  // Preserve alphaTab's explicit link, including slow passages and repeats.
+  const previousOccurrences = new Map<alphaTab.model.Note, TabNote>();
+  for (const current of notes) {
+    const source = sourceNotes.get(current.id)!;
     if (current.isHammerOn || current.isPullOff) {
-      for (let j = i - 1; j >= 0; j -= 1) {
-        const prev = notes[j];
-        if (prev.string === current.string && current.timestampMs - prev.timestampMs <= 1200) {
-          current.legatoOriginNoteId = prev.id;
-          break;
-        }
+      const origin = source.hammerPullOrigin && previousOccurrences.get(source.hammerPullOrigin);
+      if (origin && origin.string === current.string && origin.timestampMs < current.timestampMs) {
+        current.legatoOriginNoteId = origin.id;
       }
+      current.technique = current.isHammerOn ? 'hammer-on' : 'pull-off';
     }
+    previousOccurrences.set(source, current);
   }
 
   if (notes.length === 0) {

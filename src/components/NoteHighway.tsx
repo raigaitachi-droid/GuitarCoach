@@ -354,8 +354,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     scene.add(horizonMist);
 
     const textMaterials = new Map<string, THREE.SpriteMaterial>();
-    const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad', isBend = false, judgement: BadgeJudgement = 'pending') => {
-      const key = `${shape}:${color}:${text}:${isBend ? 'bend' : 'plain'}:${judgement}`;
+    const makeBadgeMaterial = (text: string, color: number, shape: 'note' | 'pad', isBend = false, judgement: BadgeJudgement = 'pending', legato = '') => {
+      const key = `${shape}:${color}:${text}:${isBend ? 'bend' : 'plain'}:${judgement}:${legato}`;
       const cached = textMaterials.get(key);
       if (cached) return cached;
       const canvas = document.createElement('canvas');
@@ -510,6 +510,19 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         context.shadowBlur = isPad ? 10 : 8;
         context.strokeText('↑', markerX, markerY);
         context.fillText('↑', markerX, markerY);
+        context.restore();
+      }
+      if (shape === 'note' && legato) {
+        context.save();
+        context.font = '700 30px ' + FRET_DIGIT_FONT;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.lineWidth = 7;
+        context.strokeStyle = 'rgba(0,0,0,.94)';
+        context.fillStyle = '#ffffff';
+        context.shadowBlur = 0;
+        context.strokeText(legato, centerX - 57, centerY - 30);
+        context.fillText(legato, centerX - 57, centerY - 30);
         context.restore();
       }
       if (shape === 'note' && judgement !== 'pending') {
@@ -746,7 +759,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         let group = active.get(note.id);
         if (!group) {
           group = new THREE.Group();
-          const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend), noteJudgement(note)));
+          const badge = new THREE.Sprite(makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend), noteJudgement(note), note.isHammerOn ? 'H' : note.isPullOff ? 'P' : ''));
           badge.position.y = 0.62;
           badge.scale.set(1.42, 0.9, 1);
           group.add(badge);
@@ -757,7 +770,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
           scene.add(group);
           active.set(note.id, group);
         }
-        (group.children[0] as THREE.Sprite).material = makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend), judgement);
+        (group.children[0] as THREE.Sprite).material = makeBadgeMaterial(String(note.fret), COLORS[laneIndex], 'note', Boolean(note.isBend), judgement, note.isHammerOn ? 'H' : note.isPullOff ? 'P' : '');
         const noteZ = highwayNoteZ(note.timestampMs, current.playbackMs) + TARGET_Z;
         const depthLift = THREE.MathUtils.clamp((noteZ - TARGET_Z) / 34, 0, 1) * 0.54;
         const noteY = 0.22 + depthLift;

@@ -33,6 +33,12 @@ export function summarizePractice(notes: TabNote[], tempoPercent: number, hadAud
 }
 
 export const STANDARD_TUNING = [64, 59, 55, 50, 45, 40];
+
+export function isLinkedLegato(previous: TabNote | null, next: TabNote): boolean {
+  return Boolean(previous && (next.isHammerOn || next.isPullOff) &&
+    next.legatoOriginNoteId === previous.id && next.string === previous.string &&
+    next.timestampMs > previous.timestampMs && expectedMidi(next) !== expectedMidi(previous));
+}
 // Browser capture and USB interfaces can add a meaningful delay. This is the
 // real-time forgiveness window at 100% tempo; it scales with playback speed.
 export const TIMING_WINDOW_MS = 480;

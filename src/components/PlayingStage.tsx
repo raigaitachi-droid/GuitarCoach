@@ -6,6 +6,7 @@ import { advanceLoop, applyWaitGate, expectedMidi, judgeDetectedChord, judgeDete
 import { TabCanvas } from './TabCanvas';
 import { NoteHighway } from './NoteHighway';
 import { SpeedControl } from './SpeedControl';
+import { isLinkedLegato } from '../utils/practiceSession';
 
 interface Props {
   song: ImportedSong;
@@ -440,7 +441,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       const matched = judgement.note;
       // A sustained note cannot satisfy another pick. Retain legato support.
       if (result.pluckId === lastConsumedPluck.current &&
-          !(lastHitNote.current && (matched.isHammerOn || matched.isPullOff) && expectedMidi(matched) !== expectedMidi(lastHitNote.current))) return;
+          !isLinkedLegato(lastHitNote.current, matched)) return;
       lastConsumedPluck.current = result.pluckId;
       lastJudgedAttack.current = { midiNumber: result.midiNumber, pluckId: result.pluckId };
       lastHitNote.current = matched;

@@ -2,12 +2,27 @@ import { expect, test } from '@playwright/test';
 import { advanceLoop, applyWaitGate, expectedMidi, findWeakSection, judgeDetectedPitch, loopBoundaries, midiToFrequency, missedNoteIds, noteLoopBoundaries, normalizeNoteLoopRange, resetLoopPass, shouldSuppressStalePitchAfterAttack, shouldSuppressSustainedPitchDuringCooldown, singleNoteIds, summarizePractice } from '../src/utils/practiceSession';
 import { ImportedSong, SongBar, TabNote } from '../src/types';
 import { judgeDetectedChord, shouldSuppressRepeatedWrongPitch } from '../src/utils/practiceSession';
+import { isLinkedLegato } from '../src/utils/practiceSession';
 
 const notes: TabNote[] = [
   { id: 'hit', string: 1, fret: 0, timestampMs: 1000, durationMs: 500, hitState: 'hit' },
   { id: 'miss', string: 2, fret: 0, timestampMs: 1500, durationMs: 500, hitState: 'miss' },
   { id: 'future', string: 3, fret: 0, timestampMs: 2000, durationMs: 500 },
 ];
+
+test('a consumed pick is reusable only for an explicit same-string legato link', () => {
+  const previous: TabNote = { id: 'origin', string: 3, fret: 5, timestampMs: 1000, durationMs: 1500 };
+  const hammer: TabNote = { id: 'hammer', string: 3, fret: 7, timestampMs: 2500, durationMs: 500,
+    isHammerOn: true, legatoOriginNoteId: previous.id };
+  expect(isLinkedLegato(previous, hammer)).toBe(true);
+  expect(isLinkedLegato(null, hammer)).toBe(false);
+  expect(isLinkedLegato(previous, { ...hammer, string: 2 })).toBe(false);
+  expect(isLinkedLegato(previous, { ...hammer, legatoOriginNoteId: 'another-note' })).toBe(false);
+  expect(isLinkedLegato(previous, { ...hammer, fret: 5 })).toBe(false);
+  expect(isLinkedLegato(previous, { ...hammer, timestampMs: 1000 })).toBe(false);
+  expect(isLinkedLegato(previous, { ...hammer, isHammerOn: false })).toBe(false);
+  expect(isLinkedLegato(hammer, { ...previous, timestampMs: 3000, isPullOff: true, legatoOriginNoteId: hammer.id })).toBe(true);
+});
 
 test('a ringing sound cannot generate repeat penalties through false attack IDs', () => {
   const previous = { midiNumber: 40, pluckId: 3 };
