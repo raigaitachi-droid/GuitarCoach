@@ -97,7 +97,7 @@ test('minimal start, demo, pause, result, replay, and new tab', async ({ page })
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'GuitarCoach' })).toBeVisible();
-  await expect(page.getByRole('button')).toHaveCount(2);
+  await expect(page.getByRole('button')).toHaveCount(3);
   await page.getByRole('button', { name: 'Try demo song' }).click();
   await page.getByRole('button', { name: 'Continue without audio' }).click();
   await expect(page.getByRole('img', { name: /Scrolling guitar tablature/ })).toBeVisible();

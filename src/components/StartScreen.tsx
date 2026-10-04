@@ -3,12 +3,14 @@ import { ImportedSong } from '../types';
 import { AudioInputDevice } from '../utils/pitchDetector';
 import startBackgroundVideo from '../assets/start-bg.mp4';
 import startBackgroundPoster from '../assets/start-bg-poster.jpg';
+import { MyTabs } from './MyTabs';
 
 interface Props {
   song: ImportedSong | null;
   loading: boolean;
   busy: boolean;
   error: string | null;
+  storageNotice: string | null;
   devices: AudioInputDevice[];
   deviceId: string;
   onDeviceChange: (id: string) => void;
@@ -20,11 +22,13 @@ interface Props {
   onReset: () => void;
 }
 
-export function StartScreen({ song, loading, busy, error, devices, deviceId, onDeviceChange, onFindInputs, onFile, onDemo, onStart, onReset }: Props) {
+export function StartScreen({ song, loading, busy, error, storageNotice, devices, deviceId, onDeviceChange, onFindInputs, onFile, onDemo, onStart, onReset }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [dragging, setDragging] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
+  const [showTabs, setShowTabs] = useState(false);
+  const tabsButton = useRef<HTMLButtonElement>(null);
   const disabled = loading || busy;
 
   useEffect(() => {
@@ -51,8 +55,11 @@ export function StartScreen({ song, loading, busy, error, devices, deviceId, onD
         {!videoFailed && <video ref={videoRef} className="start-bg-video" src={startBackgroundVideo} poster={startBackgroundPoster} autoPlay loop muted playsInline preload="auto" onError={() => setVideoFailed(true)} />}
       </div>
       <h1 className="start-wordmark"><span>Guitar</span>Coach</h1>
+      <nav className="start-navigation" aria-label="Start menu"><button ref={tabsButton} className="my-tabs-menu" disabled={disabled} aria-expanded={showTabs} onClick={() => setShowTabs((open) => !open)}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 5h6l2 2h8v12H4V5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="M8 11h8M8 15h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>My Tabs
+      </button></nav>
       <div className="start-card">
-        {!song ? (
+        {showTabs ? <MyTabs onBack={() => { setShowTabs(false); tabsButton.current?.focus(); }} onOpen={(file) => { setShowTabs(false); onFile(file); }} /> : !song ? (
           <>
             <h2 id="start-heading" className="start-title">Practice tabs like<br /><span>a rhythm game</span></h2>
             <input ref={input} hidden type="file" tabIndex={-1} aria-label="Guitar Pro file" accept=".gp,.gpx,.gp3,.gp4,.gp5,.gp7,.gp8" disabled={disabled}
@@ -83,6 +90,7 @@ export function StartScreen({ song, loading, busy, error, devices, deviceId, onD
           </section>
         )}
         {error && <p role="alert" className="error-message">{error}</p>}
+        {storageNotice && !showTabs && song && <p role="status" className="my-tabs-caption">{storageNotice}</p>}
       </div>
     </main>
   );

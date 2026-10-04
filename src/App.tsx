@@ -7,6 +7,7 @@ import { AudioInputDevice, micDetector } from './utils/pitchDetector';
 import { guitarSynth } from './utils/guitarSynth';
 import { findWeakSection, PracticeLoopRange, PracticeResult as SessionResult, WeakSection } from './utils/practiceSession';
 import { SONG_CATALOG, SONG_TABS } from './data/songTabs';
+import { saveTab } from './utils/myTabs';
 
 function builtInSong(songId: string, title: string): ImportedSong {
   const song = SONG_CATALOG.find((candidate) => candidate.id === songId);
@@ -31,6 +32,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storageNotice, setStorageNotice] = useState<string | null>(null);
   const operation = useRef(false);
   const mounted = useRef(true);
 
@@ -66,6 +68,12 @@ export default function App() {
     try {
       const { importGuitarProFile } = await import('./utils/guitarProImporter');
       const imported = await importGuitarProFile(file);
+      try {
+        await saveTab(file, imported);
+        if (mounted.current) setStorageNotice(null);
+      } catch {
+        if (mounted.current) setStorageNotice('This tab is ready to play, but couldn’t be saved to My Tabs on this device.');
+      }
       if (mounted.current) { setSong(imported); setTempoPercent(100); }
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error && cause.message.startsWith('Choose a Guitar Pro')
@@ -127,6 +135,7 @@ export default function App() {
     setWeakSection(null);
     setPracticeFocus(null);
     setError(null);
+    setStorageNotice(null);
     setScreen('start');
   };
 
@@ -145,7 +154,7 @@ export default function App() {
       }} onReplay={() => { setPracticeFocus(null); void startPractice(withAudio); }} onLoadAnother={reset} />
   );
 
-  return <StartScreen song={song} loading={loading} busy={busy} error={error} devices={devices} deviceId={deviceId}
+  return <StartScreen song={song} loading={loading} busy={busy} error={error} storageNotice={storageNotice} devices={devices} deviceId={deviceId}
     onDeviceChange={setDeviceId} onFindInputs={() => { void findInputs(); }} onFile={(file) => { void loadFile(file); }}
     onDemo={() => { setSong(builtInSong('canon-in-d', 'Canon in D · demo')); setTempoPercent(100); setError(null); }}
     onChordTest={() => { setSong(builtInSong('open-chords-test', 'Open Chords · test')); setTempoPercent(100); setError(null); }}
