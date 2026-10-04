@@ -1,4 +1,5 @@
 // Low-latency guitar detector: AudioWorklet capture + event-driven pitch analysis.
+import { PitchAnalyser } from './pitchAnalysis';
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -22,6 +23,17 @@ interface CaptureMessage {
 
 interface NativeCaptureStarted {
   sampleRate: number;
+}
+
+export interface PitchAnalysisPacket extends CaptureMessage {
+  samples: Float32Array;
+  sampleRate: number;
+  epoch: number;
+  noiseThreshold: number;
+  audioTimeMs: number;
+  onset: boolean;
+  pluckId: number;
+  crestFactor: number;
 }
 
 export interface PitchResult {
@@ -73,6 +85,11 @@ export class MicrophonePitchDetector {
   private requestId = 0;
   private errorMessage: string | null = null;
   private polyphonicWorker: Worker | null = null;
+  private polyphonicEnabled = false;
+  private pitchWorker: Worker | null = null;
+  private analysisEpoch = 0;
+  private analysisBusy = false;
+  private pendingAnalysis: PitchAnalysisPacket | null = null;
   private polyphonicError: string | null = null;
   private nativeCapture = false;
   private nativeSampleRate = 48000;
@@ -84,9 +101,7 @@ export class MicrophonePitchDetector {
   }
 
   // Voice vs guitar stability tracking
-  private lastMidi = -1;
-  private lastCents = 0;
-  private lastPitchTimeMs = 0;
+  private pitchAnalyser = new PitchAnalyser();
 
   setNoiseThreshold(threshold: number) {
     this.noiseThreshold = Math.max(0.0005, Math.min(0.05, threshold));
@@ -127,9 +142,10 @@ export class MicrophonePitchDetector {
 
   clearPitchHistory() {
     this.latestResult = null;
-    this.lastMidi = -1;
-    this.lastCents = 0;
-    this.lastPitchTimeMs = 0;
+    this.pitchAnalyser.reset();
+    this.analysisEpoch++;
+    this.pendingAnalysis = null;
+    this.pitchWorker?.postMessage({ type: 'reset' });
   }
 
   subscribe(listener: PitchListener): () => void {
@@ -248,6 +264,7 @@ export class MicrophonePitchDetector {
         (trackLatency + (this.audioContext.baseLatency || 0)) * 1000
       );
 
+      this.startPitchWorker();
       this.workletNode.port.onmessage = (event) => this.handleCaptureMessage(event.data, this.audioContext!.sampleRate);
 
       this.startPolyphonicPreview();
@@ -278,6 +295,7 @@ export class MicrophonePitchDetector {
 
   private async startNativeListening(deviceId: string, requestId: number): Promise<boolean> {
     try {
+      this.startPitchWorker();
       // Channels use Tauri's ordered streaming IPC. Events serialise their
       // payload as JSON and are reserved below for the small level/onset data.
       const samplesChannel = new Channel<Omit<CaptureMessage, 'type'> & { samples: number[] }>();
@@ -340,16 +358,31 @@ export class MicrophonePitchDetector {
       : Float32Array.from(message.samples);
     // The worklet emits a 2048-sample window every 1024 samples. Preserve
     // the overlap for the optional browser-only polyphonic preview.
-    const polyphonicSamples = samples.slice();
-    this.polyphonicWorker?.postMessage({
-      type: 'samples',
-      samples: polyphonicSamples,
-      hopSamples: polyphonicSamples.length / 2,
-      sampleRate,
-      audioTimeMs: message.audioTimeMs || 0,
-      requestedAtMs: performance.now(),
-      onset: Boolean(message.onset),
-    }, [polyphonicSamples.buffer]);
+    if (this.polyphonicWorker) {
+      const polyphonicSamples = samples.slice();
+      this.polyphonicWorker.postMessage({
+        type: 'samples',
+        samples: polyphonicSamples,
+        hopSamples: polyphonicSamples.length / 2,
+        sampleRate,
+        audioTimeMs: message.audioTimeMs || 0,
+        requestedAtMs: performance.now(),
+        onset: Boolean(message.onset),
+      }, [polyphonicSamples.buffer]);
+    }
+    if (this.pitchWorker) {
+      const packet: PitchAnalysisPacket = { ...message, samples, sampleRate, epoch: this.analysisEpoch,
+        noiseThreshold: this.noiseThreshold, audioTimeMs: message.audioTimeMs || 0,
+        onset: Boolean(message.onset), pluckId: Number(message.pluckId || 1),
+        crestFactor: Number(message.crestFactor || 1.8) };
+      if (this.analysisBusy) {
+        // Keep at most one newest window, retaining its attack flag. Slow
+        // hardware must not accumulate a queue of obsolete audio estimates.
+        if (this.pendingAnalysis?.pluckId === packet.pluckId) packet.onset ||= this.pendingAnalysis.onset;
+        this.pendingAnalysis = packet;
+      } else this.dispatchPitchAnalysis(packet);
+      return;
+    }
     const result = this.analysePitch(
       samples,
       sampleRate,
@@ -373,6 +406,10 @@ export class MicrophonePitchDetector {
   stopListening() {
     this.requestId += 1;
     this.isListening = false;
+    this.pitchWorker?.terminate();
+    this.pitchWorker = null;
+    this.analysisBusy = false;
+    this.pendingAnalysis = null;
     if (this.nativeCapture) void invoke('stop_native_capture').catch(() => undefined);
     this.nativeCapture = false;
     this.clearNativeListeners();
@@ -395,6 +432,7 @@ export class MicrophonePitchDetector {
     this.lastRms = 0;
     this.polyphonicWorker?.terminate();
     this.polyphonicWorker = null;
+    this.polyphonicEnabled = false;
     this.polyphonicError = null;
   }
 
@@ -403,6 +441,7 @@ export class MicrophonePitchDetector {
   }
 
   private startPolyphonicPreview() {
+    if (!this.polyphonicEnabled) return;
     this.polyphonicWorker?.terminate();
     this.polyphonicError = null;
     this.polyphonicWorker = new Worker(new URL('../workers/polyphonicPitchWorker.ts', import.meta.url), { type: 'module' });
@@ -443,6 +482,17 @@ export class MicrophonePitchDetector {
     this.polyphonicWorker.postMessage({ type: 'init', modelUrl, preferWasm: isTauri() });
   }
 
+  setPolyphonicEnabled(enabled: boolean) {
+    if (enabled === this.polyphonicEnabled) return;
+    this.polyphonicEnabled = enabled;
+    if (enabled && this.isListening) this.startPolyphonicPreview();
+    else if (!enabled) {
+      this.polyphonicWorker?.terminate();
+      this.polyphonicWorker = null;
+      this.polyphonicError = null;
+    }
+  }
+
   // Kept for compatibility with tuner code; event subscribers are preferred.
   detectPitch(): PitchResult | null {
     const result = this.latestResult;
@@ -450,132 +500,46 @@ export class MicrophonePitchDetector {
     return result;
   }
 
-  private analysePitch(
-    buffer: Float32Array,
-    sampleRate: number,
-    rms: number,
-    audioTimeMs: number,
-    onset: boolean,
-    pluckId: number,
-    crestFactor: number
-  ): PitchResult | null {
-    if (rms < this.noiseThreshold) return null;
+  private analysePitch(buffer: Float32Array, sampleRate: number, rms: number, audioTimeMs: number, onset: boolean, pluckId: number, crestFactor: number): PitchResult | null {
+    this.pitchAnalyser.noiseThreshold = this.noiseThreshold;
+    return this.pitchAnalyser.analysePitch(buffer, sampleRate, rms, audioTimeMs, onset, pluckId, crestFactor);
+  }
 
-    const minPeriod = Math.floor(sampleRate / 1350);
-    const maxPeriod = Math.min(
-      Math.floor(sampleRate / 68),
-      // At 96 kHz low E has a 1165-sample period, longer than half
-      // this 2048-sample window. Keep the available overlapping samples.
-      buffer.length - minPeriod
-    );
-
-    let bestCorrelation = 0;
-    let bestPeriod = -1;
-    const correlations = new Float32Array(maxPeriod + 2);
-    const windowLength = buffer.length;
-
-    for (let period = minPeriod; period <= maxPeriod; period++) {
-      let sumProd = 0;
-      let energy1 = 0;
-      let energy2 = 0;
-      const length = buffer.length - period;
-
-      for (let i = 0; i < length; i += 2) {
-        const x1 = buffer[i];
-        const x2 = buffer[i + period];
-        // Prefer recent samples after a re-pluck without starving low notes
-        // of the period history needed for a stable correlation.
-        const weight = onset ? 0.15 + 0.85 * (i / (windowLength - 1)) : 1;
-        sumProd += weight * x1 * x2;
-        energy1 += weight * x1 * x1;
-        energy2 += weight * x2 * x2;
-      }
-
-      const denominator = Math.sqrt(energy1 * energy2);
-      const correlation = denominator > 0 ? sumProd / denominator : 0;
-      correlations[period] = correlation;
-
-      if (correlation > bestCorrelation) {
-        bestCorrelation = correlation;
-        bestPeriod = period;
-      }
+  private startPitchWorker() {
+    this.pitchWorker?.terminate();
+    this.analysisBusy = false;
+    this.pendingAnalysis = null;
+    try {
+      const worker = new Worker(new URL('../workers/monoPitchWorker.ts', import.meta.url), { type: 'module' });
+      this.pitchWorker = worker;
+      worker.onmessage = (event: MessageEvent<{ epoch: number; result: PitchResult | null }>) => {
+        if (this.pitchWorker !== worker) return;
+        this.analysisBusy = false;
+        if (this.isListening && event.data.epoch === this.analysisEpoch) {
+          this.latestResult = event.data.result;
+          this.emit(event.data.result);
+        }
+        const pending = this.pendingAnalysis;
+        this.pendingAnalysis = null;
+        if (pending && this.isListening && pending.epoch === this.analysisEpoch) this.dispatchPitchAnalysis(pending);
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        if (this.pitchWorker === worker) {
+          this.pitchWorker = null;
+          this.analysisBusy = false;
+          this.pendingAnalysis = null;
+        }
+      };
+    } catch {
+      // Preserve input on browsers where workers cannot start.
+      this.pitchWorker = null;
     }
+  }
 
-    // Require clean periodicity. Spoken room noise and low-clarity chatter are filtered here.
-    // The first 40–80 ms of a guitar note has a noisy pick transient. Keep a
-    // usable pitch candidate through that transient; PlayingStage only accepts
-    // it when it matches the note currently due in the tab.
-    const minRequiredCorrelation = onset ? 0.50 : 0.56;
-    if (bestPeriod < 0 || bestCorrelation < minRequiredCorrelation) return null;
-
-    // A string repeats at T, 2T, 3T... Choosing the absolute maximum can
-    // report a lower octave just because a longer period fits marginally better.
-    // Prefer the first strong local peak, without treating weak harmonics as T.
-    for (let period = minPeriod + 1; period < bestPeriod; period++) {
-      if (correlations[period] >= Math.max(minRequiredCorrelation, bestCorrelation * 0.98) &&
-          correlations[period] >= correlations[period - 1] &&
-          correlations[period] > correlations[period + 1]) {
-        bestPeriod = period;
-        bestCorrelation = correlations[period];
-        break;
-      }
-    }
-
-    let adjustedPeriod = bestPeriod;
-    if (bestPeriod > minPeriod && bestPeriod < maxPeriod) {
-      const previous = correlations[bestPeriod - 1];
-      const current = correlations[bestPeriod];
-      const next = correlations[bestPeriod + 1];
-      const denominator = 2 * (2 * current - next - previous);
-      if (denominator !== 0) {
-        const shift = (next - previous) / denominator;
-        if (Math.abs(shift) < 1) adjustedPeriod += shift;
-      }
-    }
-
-    const frequency = sampleRate / adjustedPeriod;
-    if (frequency < 65 || frequency > 1400) return null;
-
-    const midiExact = 69 + 12 * Math.log2(frequency / 440);
-    const midiNumber = Math.round(midiExact);
-    const cents = Math.round((midiExact - midiNumber) * 100);
-    const noteIndex = ((midiNumber % 12) + 12) % 12;
-    const octave = Math.floor(midiNumber / 12) - 1;
-
-    // Detect Voice vs Guitar:
-    // A guitar string fundamental is fixed by fret and tension (cents jitter is small: < 15c).
-    // Human speech has continuous vocal glide/inflection (jitter > 26c within 50ms) and low crest factor (smooth vowels).
-    const timeDeltaMs = audioTimeMs - this.lastPitchTimeMs;
-    const centsJitter =
-      this.lastMidi === midiNumber && timeDeltaMs > 8 && timeDeltaMs < 80
-        ? Math.abs(cents - this.lastCents)
-        : 0;
-
-    const isSpeechVocalRange = frequency >= 85 && frequency <= 250;
-    const isSpeechLikeVowel =
-      !onset && isSpeechVocalRange && crestFactor < 1.45 && bestCorrelation < 0.62;
-    const isVocalJitter = !onset && centsJitter > 26;
-
-    const isVoiceLike = Boolean(!onset && (isSpeechLikeVowel || isVocalJitter));
-
-    this.lastMidi = midiNumber;
-    this.lastCents = cents;
-    this.lastPitchTimeMs = audioTimeMs;
-
-    return {
-      frequency,
-      noteName: `${NOTE_NAMES[noteIndex]}${octave}`,
-      midiNumber,
-      cents,
-      volumeRms: rms,
-      inTune: Math.abs(cents) <= 20,
-      audioTimeMs,
-      onset,
-      pluckId,
-      crestFactor,
-      confidence: bestCorrelation,
-      isVoiceLike,
-    };
+  private dispatchPitchAnalysis(packet: PitchAnalysisPacket) {
+    this.analysisBusy = true;
+    this.pitchWorker!.postMessage(packet, [packet.samples.buffer]);
   }
 }
 

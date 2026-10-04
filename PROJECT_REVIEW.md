@@ -61,3 +61,13 @@ Wait Mode now confirms the expected pitch without wrong penalties, combo, accura
 The detector previously selected the absolute correlation maximum among several repeating periods. With identical guitar-like test signals, the old detector misidentified 17 of 33 note/sample-rate combinations (including E4 as A2 at 48 kHz). Selecting the first sufficiently strong local peak resolves all 33 combinations across three phases. Low E at 96 kHz also exceeded the old half-window period limit; analysis now uses the available overlapping samples.
 
 Validation covers 44.1/48/96 kHz, real browser worklet capture, quiet input, repeated notes, ringing tails, exact chord tones, loop selection, and restoration of game feedback when Wait Mode is disabled. The wider run excludes the previously documented Basic Pitch preview timeout; this unrelated limitation remains unresolved. Synthetic input does not certify recognition on every physical microphone/guitar.
+
+### Audio responsiveness and render workload — 2026-10-04
+
+Moved the unchanged monophonic pitch analysis into a lightweight dedicated module worker. Capture transfers its buffer rather than running correlation on the render thread. There is at most one newest pending analysis window, preserving onset flags and rejecting prior generations after a hit/reset. Worker failures fall back to the same analyser; finishing practice terminates it. Old onset estimates preceding a newer attack are rejected.
+
+Basic Pitch is only started for songs with chords, avoiding TensorFlow startup/inference for single-note riffs. The 140 ms post-attack blanket delay is replaced by a 40 ms settle interval (capture already requires a complete post-attack window); the held-pitch cooldown is 90 ms instead of 180 ms. Pluck-ID deduplication and ringing guards remain.
+
+The tab panel caches measure starts and next-string-note references, then uses binary search and visits only visible notes instead of repeated full-song filters/finds per frame. The highway reuses frame-local maps/sets. These changes retain the existing visual resolution and materials.
+
+Validation: type checking/build, all 89 non-preview checks, then eight targeted checks after the bounded-queue change. The browser fixture confirms the mono worker is used and terminated; single-note songs do not create a polyphonic worker. One measured synthetic low-E response in a chord practice fixture was 122 ms. This is not a hardware latency/FPS guarantee. The existing Basic Pitch preview timeout remains excluded from the broad run.

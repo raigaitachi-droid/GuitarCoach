@@ -1,5 +1,6 @@
-import { PointerEvent, useEffect, useRef } from 'react';
+import { PointerEvent, useEffect, useMemo, useRef } from 'react';
 import { TabNote } from '../types';
+import { firstHighwayNote } from '../utils/noteHighway';
 
 interface Props {
   notes: TabNote[];
@@ -45,12 +46,32 @@ const drawBendMarker = (ctx: CanvasRenderingContext2D, x: number, y: number) => 
 // and legato marks. Decorative effects and game overlays are removed.
 export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const view = useRef({ notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect });
+  const noteIndex = useMemo(() => {
+    const bars: TabNote[] = [];
+    const measures = new Set<number>();
+    const nextById = new Map<string, TabNote>();
+    const nextOnString = new Map<number, TabNote>();
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const note = notes[i];
+      const next = nextOnString.get(note.string);
+      const following = next?.timestampMs === note.timestampMs ? nextById.get(next.id) : next;
+      if (following) nextById.set(note.id, following);
+      nextOnString.set(note.string, note);
+    }
+    for (const note of notes) {
+      if (note.measureIndex && !measures.has(note.measureIndex)) {
+        measures.add(note.measureIndex);
+        bars.push(note);
+      }
+    }
+    return { bars, nextById };
+  }, [notes]);
+  const view = useRef({ notes, noteIndex, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect });
   const draggedNote = useRef<TabNote | null>(null);
   const draggedEndNote = useRef<TabNote | null>(null);
   const selectionOffsetMs = useRef(0);
   const pointerX = useRef<number | null>(null);
-  view.current = { notes, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect };
+  view.current = { notes, noteIndex, playbackMs, tempo, waitingId, loopStartId, loopEndId, selectingLoop, onLoopSelect };
 
   useEffect(() => {
     selectionOffsetMs.current = 0;
@@ -116,7 +137,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       panelWash.addColorStop(1, 'rgba(2, 7, 13, .34)');
       ctx.fillStyle = panelWash;
       ctx.fillRect(0, 0, rect.width, rect.height);
-      const { notes, playbackMs, waitingId, loopStartId, loopEndId, selectingLoop } = view.current;
+      const { notes, noteIndex, playbackMs, waitingId, loopStartId, loopEndId, selectingLoop } = view.current;
       const now = playbackMs + (selectingLoop ? selectionOffsetMs.current : 0);
       const hitX = rect.width * 0.18;
       const visibleWindowMs = 4500;
@@ -135,10 +156,7 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
         ctx.fillText(STRING_NAMES[string - 1], 20, y);
       }
       // Use imported measure indices for labels instead of inventing 4/4 bars.
-      const measures = new Set<number>();
-      for (const note of notes) {
-        if (!note.measureIndex || measures.has(note.measureIndex)) continue;
-        measures.add(note.measureIndex);
+      for (const note of noteIndex.bars) {
         const x = xAt(note.timestampMs);
         if (x < 50 || x > rect.width - 30) continue;
         ctx.fillStyle = 'rgba(194, 211, 216, .7)';
@@ -152,11 +170,13 @@ export function TabCanvas({ notes, playbackMs, tempo, waitingId, loopStartId, lo
       }
       ctx.strokeStyle = 'rgba(126, 255, 229, .56)';
       ctx.beginPath(); ctx.moveTo(hitX, 36); ctx.lineTo(hitX, rect.height - 30); ctx.stroke();
-      const visible = notes.filter((note) => xAt(note.timestampMs) >= 48 && xAt(note.timestampMs) <= rect.width + 24);
-      for (const note of visible) {
+      const visibleStartMs = now + (48 - hitX) / (rect.width - hitX) * visibleWindowMs;
+      for (let i = firstHighwayNote(notes, visibleStartMs); i < notes.length; i++) {
+        const note = notes[i];
         const x = xAt(note.timestampMs);
+        if (x > rect.width + 24) break;
         const y = yAt(note.string);
-        const next = notes.find((candidate) => candidate.string === note.string && candidate.timestampMs > note.timestampMs);
+        const next = noteIndex.nextById.get(note.id);
         const gap = next ? xAt(next.timestampMs) - x : 100;
         const radius = Math.max(9, Math.min(16, (gap - 4) / 2));
         const color = note.hitState === 'hit' ? '#89d9a8' : note.hitState === 'miss' || note.hitState === 'wrong' ? '#f29393' : '#e3e8e4';

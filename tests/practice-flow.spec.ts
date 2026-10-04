@@ -186,6 +186,8 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   const waitingPosition = await page.getByRole('progressbar').getAttribute('value');
+  expect(page.workers().some((worker) => worker.url().includes('monoPitchWorker'))).toBeTruthy();
+  expect(page.workers().some((worker) => worker.url().includes('polyphonicPitchWorker'))).toBeFalsy();
   // Attack estimates deliberately tolerate one semitone; use a pitch outside
   // that tolerance to test the wrong-note path.
   await page.evaluate(() => (window as any).testGuitar.pluck(43));
@@ -201,6 +203,7 @@ test('a real worklet pitch event releases the wait gate and appears in the resul
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByRole('heading', { name: 'Practice complete' })).toBeVisible();
   await expect(page.getByText('1 note practiced · no timing or score.')).toBeVisible();
+  await expect.poll(() => page.workers().filter((worker) => worker.url().includes('monoPitchWorker')).length).toBe(0);
 });
 
 test('wait mode recognizes high E and chord tones without a game score', async ({ page }) => {
@@ -219,7 +222,19 @@ test('wait mode recognizes high E and chord tones without a game score', async (
   await page.evaluate(() => (window as any).testGuitar.pluck(64));
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
   await page.waitForTimeout(400);
-  await page.evaluate(() => (window as any).testGuitar.pluck(40));
+  const responseMs = await page.evaluate(() => new Promise<number>((resolve) => {
+    const status = document.querySelector('[role="status"]')!;
+    const started = performance.now();
+    const observer = new MutationObserver(() => {
+      if (!status.textContent?.includes('Correct note')) return;
+      observer.disconnect();
+      resolve(performance.now() - started);
+    });
+    observer.observe(status, { childList: true, subtree: true, characterData: true });
+    (window as any).testGuitar.pluck(40);
+  }));
+  console.info(`Browser guitar-to-feedback response: ${Math.round(responseMs)} ms`);
+  expect(responseMs).toBeLessThan(500);
   await expect(page.getByRole('status')).toContainText('Waiting for B2');
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
   // Pick individually: overlapping synthesized sines form a polyphonic input.
@@ -376,7 +391,10 @@ test('the background polyphonic preview reports a played chord without touching 
   test.setTimeout(60_000);
   await silentGuitar(page);
   await page.goto('/');
-  await loadRiff(page);
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Chord preview" \\tempo 120 . (0.6 2.5 2.4).4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'chord.gp', mimeType: 'application/octet-stream', buffer });
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await page.evaluate(() => (window as any).testGuitar.chord([40, 47, 52]));
   await expect(page.getByText(/Chord preview:/)).toBeVisible({ timeout: 40_000 });

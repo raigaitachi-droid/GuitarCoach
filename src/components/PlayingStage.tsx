@@ -267,6 +267,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
 
   useEffect(() => { tempoRef.current = tempoPercent / 100; }, [tempoPercent]);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
+  useEffect(() => {
+    micDetector.setPolyphonicEnabled(withAudio && hasChords);
+    return () => micDetector.setPolyphonicEnabled(false);
+  }, [withAudio, hasChords]);
 
   useEffect(() => {
     if (!feedback) return;

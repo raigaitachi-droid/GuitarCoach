@@ -67,9 +67,11 @@ test('pitch judgement applies latency, timing windows, and cents tolerance consi
 test('a fresh attack expires stale pitch reads until the onset estimate arrives', () => {
   expect(shouldSuppressStalePitchAfterAttack(null, 120, false)).toBe(false);
   expect(shouldSuppressStalePitchAfterAttack(100, 120, false)).toBe(true);
+  expect(shouldSuppressStalePitchAfterAttack(100, 145, false)).toBe(false);
   expect(shouldSuppressStalePitchAfterAttack(100, 120, true)).toBe(false);
   expect(shouldSuppressStalePitchAfterAttack(100, 250, false)).toBe(false);
   expect(shouldSuppressStalePitchAfterAttack(100, 90, false)).toBe(true);
+  expect(shouldSuppressStalePitchAfterAttack(100, 90, true)).toBe(true);
 });
 
 test('the post-hit cooldown rejects only held pitches, never a new attack', () => {

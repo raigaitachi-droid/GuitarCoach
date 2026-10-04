@@ -45,7 +45,10 @@ export const FIRST_ONSET_SEMITONE_TOLERANCE = 1;
 // A fresh pick should not allow the old ringing pitch to score the next note
 // while the detector is waiting for a clean post-attack pitch estimate.
 export const ATTACK_PITCH_EXPIRY_MS = 140;
-export const SUSTAINED_PITCH_COOLDOWN_MS = 180;
+export const SUSTAINED_PITCH_COOLDOWN_MS = 90;
+// Capture already waits for a full post-attack window (about 43 ms at 48 kHz).
+// Do not add another 140 ms wait when its first transient pitch is unusable.
+export const POST_ATTACK_SETTLE_MS = 40;
 
 export interface JudgedAttack {
   midiNumber: number;
@@ -73,9 +76,9 @@ export function shouldSuppressStalePitchAfterAttack(
   pitchAudioTimeMs: number,
   isOnset: boolean
 ): boolean {
-  if (attackAudioTimeMs === null || isOnset) return false;
+  if (attackAudioTimeMs === null) return false;
   const elapsedMs = pitchAudioTimeMs - attackAudioTimeMs;
-  return elapsedMs < 0 || elapsedMs < ATTACK_PITCH_EXPIRY_MS;
+  return elapsedMs < 0 || (!isOnset && elapsedMs < POST_ATTACK_SETTLE_MS);
 }
 
 export function shouldSuppressSustainedPitchDuringCooldown(

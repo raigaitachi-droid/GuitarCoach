@@ -683,6 +683,8 @@ export function NoteHighway({ notes, playbackMs }: Props) {
     const padHits = new Map<number, number>();
     const padFeedbacks = new Map<number, { at: number; kind: PadFeedbackKind }>();
     let previousPlaybackMs = playbackMs;
+    const visible = new Set<string>();
+    const nextPadLabels = new Map<number, TabNote>();
     let frame = 0;
     let lost = false;
     const resize = () => {
@@ -710,14 +712,14 @@ export function NoteHighway({ notes, playbackMs }: Props) {
         padFeedbacks.clear();
       }
       const playbackAdvanced = current.playbackMs > previousPlaybackMs;
-      const visible = new Set<string>();
-      const nextPadLabels = new Map<number, { fret: number; isBend: boolean }>();
+      visible.clear();
+      nextPadLabels.clear();
       const start = firstHighwayNote(current.notes, current.playbackMs - HIGHWAY_PAST_MS);
       for (let i = start; i < current.notes.length; i++) {
         const note = current.notes[i];
         if (note.timestampMs > current.playbackMs + HIGHWAY_LOOKAHEAD_MS) break;
         if (!nextPadLabels.has(note.string) && note.timestampMs >= current.playbackMs - HIT_WINDOW_MS) {
-          nextPadLabels.set(note.string, { fret: note.fret, isBend: Boolean(note.isBend) });
+          nextPadLabels.set(note.string, note);
         }
         if (playbackAdvanced && note.timestampMs > previousPlaybackMs && note.timestampMs <= current.playbackMs + HIT_WINDOW_MS && !hitNotes.has(note.id)) {
           hitNotes.add(note.id);
@@ -790,7 +792,7 @@ export function NoteHighway({ notes, playbackMs }: Props) {
             reflectionMaterial.color.set(feedbackPulse > 0 ? feedbackColor : COLORS[LANE_COUNT - string]);
             reflectionMaterial.opacity = THREE.MathUtils.lerp(reflectionMaterial.opacity, PAD_REFLECTION_OPACITY + hitPulse * 0.16 + feedbackPulse * 0.22, 0.12);
           }
-          const breathe = 1 + Math.sin(performance.now() * 0.0014 + string) * 0.025;
+          const breathe = 1 + Math.sin(now * 0.0014 + string) * 0.025;
           const scalePulse = (1 + hitPulse * 0.24 + feedbackPulse * 0.42) * breathe;
           label.scale.set(PAD_BASE_SCALE * scalePulse, PAD_BASE_SCALE * scalePulse, 1);
           const feedbackSprite = padFeedbackSprites.get(string)?.sprite;
