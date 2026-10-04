@@ -34,6 +34,7 @@ export interface PitchAnalysisPacket extends CaptureMessage {
   onset: boolean;
   pluckId: number;
   crestFactor: number;
+  expectedHarmonicMidi?: number;
 }
 
 export interface PitchResult {
@@ -95,6 +96,7 @@ export class MicrophonePitchDetector {
   private nativeSampleRate = 48000;
   private nativeUnlisteners: UnlistenFn[] = [];
   private expectedString: number | null = null;
+  private expectedHarmonicMidi: number | undefined;
 
   getErrorMessage(): string | null {
     return this.errorMessage;
@@ -126,6 +128,10 @@ export class MicrophonePitchDetector {
       return;
     }
     this.workletNode?.port.postMessage({ type: 'expected-string', value: normalized });
+  }
+
+  setExpectedHarmonicMidi(midi: number | null) {
+    this.expectedHarmonicMidi = midi !== null && Number.isInteger(midi) && midi >= 36 && midi <= 96 ? midi : undefined;
   }
 
   getNoiseThreshold(): number {
@@ -373,6 +379,7 @@ export class MicrophonePitchDetector {
     if (this.pitchWorker) {
       const packet: PitchAnalysisPacket = { ...message, samples, sampleRate, epoch: this.analysisEpoch,
         noiseThreshold: this.noiseThreshold, audioTimeMs: message.audioTimeMs || 0,
+        expectedHarmonicMidi: this.expectedHarmonicMidi,
         onset: Boolean(message.onset), pluckId: Number(message.pluckId || 1),
         crestFactor: Number(message.crestFactor || 1.8) };
       if (this.analysisBusy) {
@@ -406,6 +413,7 @@ export class MicrophonePitchDetector {
   stopListening() {
     this.requestId += 1;
     this.isListening = false;
+    this.expectedHarmonicMidi = undefined;
     this.pitchWorker?.terminate();
     this.pitchWorker = null;
     this.analysisBusy = false;
@@ -502,7 +510,7 @@ export class MicrophonePitchDetector {
 
   private analysePitch(buffer: Float32Array, sampleRate: number, rms: number, audioTimeMs: number, onset: boolean, pluckId: number, crestFactor: number): PitchResult | null {
     this.pitchAnalyser.noiseThreshold = this.noiseThreshold;
-    return this.pitchAnalyser.analysePitch(buffer, sampleRate, rms, audioTimeMs, onset, pluckId, crestFactor);
+    return this.pitchAnalyser.analysePitch(buffer, sampleRate, rms, audioTimeMs, onset, pluckId, crestFactor, this.expectedHarmonicMidi);
   }
 
   private startPitchWorker() {

@@ -47,3 +47,14 @@ test('imports string bends as playable note metadata', async () => {
     technique: 'bend',
   }));
 });
+
+test('imports natural 7th-fret harmonics with their sounding pitches and correct type', async () => {
+  const source = exportedTab('\\title "Harmonics" \\tempo 120 . 7.2{nh}.4 7.3{nh}.4 7.2.4');
+  const song = await importGuitarProFile(new File([new Uint8Array(source)], 'harmonics.gp'));
+  expect(song.notes.map((note) => note.expectedMidi)).toEqual([78, 74, 66]);
+  expect(song.notes.slice(0, 2)).toEqual([
+    expect.objectContaining({ string: 2, fret: 7, isHarmonic: true, harmonicType: 'natural' }),
+    expect.objectContaining({ string: 3, fret: 7, isHarmonic: true, harmonicType: 'natural' }),
+  ]);
+  expect(song.notes[2].isHarmonic).toBe(false);
+});

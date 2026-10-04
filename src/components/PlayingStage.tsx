@@ -281,6 +281,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   useEffect(() => {
     if (!withAudio) {
       micDetector.setExpectedString(null);
+      micDetector.setExpectedHarmonicMidi(null);
       return;
     }
     const unresolved = notes.filter((note) => (waitMode ? waitNoteIds : scorableIds).has(note.id) && !note.hitState);
@@ -288,6 +289,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       Math.abs(a.timestampMs - playbackMs) - Math.abs(b.timestampMs - playbackMs)
     )[0];
     micDetector.setExpectedString(expected?.string ?? null);
+    micDetector.setExpectedHarmonicMidi(expected?.isHarmonic ? expectedMidi(expected) : null);
   }, [withAudio, notes, playbackMs, waiting, scorableIds, waitMode, waitNoteIds]);
 
   useEffect(() => {

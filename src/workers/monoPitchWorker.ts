@@ -6,7 +6,7 @@ self.onmessage = (event: MessageEvent<PitchAnalysisPacket | { type: 'reset' }>) 
   if (message.type === 'reset') { analyser.reset(); return; }
   analyser.noiseThreshold = message.noiseThreshold;
   const result = analyser.analysePitch(message.samples, message.sampleRate, message.rms,
-    message.audioTimeMs, message.onset, message.pluckId, message.crestFactor);
+    message.audioTimeMs, message.onset, message.pluckId, message.crestFactor, message.expectedHarmonicMidi);
   if (result) {
     result.attackStrength = message.attackStrength;
     result.attackAgeMs = message.attackAgeMs;

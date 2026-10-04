@@ -66,7 +66,9 @@ function getHarmonicInfo(note: unknown): { isHarmonic: boolean; harmonicType?: '
   };
 
   const effectSource = candidate.effects ?? candidate;
-  const rawType = String(effectSource.harmonicType ?? candidate.harmonicType ?? '').trim().toLowerCase();
+  const typeValue = effectSource.harmonicType ?? candidate.harmonicType ?? '';
+  const rawType = String(typeof typeValue === 'number'
+    ? alphaTab.model.HarmonicType[typeValue] ?? typeValue : typeValue).trim().toLowerCase();
   const rawValue = effectSource.harmonicValue ?? candidate.harmonicValue;
   const hasTrueFlag = (...values: unknown[]) => values.some((value) => value === true);
   const rawTypeIsNumeric = rawType.length > 0 && /^-?\d+(\.\d+)?$/.test(rawType);

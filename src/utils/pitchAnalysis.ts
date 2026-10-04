@@ -14,7 +14,8 @@ export class PitchAnalyser {
     audioTimeMs: number,
     onset: boolean,
     pluckId: number,
-    crestFactor: number
+    crestFactor: number,
+    expectedHarmonicMidi?: number
   ): PitchResult | null {
     if (rms < this.noiseThreshold) return null;
 
@@ -75,6 +76,49 @@ export class PitchAnalyser {
         bestPeriod = period;
         bestCorrelation = correlations[period];
         break;
+      }
+    }
+
+    // Residual open-string vibration can make the whole waveform repeat at
+    // its lower period. Only for a marked harmonic, consider a measured peak
+    // near the score's sounding pitch, backed by actual energy at that pitch.
+    if (expectedHarmonicMidi !== undefined) {
+      const targetHz = 440 * 2 ** ((expectedHarmonicMidi - 69) / 12);
+      const ratio = 2 ** (50 / 1200);
+      const low = Math.max(minPeriod + 1, Math.floor(sampleRate / (targetHz * ratio)));
+      const high = Math.min(maxPeriod - 1, Math.ceil(sampleRate / (targetHz / ratio)));
+      let candidate = -1;
+      let candidateCorrelation = 0.8;
+      for (let period = low; period <= high; period++) {
+        if (correlations[period] >= candidateCorrelation && correlations[period] >= correlations[period - 1] &&
+            correlations[period] > correlations[period + 1]) {
+          candidate = period;
+          candidateCorrelation = correlations[period];
+        }
+      }
+      if (candidate > 0) {
+        let real = 0;
+        let imaginary = 0;
+        let energy = 0;
+        const denominator = 2 * (2 * correlations[candidate] - correlations[candidate + 1] - correlations[candidate - 1]);
+        const shift = denominator === 0 ? 0 : (correlations[candidate + 1] - correlations[candidate - 1]) / denominator;
+        const measuredHz = sampleRate / (candidate + (Math.abs(shift) < 1 ? shift : 0));
+        const angle = 2 * Math.PI * measuredHz / sampleRate;
+        for (let i = 0; i < buffer.length; i++) {
+          const sample = buffer[i];
+          real += sample * Math.cos(angle * i);
+          imaginary += sample * Math.sin(angle * i);
+          energy += sample * sample;
+        }
+        const targetEnergyRatio = 2 * (real * real + imaginary * imaginary) / (buffer.length * energy);
+        if (targetEnergyRatio >= 0.08) {
+          bestPeriod = candidate;
+          bestCorrelation = candidateCorrelation;
+        } else if (Math.abs(1200 * Math.log2(sampleRate / bestPeriod / targetHz)) <= 50) {
+          // A higher octave also repeats at this period, but has no energy
+          // at the target itself. Do not let the generic fallback award it.
+          return null;
+        }
       }
     }
 

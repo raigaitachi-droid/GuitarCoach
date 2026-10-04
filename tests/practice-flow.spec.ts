@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, harmonic: (_openMidi: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -39,6 +39,18 @@ async function silentGuitar(page: Page) {
         oscillator.connect(gain).connect(destination);
         oscillator.start();
         oscillator.stop(context.currentTime + duration);
+      };
+      state.harmonic = (openMidi) => {
+        const openHz = 440 * Math.pow(2, (openMidi - 69) / 12);
+        for (const [multiple, level] of [[3, 0.08], [6, 0.036], [1, 0.024]]) {
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.frequency.value = openHz * multiple;
+          gain.gain.value = level;
+          oscillator.connect(gain).connect(destination);
+          oscillator.start();
+          oscillator.stop(context.currentTime + 0.6);
+        }
       };
       state.chord = (midis) => {
         for (const midi of midis) {
@@ -400,3 +412,25 @@ test('the background polyphonic preview reports a played chord without touching 
   await expect(page.getByText(/Chord preview:/)).toBeVisible({ timeout: 40_000 });
 });
 
+
+test('wait mode accepts seventh-fret B and G harmonics over residual open-string sound', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Harmonic riff" \\tempo 120 . 7.2{nh}.4 7.3{nh}.4 0.6.4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'harmonics.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for F♯5');
+  await page.evaluate(() => (window as any).testGuitar.pluck(66));
+  await page.waitForTimeout(400);
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1000');
+  await page.evaluate(() => (window as any).testGuitar.harmonic(59));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  await expect(page.getByRole('status')).toContainText('Waiting for D5');
+  await page.evaluate(() => (window as any).testGuitar.harmonic(55));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2000');
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('2 notes practiced · no timing or score.')).toBeVisible();
+});
