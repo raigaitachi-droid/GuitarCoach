@@ -110,8 +110,8 @@ export function expectedMidi(note: TabNote): number {
   return open + note.fret;
 }
 
-// Monophonic V1: simultaneous notes remain visible but cannot earn a chord hit
-// from a single detected pitch. Chord recognition is deliberately out of scope.
+// A monophonic reading cannot award simultaneous notes. Those are assessed by
+// the independent multi-pitch worker, with evidence for each fresh tone.
 export function singleNoteIds(notes: TabNote[]): Set<string> {
   const counts = new Map<number, number>();
   for (const note of notes) counts.set(note.timestampMs, (counts.get(note.timestampMs) || 0) + 1);
@@ -124,8 +124,8 @@ export interface DetectedPitch {
   onset?: boolean;
 }
 
-export const CHORD_MATCH_SEMITONE_TOLERANCE = 1;
-export const CHORD_MINIMUM_MATCH_RATIO = 0.5;
+export const CHORD_MATCH_SEMITONE_TOLERANCE = 0;
+export const CHORD_MINIMUM_MATCH_RATIO = 1;
 
 export type ChordJudgement =
   | { kind: 'ignored' }
@@ -139,7 +139,7 @@ export type ChordJudgement =
     };
 
 /**
- * Matches a Basic Pitch set to one chord group. A detected pitch can only
+ * Matches measured fresh pitches to one chord group. A detected pitch can only
  * satisfy one expected string, so duplicate/unison pitches cannot inflate a
  * chord score. Extra detected pitches are ignored: ringing guitar strings and
  * sympathetic resonance are normal.
@@ -150,12 +150,11 @@ export function judgeDetectedChord(
   detectedMidiNumbers: number[],
   semitoneTolerance = CHORD_MATCH_SEMITONE_TOLERANCE
 ): ChordJudgement {
-  const expected = notes.filter((note) =>
-    note.timestampMs === expectedTimestampMs && !note.hitState
-  );
-  if (expected.length < 2 || detectedMidiNumbers.length === 0) return { kind: 'ignored' };
+  const group = notes.filter((note) => note.timestampMs === expectedTimestampMs);
+  const expected = group.filter((note) => !note.hitState);
+  if (group.length < 2 || expected.length === 0 || detectedMidiNumbers.length === 0) return { kind: 'ignored' };
 
-  const unmatchedDetected = [...detectedMidiNumbers];
+  const unmatchedDetected = [...new Set(detectedMidiNumbers)];
   const matched: TabNote[] = [];
   for (const note of expected) {
     const target = expectedMidi(note);

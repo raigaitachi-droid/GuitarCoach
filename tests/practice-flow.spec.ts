@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, hold: (_midi: number) => {}, changePitch: (_midi: number) => {}, harmonic: (_openMidi: number) => {}, chord: (_midis: number[]) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, hold: (_midi: number) => {}, changePitch: (_midi: number) => {}, harmonic: (_openMidi: number) => {}, chord: (_midis: number[], _partials?: boolean) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -64,15 +64,17 @@ async function silentGuitar(page: Page) {
           oscillator.stop(context.currentTime + 0.6);
         }
       };
-      state.chord = (midis) => {
+      state.chord = (midis, partials = false) => {
         for (const midi of midis) {
           const oscillator = context.createOscillator();
           const gain = context.createGain();
           oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+          if (partials) oscillator.setPeriodicWave(context.createPeriodicWave(new Float32Array(4),
+            new Float32Array([0, 1, 0.35, 0.15]), { disableNormalization: true }));
           gain.gain.value = 0.08;
           oscillator.connect(gain).connect(destination);
           oscillator.start();
-          oscillator.stop(context.currentTime + 2.8);
+          oscillator.stop(context.currentTime + 5);
         }
       };
       const stream = destination.stream;
@@ -245,7 +247,7 @@ test('wait mode recognizes high E and chord tones without a game score', async (
   await expect(page.getByRole('status')).toContainText('Waiting for E4');
   await page.evaluate(() => (window as any).testGuitar.pluck(64));
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
-  await page.waitForTimeout(400);
+  await expect(page.getByRole('status')).toContainText('Waiting for B2');
   const responseMs = await page.evaluate(() => new Promise<number>((resolve) => {
     const status = document.querySelector('[role="status"]')!;
     const started = performance.now();
@@ -275,8 +277,10 @@ test('turning wait mode off restores game feedback and combo HUD', async ({ page
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for E2');
   await page.getByRole('button', { name: 'Wait Mode On' }).click();
-  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toBeVisible();
+  // Pick immediately after the mode change; checking the HUD first adds
+  // an uncontrolled delay to the real-time judgement under rendering load.
   await page.evaluate(() => (window as any).testGuitar.pluck(50));
+  await expect(page.getByRole('region', { name: 'Live practice feedback' })).toBeVisible();
   await expect(page.getByRole('status')).toContainText('Wrong note');
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   // The advancing game can also assess a missed note while the assertion waits.
@@ -410,9 +414,9 @@ test('loop selection scrolls past the visible notes at the edge and with the whe
   expect(Number(wheelRange[2]) - Number(wheelRange[1])).toBeGreaterThan(9);
 });
 
-test('the background polyphonic preview reports a played chord without touching score state', async ({ page }) => {
-  // Cold TensorFlow/model startup can outlast the suite's 30-second default.
-  test.setTimeout(60_000);
+test('realtime polyphonic worker accepts a simultaneously played chord in Wait Mode', async ({ page }) => {
+  const modelRequests: string[] = [];
+  page.on('request', (request) => { if (request.url().includes('/basic-pitch/')) modelRequests.push(request.url()); });
   await silentGuitar(page);
   await page.goto('/');
   const importer = new alphaTab.importer.AlphaTexImporter();
@@ -420,8 +424,26 @@ test('the background polyphonic preview reports a played chord without touching 
   const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
   await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'chord.gp', mimeType: 'application/octet-stream', buffer });
   await page.getByRole('button', { name: 'Start Practice' }).click();
-  await page.evaluate(() => (window as any).testGuitar.chord([40, 47, 52]));
-  await expect(page.getByText(/Chord preview:/)).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByRole('status')).toContainText('Waiting for');
+  const responseMs = await page.evaluate(() => new Promise<number>((resolve, reject) => {
+    const startedAt = performance.now();
+    const timer = window.setTimeout(() => { observer.disconnect(); reject(new Error('Chord feedback did not arrive')); }, 3000);
+    const observer = new MutationObserver(() => {
+      if (!document.body.textContent?.includes('Heard chord: E2 B2 E3')) return;
+      observer.disconnect();
+      window.clearTimeout(timer);
+      resolve(performance.now() - startedAt);
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    (window as any).testGuitar.chord([40, 47, 52]);
+  }));
+  await expect(page.getByText('Heard chord: E2 B2 E3')).toBeVisible({ timeout: 3000 });
+  console.info(`Browser simultaneous-chord-to-feedback response: ${Math.round(responseMs)} ms`);
+  expect(responseMs).toBeLessThan(700);
+  expect(modelRequests).toEqual([]);
+  await expect.poll(async () => Number(await page.getByRole('progressbar').getAttribute('value'))).toBeGreaterThan(1000);
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('3 notes practiced · no timing or score.')).toBeVisible();
 });
 
 
@@ -470,4 +492,79 @@ test('wait mode accepts linked hammer and pull pitch changes without another pic
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2500');
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByText('3 notes practiced · no timing or score.')).toBeVisible();
+});
+
+test('ringing chord tones cannot fill the next chord when only its other string is picked', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Ringing chords" \\tempo 120 . (0.6 2.5).4 (0.6 0.4).4 0.1.4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'ringing-chords.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for');
+  await page.evaluate(() => (window as any).testGuitar.chord([40, 47]));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  // Wait for the prior feedback to expire, then verify the persistent gate
+  // change instead of polling a readout that later ringing packets replace.
+  await expect(page.getByRole('status')).toContainText('Waiting for D3');
+  await page.evaluate(() => (window as any).testGuitar.pluck(50, 0.1, 0.7));
+  await expect(page.getByRole('status')).toContainText('Waiting for E2');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  // D3 was newly played; the held E2 must not receive another tick.
+  await expect(page.getByText('3 notes practiced · no timing or score.')).toBeVisible();
+});
+
+test('game chord feedback credits only detected strings and marks the absent one missed', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Partial chord" \\tempo 120 . (0.6 2.5 2.4).1 | 0.1.1', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'partial.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for');
+  await page.getByRole('button', { name: 'Wait Mode On' }).click();
+  await page.evaluate(() => (window as any).testGuitar.chord([40, 47]));
+  await expect(page.getByRole('status')).toContainText('Incomplete chord · 2/3');
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('67%', { exact: true })).toBeVisible();
+});
+
+test('six-string guitar-like open chord is recognized through actual browser capture', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Open E chord" \\tempo 120 . (0.6 2.5 2.4 1.3 0.2 0.1).4 0.6.4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'open-e.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for');
+  await page.evaluate(() => (window as any).testGuitar.chord([40, 47, 52, 56, 59, 64], true));
+  await expect(page.getByText('Heard chord: E2 B2 E3 G♯3 B3 E4')).toBeVisible();
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('6 notes practiced · no timing or score.')).toBeVisible();
+});
+
+test('a held chord cannot clear its repeated bass as the following single note', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Chord then bass" \\tempo 120 . (0.6 2.4).4 0.6.4 0.6.4', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'held-bass.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for');
+  await page.evaluate(() => (window as any).testGuitar.chord([40, 52]));
+  await page.waitForTimeout(1000);
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '1500');
+  // A real re-pick must still clear exactly one following ordinary note.
+  await page.evaluate(() => (window as any).testGuitar.pluck(40, 0.35));
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2000');
+  await page.waitForTimeout(700);
+  await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2000');
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('3 notes practiced \u00b7 no timing or score.')).toBeVisible();
 });

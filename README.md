@@ -132,17 +132,40 @@ checks before the next stage starts.
   a simplified canvas displays the resulting notes. The app chooses the first
   non-percussion stringed track, preferring six strings. It does not yet offer a
   track picker, and extension recognition does not mean every file variant is verified.
-- Input capture runs in an AudioWorklet; pitch analysis currently runs on the
-  browser's main thread. The matching rules are covered by synthetic tests, but
+- Browser input capture runs in an AudioWorklet; mono and multi-pitch analysis
+  run in dedicated workers. The matching rules are covered by synthetic tests, but
   detector accuracy and timing calibration still need real hardware validation.
-- Monophonic feedback only. Chords are displayed without scoring. Harmonics and
-  other techniques require validation before their feedback can be relied on.
+- Chord feedback is experimental. Clean-input FFT estimates require audible
+  fundamentals and conservatively reject likely overtones. Heavy distortion,
+  weak/missing fundamentals, overlapping octave partials, and identical pitches
+  on different strings remain ambiguous. Harmonics and other techniques also
+  need physical guitar/interface validation.
 - Practice audio is not monitored through the speakers. Playback-only mode uses
   the existing synth.
 - A disconnected input pauses practice. Finish, return to Start, and reconnect
   the input before the next attempt.
 - GitHub Pages builds with the repository base path, so the deployed preview can
   load its assets from a repository subdirectory.
+
+## Experimental chord practice
+
+Load a Guitar Pro file containing simultaneous notes and start with audio input.
+The chord detector starts only for songs with chords. Use a clean guitar signal
+and headphones to prevent playback leaking into the microphone. Start with two
+strings, then test full open chords.
+
+Wait Mode accepts each freshly detected chord tone and waits for the remaining
+tones; individual picking is supported. In game mode only matched pitches receive
+credit: missing tones are missed, and adjacent frets are not accepted. A held
+string from the preceding chord must gain fresh energy before it can count again.
+Short strums are collected in one window, with a single report per captured attack.
+
+The realtime path uses a local spectrum worker without downloading a neural model.
+This is an initial implementation, not verified accuracy on arbitrary microphones.
+Before a paid release, record clean double-stops, strums, repeated chords and
+ringing chord changes on physical guitars/interfaces; check both false successes
+and missed tones, response time, and rendering smoothness. The historical MVP
+table above describes the earlier checkpoint, not the current feature set.
 
 ## Attribution
 

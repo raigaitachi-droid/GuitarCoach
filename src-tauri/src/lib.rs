@@ -48,6 +48,7 @@ struct SamplesPayload {
   peak: f32,
   crest_factor: f32,
   onset: bool,
+  mono_ready: bool,
   pluck_id: u64,
   attack_strength: f32,
   attack_age_ms: f64,
@@ -219,20 +220,21 @@ impl AudioProcessor {
       && self.filled == BUFFER_SIZE
       && rms >= self.noise_threshold
       && self.samples_since_snapshot >= HOP_SIZE
-      && self.samples_since_onset >= BUFFER_SIZE as u64
     {
       let mut samples = Vec::with_capacity(BUFFER_SIZE);
       samples.extend_from_slice(&self.ring[self.write_index..]);
       samples.extend_from_slice(&self.ring[..self.write_index]);
       self.samples_since_snapshot %= HOP_SIZE;
-      let pending_onset = self.pending_onset;
-      self.pending_onset = false;
+      let mono_ready = self.samples_since_onset >= BUFFER_SIZE as u64;
+      let pending_onset = self.pending_onset && mono_ready;
+      if mono_ready { self.pending_onset = false; }
       events.push(CaptureEvent::Samples(SamplesPayload {
         samples,
         rms,
         peak,
         crest_factor,
         onset: pending_onset,
+        mono_ready,
         pluck_id: self.pluck_count,
         attack_strength: self.attack_strength,
         attack_age_ms: self.sample_clock.saturating_sub(self.last_onset_frame) as f64 / self.sample_rate as f64 * 1000.0,
@@ -287,6 +289,37 @@ mod attack_tests {
       assert_eq!(picks(rate, 82.41, &[0.0], 0.1), 1, "immediate input at {rate}");
     }
   }
+
+  #[test]
+  fn chord_capture_stays_contiguous_without_exposing_transients_to_mono() {
+    for rate in [44_100, 48_000, 96_000] {
+      let mut processor = AudioProcessor::new(rate);
+      let mut transient_packets = 0;
+      let mut clean_onsets = 0;
+      let mut sample_packets = 0;
+      for frame in (0..rate).step_by(BLOCK_SIZE) {
+        let mut input = [0.0_f32; BLOCK_SIZE];
+        for (index, sample) in input.iter_mut().enumerate() {
+          let age = (frame as usize + index) as f64 / rate as f64 - 0.1;
+          if age >= 0.0 {
+            *sample = (0.08 * ((2.0 * std::f64::consts::PI * 82.406889 * age).sin()
+              + (2.0 * std::f64::consts::PI * 123.470825 * age).sin())) as f32;
+          }
+        }
+        for event in processor.ingest(&input) {
+          if let CaptureEvent::Samples(payload) = event {
+            sample_packets += 1;
+            if !payload.mono_ready { transient_packets += 1; }
+            if payload.onset { clean_onsets += 1; assert!(payload.mono_ready); }
+          }
+        }
+      }
+      assert!(transient_packets > 0, "transient PCM at {rate}");
+      assert!(clean_onsets > 0, "clean mono onset at {rate}");
+      assert!(sample_packets > (rate as usize * 7 / 10) / HOP_SIZE, "continuous PCM at {rate}");
+    }
+  }
+
 }
 
 #[derive(Default)]

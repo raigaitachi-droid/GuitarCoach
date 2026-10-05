@@ -15,6 +15,7 @@ interface CaptureMessage {
   peak?: number;
   crestFactor?: number;
   onset?: boolean;
+  monoReady?: boolean;
   pluckId?: number;
   attackStrength?: number;
   attackAgeMs?: number;
@@ -55,8 +56,10 @@ export interface PitchResult {
   isVoiceLike?: boolean;
   stringIndex?: number;
   fret?: number;
-  /** Experimental Basic Pitch preview; never used to award a score yet. */
+  /** Audible chord tones; fresh tones exclude the preceding ringing baseline. */
   polyphonicMidiNumbers?: number[];
+  polyphonicFreshMidiNumbers?: number[];
+  polyphonicAttackAudioTimeMs?: number;
   polyphonicWorkerMs?: number;
   polyphonicRoundTripMs?: number;
   polyphonicError?: string;
@@ -86,6 +89,7 @@ export class MicrophonePitchDetector {
   private requestId = 0;
   private errorMessage: string | null = null;
   private polyphonicWorker: Worker | null = null;
+  private polyphonicEpoch = 0;
   private polyphonicEnabled = false;
   private pitchWorker: Worker | null = null;
   private analysisEpoch = 0;
@@ -273,7 +277,7 @@ export class MicrophonePitchDetector {
       this.startPitchWorker();
       this.workletNode.port.onmessage = (event) => this.handleCaptureMessage(event.data, this.audioContext!.sampleRate);
 
-      this.startPolyphonicPreview();
+      this.startPolyphonicRecognition();
 
       this.isListening = true;
       this.activeDeviceId = deviceId;
@@ -320,7 +324,7 @@ export class MicrophonePitchDetector {
       });
       this.nativeSampleRate = started.sampleRate;
       this.nativeCapture = true;
-      this.startPolyphonicPreview();
+      this.startPolyphonicRecognition();
       void invoke('set_expected_string', { stringNumber: this.expectedString }).catch(() => undefined);
       if (requestId !== this.requestId) {
         this.stopListening();
@@ -363,7 +367,7 @@ export class MicrophonePitchDetector {
       ? message.samples
       : Float32Array.from(message.samples);
     // The worklet emits a 2048-sample window every 1024 samples. Preserve
-    // the overlap for the optional browser-only polyphonic preview.
+    // the overlap for the separate realtime polyphonic worker.
     if (this.polyphonicWorker) {
       const polyphonicSamples = samples.slice();
       this.polyphonicWorker.postMessage({
@@ -374,8 +378,16 @@ export class MicrophonePitchDetector {
         audioTimeMs: message.audioTimeMs || 0,
         requestedAtMs: performance.now(),
         onset: Boolean(message.onset),
+        pluckId: Number(message.pluckId || 1),
+        attackStrength: Number(message.attackStrength || 0),
+        attackAgeMs: message.attackAgeMs,
+        noiseThreshold: this.noiseThreshold,
+        epoch: this.polyphonicEpoch,
       }, [polyphonicSamples.buffer]);
     }
+    // Polyphony needs contiguous audio even during attacks/strums. Mono keeps
+    // its old clean-window gate so a prior ringing tone cannot win the pick.
+    if (message.monoReady === false) return;
     if (this.pitchWorker) {
       const packet: PitchAnalysisPacket = { ...message, samples, sampleRate, epoch: this.analysisEpoch,
         noiseThreshold: this.noiseThreshold, audioTimeMs: message.audioTimeMs || 0,
@@ -448,14 +460,16 @@ export class MicrophonePitchDetector {
     return this.isListening;
   }
 
-  private startPolyphonicPreview() {
+  private startPolyphonicRecognition() {
     if (!this.polyphonicEnabled) return;
     this.polyphonicWorker?.terminate();
     this.polyphonicError = null;
+    this.polyphonicEpoch++;
     this.polyphonicWorker = new Worker(new URL('../workers/polyphonicPitchWorker.ts', import.meta.url), { type: 'module' });
-    this.polyphonicWorker.onmessage = (event: MessageEvent<{ type: string; midiNumbers?: number[]; message?: string; audioTimeMs?: number; requestedAtMs?: number; workerDurationMs?: number }>) => {
+    this.polyphonicWorker.onmessage = (event: MessageEvent<{ type: string; epoch?: number; midiNumbers?: number[]; freshMidiNumbers?: number[]; attackAudioTimeMs?: number; pluckId?: number; message?: string; audioTimeMs?: number; requestedAtMs?: number; workerDurationMs?: number }>) => {
+      if (event.data.epoch !== this.polyphonicEpoch) return;
       if (event.data.type === 'error') {
-        this.polyphonicError = event.data.message || 'Polyphonic preview could not start.';
+        this.polyphonicError = event.data.message || 'Chord recognition could not start.';
         this.emit({
           frequency: 0, noteName: '', midiNumber: 0, cents: 0, volumeRms: this.lastRms,
           inTune: false, audioTimeMs: 0, onset: false, pluckId: 0, confidence: 0,
@@ -463,7 +477,7 @@ export class MicrophonePitchDetector {
         });
         return;
       }
-      if (event.data.type !== 'polyphonic' || !event.data.midiNumbers?.length) return;
+      if (event.data.type !== 'polyphonic' || event.data.epoch !== this.polyphonicEpoch || !event.data.midiNumbers?.length) return;
       const midiNumber = event.data.midiNumbers[0];
       const noteIndex = ((midiNumber % 12) + 12) % 12;
       const octave = Math.floor(midiNumber / 12) - 1;
@@ -476,9 +490,11 @@ export class MicrophonePitchDetector {
         inTune: true,
         audioTimeMs: event.data.audioTimeMs || 0,
         onset: false,
-        pluckId: 0,
+        pluckId: event.data.pluckId || 0,
         confidence: 1,
         polyphonicMidiNumbers: event.data.midiNumbers,
+        polyphonicFreshMidiNumbers: event.data.freshMidiNumbers,
+        polyphonicAttackAudioTimeMs: event.data.attackAudioTimeMs,
         polyphonicWorkerMs: event.data.workerDurationMs,
         polyphonicRoundTripMs: event.data.requestedAtMs === undefined
           ? undefined
@@ -486,14 +502,25 @@ export class MicrophonePitchDetector {
       };
       this.emit(result);
     };
-    const modelUrl = new URL(`${import.meta.env.BASE_URL}basic-pitch/model.json`, window.location.href).href;
-    this.polyphonicWorker.postMessage({ type: 'init', modelUrl, preferWasm: isTauri() });
+    this.polyphonicWorker.onerror = () => {
+      this.polyphonicWorker?.terminate();
+      this.polyphonicWorker = null;
+      this.polyphonicError = 'Chord recognition is unavailable. Try reconnecting your input.';
+      this.emit({ frequency: 0, noteName: '', midiNumber: 0, cents: 0, volumeRms: this.lastRms,
+        inTune: false, audioTimeMs: 0, onset: false, pluckId: 0, confidence: 0,
+        polyphonicError: this.polyphonicError });
+    };
+  }
+
+  clearPolyphonicHistory() {
+    this.polyphonicEpoch++;
+    this.polyphonicWorker?.postMessage({ type: 'reset', epoch: this.polyphonicEpoch });
   }
 
   setPolyphonicEnabled(enabled: boolean) {
     if (enabled === this.polyphonicEnabled) return;
     this.polyphonicEnabled = enabled;
-    if (enabled && this.isListening) this.startPolyphonicPreview();
+    if (enabled && this.isListening) this.startPolyphonicRecognition();
     else if (!enabled) {
       this.polyphonicWorker?.terminate();
       this.polyphonicWorker = null;

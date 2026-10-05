@@ -109,13 +109,13 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
       this.pluckCount > 0 &&
       this.filled === this.bufferSize &&
       rms >= this.noiseThreshold &&
-      this.samplesSinceLastSnapshot >= this.hopSize &&
-      this.samplesSinceOnset >= this.bufferSize
+      this.samplesSinceLastSnapshot >= this.hopSize
     ) {
       const snapshot = new Float32Array(this.bufferSize);
       const tail = this.bufferSize - this.writeIndex;
       snapshot.set(this.buffer.subarray(this.writeIndex), 0);
       snapshot.set(this.buffer.subarray(0, this.writeIndex), tail);
+      const monoReady = this.samplesSinceOnset >= this.bufferSize;
 
       this.port.postMessage(
         {
@@ -124,7 +124,8 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
           rms,
           peak: blockPeak,
           crestFactor,
-          onset: this.pendingOnset,
+          monoReady,
+          onset: this.pendingOnset && monoReady,
           pluckId: this.pluckCount,
           attackStrength: this.attackStrength,
           attackAgeMs: (currentFrame - this.lastOnsetFrame) / sampleRate * 1000,
@@ -133,7 +134,7 @@ class GuitarPitchProcessor extends AudioWorkletProcessor {
         [snapshot.buffer]
       );
       this.samplesSinceLastSnapshot %= this.hopSize;
-      this.pendingOnset = false;
+      if (monoReady) this.pendingOnset = false;
     } else if (this.blockCounter % 8 === 0) {
       this.port.postMessage({ type: 'level', rms });
     }

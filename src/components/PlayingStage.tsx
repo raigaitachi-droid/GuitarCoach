@@ -7,6 +7,7 @@ import { TabCanvas } from './TabCanvas';
 import { NoteHighway } from './NoteHighway';
 import { SpeedControl } from './SpeedControl';
 import { isLinkedLegato } from '../utils/practiceSession';
+import { TIMING_FEEDBACK_THRESHOLD_MS } from '../utils/practiceSession';
 
 interface Props {
   song: ImportedSong;
@@ -49,15 +50,18 @@ function loopNoteLabel(notes: TabNote[], noteId: string | undefined) {
 }
 
 function nearestChordTimestamp(notes: TabNote[], playbackMs: number): number | null {
-  const counts = new Map<number, number>();
-  for (const note of notes) counts.set(note.timestampMs, (counts.get(note.timestampMs) || 0) + 1);
-  const timestamps = [...counts.entries()]
-    .filter(([, count]) => count > 1)
-    .map(([timestampMs]) => timestampMs);
-  if (timestamps.length === 0) return null;
-  return timestamps.reduce((nearest, timestampMs) =>
-    Math.abs(timestampMs - playbackMs) < Math.abs(nearest - playbackMs) ? timestampMs : nearest
-  );
+  const groups = new Map<number, { count: number; unresolved: boolean }>();
+  for (const note of notes) {
+    const group = groups.get(note.timestampMs);
+    if (group) { group.count++; group.unresolved ||= !note.hitState; }
+    else groups.set(note.timestampMs, { count: 1, unresolved: !note.hitState });
+  }
+  let nearest: number | null = null;
+  for (const [timestamp, group] of groups) {
+    if (group.count > 1 && group.unresolved &&
+        (nearest === null || Math.abs(timestamp - playbackMs) < Math.abs(nearest - playbackMs))) nearest = timestamp;
+  }
+  return nearest;
 }
 
 const emptyLiveStats = (): LiveFeedbackStats => ({
@@ -112,7 +116,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastJudgedAttack = useRef<{ midiNumber: number; pluckId: number } | null>(null);
   const pendingAttackAudioTime = useRef<number | null>(null);
   const sustainedPitchCooldownUntil = useRef(-Infinity);
-  const pendingChordAttack = useRef<{ audioTimeMs: number; expectedTimestampMs: number; timingOffsetMs: number } | null>(null);
+  const chordAttacks = useRef<{ audioTimeMs: number; expectedTimestampMs: number; timingOffsetMs: number }[]>([]);
   const lastHeardPitchUpdate = useRef(0);
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
@@ -164,8 +168,11 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setWaiting(null);
     setFeedback(null);
     setLiveStats(emptyLiveStats());
+    chordAttacks.current = [];
+    micDetector.clearPolyphonicHistory();
   };
   const clearLoopPass = (boundaries: NonNullable<ReturnType<typeof loopBoundaries>>) => {
+    micDetector.clearPolyphonicHistory();
     updateNotes(resetLoopPass(notesRef.current, boundaries));
     waitingRef.current = null;
     setWaiting(null);
@@ -174,7 +181,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastHitNote.current = null;
     lastJudgedAttack.current = null;
     pendingAttackAudioTime.current = null;
-    pendingChordAttack.current = null;
+    chordAttacks.current = [];
     sustainedPitchCooldownUntil.current = -Infinity;
     setFeedback(null);
     setLiveStats(emptyLiveStats());
@@ -208,7 +215,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastHitNote.current = null;
     lastJudgedAttack.current = null;
     pendingAttackAudioTime.current = null;
-    pendingChordAttack.current = null;
+    chordAttacks.current = [];
     sustainedPitchCooldownUntil.current = -Infinity;
     setFeedback(null);
     setLiveStats(emptyLiveStats());
@@ -221,6 +228,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       quickOnsetTimer.current = null;
     }
     micDetector.clearPitchHistory();
+    micDetector.clearPolyphonicHistory();
     guitarSynth.stop();
     setTransport(!inputError);
   };
@@ -306,13 +314,14 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (result.quickOnset) {
         pendingAttackAudioTime.current = result.audioTimeMs;
         const expectedTimestampMs = nearestChordTimestamp(notesRef.current, playbackRef.current);
-        pendingChordAttack.current = expectedTimestampMs !== null && Math.abs(expectedTimestampMs - playbackRef.current) <= TIMING_WINDOW_MS
-          ? {
+        if (expectedTimestampMs !== null && Math.abs(expectedTimestampMs - playbackRef.current) <= TIMING_WINDOW_MS) {
+          chordAttacks.current.push({
               audioTimeMs: result.audioTimeMs,
               expectedTimestampMs,
-              timingOffsetMs: Math.round(playbackRef.current - expectedTimestampMs),
-            }
-          : null;
+              timingOffsetMs: Math.round((playbackRef.current - expectedTimestampMs) / tempoRef.current - micDetector.getEstimatedInputLatencyMs()),
+            });
+          if (chordAttacks.current.length > 16) chordAttacks.current.shift();
+        }
         setHeardPitch(null);
         setHeardChord([]);
         setQuickOnsetVisible(true);
@@ -326,11 +335,14 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       }
       if (result.polyphonicMidiNumbers) {
         setHeardChord(result.polyphonicMidiNumbers);
-        const pending = pendingChordAttack.current;
-        // A Basic Pitch result can finish after a newer pick even though its
-        // audio belongs to the previous analysis window. Do not count it as
-        // usable chord timing for the new attack.
-        if (pending && result.audioTimeMs >= pending.audioTimeMs) {
+        const fresh = result.polyphonicFreshMidiNumbers || [];
+        if (!fresh.length) return;
+        // Bind a completed window to its original attack, not to a newer
+        // transient that arrived while the worker was analysing the audio.
+        const attackTime = result.polyphonicAttackAudioTimeMs ?? result.audioTimeMs;
+        const pending = [...chordAttacks.current].reverse().find((attack) => attack.audioTimeMs <= attackTime + 1);
+        chordAttacks.current = chordAttacks.current.filter((attack) => attack.audioTimeMs > result.audioTimeMs);
+        if (pending && attackTime - pending.audioTimeMs < 250) {
           const timing = {
             expectedToReadingMs: Math.round(playbackRef.current - pending.expectedTimestampMs),
             attackToReadingMs: Math.round(result.audioTimeMs - pending.audioTimeMs),
@@ -341,7 +353,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           const chord = judgeDetectedChord(
             notesRef.current,
             pending.expectedTimestampMs,
-            result.polyphonicMidiNumbers,
+            fresh,
             waitModeRef.current ? 0 : undefined
           );
           if (chord.kind === 'resolved') {
@@ -349,6 +361,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
               // Practice each unresolved chord tone; a partial reading must
               // never mark the remaining strings missed or award them for free.
               if (waitingRef.current?.timestampMs === pending.expectedTimestampMs && chord.matched.length) {
+                lastConsumedPluck.current = Math.max(lastConsumedPluck.current, result.pluckId);
+                micDetector.clearPitchHistory();
                 const matchedIds = new Set(chord.matched.map((note) => note.id));
                 updateNotes(notesRef.current.map((note) => matchedIds.has(note.id)
                   ? { ...note, hitState: 'hit', timingOffsetMs: undefined } : note));
@@ -358,33 +372,31 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
                 }
                 setFeedback({ text: 'Correct note', kind: 'correct', at: performance.now() });
               }
-              pendingChordAttack.current = null;
               return;
             }
+            if (chord.matched.length) lastConsumedPluck.current = Math.max(lastConsumedPluck.current, result.pluckId);
             const hitIds = new Set(chord.matched.map((note) => note.id));
             const chordIds = new Set(chord.expected.map((note) => note.id));
-            // Once the chord clears its 50% threshold, award the chord as one
-            // playable unit: every displayed string gets a tick. Below that
-            // threshold we retain the per-string partial feedback.
-            const awardedHitIds = chord.passed ? chordIds : hitIds;
             updateNotes(notesRef.current.map((note) => {
               if (!chordIds.has(note.id)) return note;
-              return awardedHitIds.has(note.id)
+              return hitIds.has(note.id)
                 ? { ...note, hitState: 'hit', timingOffsetMs: pending.timingOffsetMs }
                 : { ...note, hitState: 'miss' };
             }));
             micDetector.clearPitchHistory();
+            const chordTimingLabel = pending.timingOffsetMs < -TIMING_FEEDBACK_THRESHOLD_MS ? 'early'
+              : pending.timingOffsetMs > TIMING_FEEDBACK_THRESHOLD_MS ? 'late' : 'on-time';
             setFeedback({
               text: chord.passed
                 ? `Correct chord · ${chord.matched.length}/${chord.expected.length}`
                 : `Incomplete chord · ${chord.matched.length}/${chord.expected.length} · need ${chord.requiredHits}`,
               kind: chord.passed ? 'correct' : 'wrong',
+              timing: chord.passed && chordTimingLabel !== 'on-time' ? chordTimingLabel.toUpperCase() : undefined,
               at: performance.now(),
             });
-            if (chord.passed) registerCorrect('on-time', chord.expected.length);
-            else registerWrong(Math.max(1, chord.missed.length));
+            if (chord.matched.length) registerCorrect(chordTimingLabel, chord.matched.length);
+            if (chord.missed.length) registerWrong(chord.missed.length);
           }
-          pendingChordAttack.current = null;
         }
         return;
       }
@@ -424,7 +436,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         if (waitModeRef.current) return;
         // A previously accepted pick may still ring while Wait Mode advances
         // to the next note. It must not create a wrong attempt for that note.
-        if (result.pluckId === lastConsumedPluck.current || shouldSuppressRepeatedWrongPitch(lastJudgedAttack.current, result)) return;
+        if (result.pluckId <= lastConsumedPluck.current || shouldSuppressRepeatedWrongPitch(lastJudgedAttack.current, result)) return;
         if (result.confidence < 0.68) return;
         if (result.pluckId !== lastFeedbackPluck.current) {
           lastFeedbackPluck.current = result.pluckId;
@@ -439,8 +451,12 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         return;
       }
       const matched = judgement.note;
+      // A mono estimate from a mixed window may be an old ringing string.
+      // Chord tones (including individually picked Wait Mode strings) must
+      // pass the polyphonic worker's per-tone fresh-energy check.
+      if (!scorableIds.has(matched.id)) return;
       // A sustained note cannot satisfy another pick. Retain legato support.
-      if (result.pluckId === lastConsumedPluck.current &&
+      if (result.pluckId <= lastConsumedPluck.current &&
           !isLinkedLegato(lastHitNote.current, matched)) return;
       lastConsumedPluck.current = result.pluckId;
       lastJudgedAttack.current = { midiNumber: result.midiNumber, pluckId: result.pluckId };
@@ -486,7 +502,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
           }
         }
         if (withAudio && !waitModeRef.current && !wrapped) {
-          const missedIds = missedNoteIds(notesRef.current, scorableIds, next, tempoRef.current);
+          const missedIds = missedNoteIds(notesRef.current, waitNoteIds, next, tempoRef.current);
           if (missedIds.size > 0) {
             const judged = notesRef.current.map((note) => missedIds.has(note.id) ? { ...note, hitState: 'miss' as const } : note);
             updateNotes(judged);
@@ -571,9 +587,9 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         <div className="status-detail">
           {withAudio && heardPitch && <span className="detector-readout">Heard {heardPitch.noteName} · {heardPitch.frequency.toFixed(1)} Hz · {Math.round(heardPitch.confidence * 100)}%</span>}
           {withAudio && quickOnsetVisible && <span className="detector-readout onset-marker">Note attack detected</span>}
-          {withAudio && heardChord.length > 1 && <span className="detector-readout">Chord preview: {heardChord.map(midiName).join(' ')}</span>}
+          {withAudio && heardChord.length > 1 && <span className="detector-readout">Heard chord: {heardChord.map(midiName).join(' ')}</span>}
           {import.meta.env.DEV && chordTiming && <span className="detector-readout">Chord timing: {chordTiming.expectedToReadingMs >= 0 ? '+' : ''}{chordTiming.expectedToReadingMs} ms from tab · {chordTiming.attackToReadingMs} ms from attack · {chordTiming.workerMs ?? '—'} ms worker</span>}
-          {withAudio && polyphonicError && <span className="detector-readout">Chord preview unavailable: {polyphonicError}</span>}
+          {withAudio && polyphonicError && <span className="detector-readout">Chord recognition unavailable: {polyphonicError}</span>}
           {waitMode && <span className="muted">Playback waits until you play the correct note.</span>}
         </div>
       </div>
@@ -607,7 +623,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         <TabCanvas notes={notes} playbackMs={playbackMs} tempo={song.tempo} waitingId={waiting?.id} loopStartId={loopRange?.startNoteId} loopEndId={loopRange?.endNoteId} selectingLoop={selectingLoop} onLoopSelect={selectLoopNotes} />
       </div>
       <progress className="practice-progress" max={duration} value={playbackMs} aria-label="Song progress" />
-      <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>{waitMode ? 'Play every chord tone · you can pick the strings individually.' : polyphonicError ? 'Single-note feedback only · chord preview is unavailable.' : 'Chord scoring: at least 50% of expected tones.'}</span>}</footer>
+      <footer className="practice-footer"><span>{withAudio ? 'Your guitar audio is processed locally.' : 'Connect an input when loading a tab to get feedback.'}</span>{hasChords && <span>{waitMode ? 'Play every chord tone · you can pick the strings individually.' : polyphonicError ? 'Single-note feedback only · chord recognition is unavailable.' : 'Chord scoring: every detected matching tone counts.'}</span>}</footer>
     </main>
   );
 }

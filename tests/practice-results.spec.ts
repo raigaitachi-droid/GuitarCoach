@@ -63,6 +63,23 @@ test('wait mode accepts exact chord tones without timing penalties or onset semi
     .toMatchObject({ accuracy: null, correct: 1, waitMode: true });
 });
 
+test('chords require every exact tone and cannot award absent strings or duplicate unisons', () => {
+  const chord: TabNote[] = [
+    { id: 'e', string: 6, fret: 0, timestampMs: 1000, durationMs: 500 },
+    { id: 'b', string: 5, fret: 2, timestampMs: 1000, durationMs: 500 },
+    { id: 'high-e', string: 4, fret: 2, timestampMs: 1000, durationMs: 500 },
+  ];
+  expect(judgeDetectedChord(chord, 1000, [40, 47])).toMatchObject({ passed: false, requiredHits: 3,
+    matched: [chord[0], chord[1]], missed: [chord[2]] });
+  expect(judgeDetectedChord(chord, 1000, [40, 47, 52])).toMatchObject({ passed: true, missed: [] });
+  expect(judgeDetectedChord(chord, 1000, [41, 48, 53])).toMatchObject({ passed: false, matched: [] });
+  const partial = chord.map((note, index) => index < 2 ? { ...note, hitState: 'hit' as const } : note);
+  expect(judgeDetectedChord(partial, 1000, [52])).toMatchObject({ passed: true, matched: [chord[2]] });
+  const unison = [{ ...chord[0], expectedMidi: 64 }, { ...chord[1], expectedMidi: 64 }];
+  expect(judgeDetectedChord(unison, 1000, [64])).toMatchObject({ passed: false, matched: [unison[0]] });
+  expect(judgeDetectedChord(unison, 1000, [64, 64])).toMatchObject({ passed: false, matched: [unison[0]] });
+});
+
 test('pitch judgement applies latency, timing windows, and cents tolerance consistently', () => {
   const target: TabNote = { id: 'target', string: 6, fret: 0, expectedMidi: 40, timestampMs: 1000, durationMs: 500 };
   const scorableIds = new Set(['target']);
