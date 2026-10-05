@@ -48,6 +48,26 @@ test('a simultaneous chord is excluded from monophonic scoring', () => {
   expect([...singleNoteIds(chord)]).toEqual(['hit', 'miss']);
 });
 
+test('finishing a partial chord counts its missing tones but leaves future chords untouched', () => {
+  const partial: TabNote[] = [
+    { id: 'e', string: 6, fret: 0, timestampMs: 1000, durationMs: 500, hitState: 'hit' },
+    { id: 'b', string: 5, fret: 2, timestampMs: 1000, durationMs: 500, hitState: 'close' },
+    { id: 'missing', string: 4, fret: 2, timestampMs: 1000, durationMs: 500 },
+    { id: 'future-e', string: 6, fret: 0, timestampMs: 2000, durationMs: 500 },
+    { id: 'future-b', string: 5, fret: 2, timestampMs: 2000, durationMs: 500 },
+  ];
+  const result = summarizePractice(partial, 100, true);
+  expect(result).toMatchObject({ accuracy: 67, correct: 2, attempted: 3 });
+  expect(result.notes[2].hitState).toBe('miss');
+  expect(result.notes.slice(3).every(note => !note.hitState)).toBe(true);
+  expect(partial[2].hitState).toBeUndefined();
+  const wrong = partial.map(note => ({ ...note, hitState: undefined, mistakeCount: note.id === 'e' ? 1 : undefined }));
+  expect(summarizePractice(wrong, 100, true)).toMatchObject({ accuracy: 0, correct: 0, attempted: 3 });
+  const waited = summarizePractice(partial, 100, true, true);
+  expect(waited).toMatchObject({ accuracy: null, correct: 2, attempted: 2 });
+  expect(waited.notes[2].hitState).toBeUndefined();
+});
+
 test('wait mode accepts exact chord tones without timing penalties or onset semitone shortcuts', () => {
   const chord: TabNote[] = [
     { id: 'e', string: 6, fret: 0, timestampMs: 1000, durationMs: 500 },

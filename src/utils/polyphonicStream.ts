@@ -12,6 +12,10 @@ export interface PolyphonicPacket {
   attackAgeMs?: number;
 }
 
+export const POLY_COLLECTION_MS = 350;
+const ATTACK_ANALYSIS_MS = 20;
+const IDLE_ANALYSIS_MS = 60;
+
 export class PolyphonicStream {
   private analyser = new PolyphonicAnalyser();
   private rolling = new Float32Array(POLY_WINDOW_SIZE);
@@ -24,7 +28,7 @@ export class PolyphonicStream {
   private lastAnalysisTime = -Infinity;
   private latest: PolyphonicEstimate = { midiNumbers: [], amplitudes: new Float32Array(128) };
   private previousPluck = -1;
-  private group: { baseline: Float32Array; startedAt: number; attackAudioTimeMs: number; samples: number; strength: number; reported: boolean } | null = null;
+  private group: { baseline: Float32Array; startedAt: number; attackAudioTimeMs: number; samples: number; strength: number; closed: boolean; emitted: Uint8Array } | null = null;
 
   reset() {
     this.rolling.fill(0);
@@ -33,6 +37,19 @@ export class PolyphonicStream {
     this.latest = { midiNumbers: [], amplitudes: new Float32Array(128) };
     this.previousPluck = -1;
     this.group = null;
+  }
+
+  // Segmentation hints contain no expected pitches. A new score beat may
+  // end a strum; actual pitches still come exclusively from the audio.
+  beginAttack(audioTimeMs: number) {
+    if (this.group && this.group.attackAudioTimeMs < audioTimeMs - 1) {
+      this.group.closed = true;
+      this.previousPluck = -1;
+    }
+  }
+
+  finishAttack(audioTimeMs: number) {
+    if (this.group && Math.abs(this.group.attackAudioTimeMs - audioTimeMs) < 1) this.group.closed = true;
   }
 
   append(packet: PolyphonicPacket) {
@@ -48,9 +65,9 @@ export class PolyphonicStream {
     if (packet.pluckId !== this.previousPluck && (packet.attackAgeMs ?? 0) <= 250) {
       // A short strum may produce several capture attacks. Collect it as one
       // window while preserving the baseline from before its first string.
-      if (!this.group || this.group.reported || packet.audioTimeMs - this.group.startedAt > 250) {
+      if (!this.group || this.group.closed || packet.audioTimeMs - this.group.startedAt > POLY_COLLECTION_MS) {
         this.group = { baseline: this.latest.amplitudes.slice(), startedAt: packet.audioTimeMs, attackAudioTimeMs: packet.audioTimeMs - (packet.attackAgeMs ?? 0),
-          samples: 0, strength: packet.attackStrength, reported: false };
+          samples: 0, strength: packet.attackStrength, closed: false, emitted: new Uint8Array(128) };
       } else this.group.strength = Math.max(this.group.strength, packet.attackStrength);
       this.previousPluck = packet.pluckId;
     }
@@ -74,16 +91,21 @@ export class PolyphonicStream {
     this.resamplePhase -= unique.length;
     this.previousSample = unique[unique.length - 1];
     this.lastSampleTime = packet.audioTimeMs;
-    if (this.filled < POLY_WINDOW_SIZE || packet.audioTimeMs - this.lastAnalysisTime < 60) return null;
+    const collecting = this.group && !this.group.closed && packet.audioTimeMs - this.group.startedAt <= POLY_COLLECTION_MS;
+    if (this.filled < POLY_WINDOW_SIZE || packet.audioTimeMs - this.lastAnalysisTime < (collecting ? ATTACK_ANALYSIS_MS : IDLE_ANALYSIS_MS)) return null;
     const tail = POLY_WINDOW_SIZE - this.write;
     this.ordered.set(this.rolling.subarray(this.write), 0);
     this.ordered.set(this.rolling.subarray(0, this.write), tail);
     this.latest = this.analyser.analyse(this.ordered, packet.noiseThreshold);
     this.lastAnalysisTime = packet.audioTimeMs;
-    if (!this.group || this.group.reported || this.group.samples < POLY_WINDOW_SIZE) return null;
-    this.group.reported = true;
+    if (!this.group || this.group.closed || this.group.samples < POLY_WINDOW_SIZE) return null;
+    const freshMidiNumbers = freshPolyphonicPitches(this.latest, this.group.baseline, this.group.strength)
+      .filter(midi => !this.group!.emitted[midi]);
+    for (const midi of freshMidiNumbers) this.group.emitted[midi] = 1;
+    if (packet.audioTimeMs - this.group.startedAt >= POLY_COLLECTION_MS) this.group.closed = true;
+    if (!freshMidiNumbers.length) return null;
     return { midiNumbers: this.latest.midiNumbers,
-      freshMidiNumbers: freshPolyphonicPitches(this.latest, this.group.baseline, this.group.strength),
+      freshMidiNumbers,
       attackAudioTimeMs: this.group.attackAudioTimeMs, pluckId: packet.pluckId, audioTimeMs: packet.audioTimeMs, requestedAtMs: packet.requestedAtMs };
   }
 }

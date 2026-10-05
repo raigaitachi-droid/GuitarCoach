@@ -512,6 +512,14 @@ export class MicrophonePitchDetector {
     };
   }
 
+  beginPolyphonicAttack(audioTimeMs: number) {
+    this.polyphonicWorker?.postMessage({ type: 'begin_attack', audioTimeMs, epoch: this.polyphonicEpoch });
+  }
+
+  finishPolyphonicAttack(audioTimeMs: number) {
+    this.polyphonicWorker?.postMessage({ type: 'finish_attack', audioTimeMs, epoch: this.polyphonicEpoch });
+  }
+
   clearPolyphonicHistory() {
     this.polyphonicEpoch++;
     this.polyphonicWorker?.postMessage({ type: 'reset', epoch: this.polyphonicEpoch });

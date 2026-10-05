@@ -88,6 +88,62 @@ test('a short strum collects its strings without manufacturing extra reports', (
   expect(stream.append({ samples: new Float32Array(2048), sampleRate, hopSamples: 1024,
     audioTimeMs: 1000, requestedAtMs: 0, pluckId: 4, attackStrength: 2, noiseThreshold: 0.002 })).toBeNull();
 });
+
+for (const sampleRate of [44100, 48000, 96000]) {
+  test(`a continuous 220ms strum emits each tone once and accepts a re-strum at ${sampleRate} Hz`, () => {
+    const stream = new PolyphonicStream();
+    const readings: NonNullable<ReturnType<PolyphonicStream['append']>>[] = [];
+    const picks = [0.1, 0.8].flatMap(start => [40, 47, 52].map((midi, index) => ({ midi, at: start + index * 0.11 })));
+    for (let end = 2048; end < sampleRate * 1.6; end += 1024) {
+      const time = end / sampleRate;
+      const lastPick = picks.filter(pick => pick.at <= time).length - 1;
+      const samples = Float32Array.from({ length: 2048 }, (_, i) => picks.reduce((sum, pick) => {
+        const age = (end - 2048 + i) / sampleRate - pick.at;
+        return sum + (age < 0 ? 0 : 0.08 * Math.exp(-age / 0.7) * Math.sin(2 * Math.PI * 440 * 2 ** ((pick.midi - 69) / 12) * (end - 2048 + i) / sampleRate));
+      }, 0));
+      const reading = stream.append({ samples, sampleRate, hopSamples: 1024, audioTimeMs: time * 1000,
+        requestedAtMs: 0, pluckId: lastPick + 1, attackAgeMs: lastPick < 0 ? 1000 : (time - picks[lastPick].at) * 1000,
+        attackStrength: 2, noiseThreshold: 0.002 });
+      if (reading) readings.push(reading);
+    }
+    expect(readings.flatMap(reading => reading.freshMidiNumbers)).toEqual([40, 47, 52, 40, 47, 52]);
+    const first = readings.filter(reading => reading.attackAudioTimeMs < 800);
+    expect(first.length).toBeGreaterThan(1);
+    expect(first[0].audioTimeMs).toBeLessThan(330);
+    expect(first.every(reading => Math.abs(reading.attackAudioTimeMs - 100) < 1)).toBe(true);
+    expect(readings.at(-1)!.audioTimeMs - 800).toBeLessThan(350);
+  });
+}
+
+test('a beat boundary separates rapid chords and a stale completion cannot close the next attack', () => {
+  const stream = new PolyphonicStream();
+  const sampleRate = 48000;
+  const readings: NonNullable<ReturnType<PolyphonicStream['append']>>[] = [];
+  let boundarySent = false;
+  for (let end = 2048; end < sampleRate * 0.9; end += 1024) {
+    const time = end / sampleRate;
+    if (time >= 0.34 && !boundarySent) {
+      stream.beginAttack(340);
+      boundarySent = true;
+    }
+    const samples = Float32Array.from({ length: 2048 }, (_, i) => [55, 59].reduce((sum, midi) => {
+      const t = (end - 2048 + i) / sampleRate;
+      const frequency = 440 * 2 ** ((midi - 69) / 12);
+      return sum + [0.1, 0.34].reduce((level, at) => {
+        const age = t - at;
+        return level + (age < 0 ? 0 : 0.08 * Math.exp(-age / 0.15) * Math.sin(2 * Math.PI * frequency * t));
+      }, 0);
+    }, 0));
+    const reading = stream.append({ samples, sampleRate, hopSamples: 1024, audioTimeMs: time * 1000,
+      requestedAtMs: 0, pluckId: time < 0.1 ? 0 : time < 0.34 ? 1 : 2,
+      attackAgeMs: time < 0.1 ? 1000 : (time - (time < 0.34 ? 0.1 : 0.34)) * 1000,
+      attackStrength: 2, noiseThreshold: 0.002 });
+    if (boundarySent) stream.finishAttack(100); // delayed acknowledgement of the previous chord
+    if (reading) readings.push(reading);
+  }
+  expect(readings.flatMap(reading => reading.freshMidiNumbers)).toEqual([55, 59, 55, 59]);
+  expect(readings.at(-1)?.attackAudioTimeMs).toBeCloseTo(340, 5);
+});
 for (const partial of [0.2, 0.5]) {
   test(`unequal strings and ${partial} second-partial level do not inflate octaves`, () => {
     const samples = Float32Array.from({ length: POLY_WINDOW_SIZE }, (_, i) => {

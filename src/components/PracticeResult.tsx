@@ -23,8 +23,8 @@ export function PracticeResult({ songTitle, result, weakSection, onPracticeWeakS
             : result.waitMode
             ? `${result.correct} ${result.correct === 1 ? 'note' : 'notes'} practiced · no timing or score.`
             : result.attempted === 0
-            ? 'No single notes were assessed. Play a little longer to get feedback.'
-            : `${result.correct} of ${result.attempted} single notes played correctly.`}
+            ? 'No notes were assessed. Play a little longer to get feedback.'
+            : `${result.correct} of ${result.attempted} notes played correctly.`}
         </p>
         {weakSection && <p className="weak-section">Weakest section: <strong>Bars {weakSection.startBar}–{weakSection.endBar}</strong></p>}
         {error && <p role="alert" className="error-message">{error}</p>}

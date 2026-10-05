@@ -17,15 +17,30 @@ export interface WeakSection {
   mistakes: number;
 }
 
+// Finish an attempted chord without penalizing untouched future bars. During
+// playback its missing tones stay open, allowing the rest of a strum to arrive.
+export function finalizeAttemptedChords(notes: TabNote[]): TabNote[] {
+  const counts = new Map<number, number>();
+  const attempted = new Set<number>();
+  for (const note of notes) {
+    counts.set(note.timestampMs, (counts.get(note.timestampMs) || 0) + 1);
+    if ((note.hitState && note.hitState !== 'unhit') || note.mistakeCount) attempted.add(note.timestampMs);
+  }
+  return notes.map(note => (!note.hitState || note.hitState === 'unhit') &&
+    (counts.get(note.timestampMs) || 0) > 1 && attempted.has(note.timestampMs)
+    ? { ...note, hitState: 'miss' } : note);
+}
+
 // Only judged notes count. Stopping early must not penalize the unplayed tail.
 export function summarizePractice(notes: TabNote[], tempoPercent: number, hadAudio: boolean, waitMode = false): PracticeResult {
-  const attempted = hadAudio ? notes.filter((note) => (note.hitState && note.hitState !== 'unhit') || note.mistakeCount) : [];
+  const judged = hadAudio && !waitMode ? finalizeAttemptedChords(notes) : notes;
+  const attempted = hadAudio ? judged.filter((note) => (note.hitState && note.hitState !== 'unhit') || note.mistakeCount) : [];
   const correct = attempted.filter((note) => note.hitState === 'hit' || note.hitState === 'close').length;
   return {
     accuracy: !waitMode && attempted.length ? Math.round(correct / attempted.length * 100) : null,
     correct,
     attempted: attempted.length,
-    notes: notes.map((note) => ({ ...note })),
+    notes: judged.map((note) => ({ ...note })),
     tempoPercent,
     hadAudio,
     waitMode,

@@ -11,7 +11,7 @@ async function silentGuitar(page: Page) {
   // Exercise real AudioContext + worklet setup with a deterministic silent input.
   // No production test hooks and no dependence on the machine's microphone.
   await page.addInitScript(() => {
-    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, hold: (_midi: number) => {}, changePitch: (_midi: number) => {}, harmonic: (_openMidi: number) => {}, chord: (_midis: number[], _partials?: boolean) => {}, disconnect: () => {} };
+    const state = { active: 0, inputsAvailable: true, constraints: null as MediaStreamConstraints | null, pluck: (_midi: number, _gain?: number, _duration?: number, _ripple?: boolean) => {}, hold: (_midi: number) => {}, changePitch: (_midi: number) => {}, harmonic: (_openMidi: number) => {}, chord: (_midis: number[], _partials?: boolean) => {}, strum: (_midis: number[], _spacing?: number, _delay?: number) => {}, disconnect: () => {} };
     (window as any).testGuitar = state;
     navigator.mediaDevices.enumerateDevices = async () => state.inputsAvailable ? [
       { deviceId: 'usb-guitar', groupId: 'guitar', kind: 'audioinput', label: 'USB test guitar', toJSON: () => ({}) } as MediaDeviceInfo,
@@ -76,6 +76,19 @@ async function silentGuitar(page: Page) {
           oscillator.start();
           oscillator.stop(context.currentTime + 5);
         }
+      };
+      state.strum = (midis, spacing = 0.11, delay = 0) => {
+        const start = context.currentTime + 0.02 + delay;
+        midis.forEach((midi, index) => {
+          const at = start + index * spacing;
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.frequency.value = 440 * 2 ** ((midi - 69) / 12);
+          gain.gain.setValueAtTime(0.08, at);
+          gain.gain.exponentialRampToValueAtTime(0.08 * Math.exp(-5 / 0.8), at + 5);
+          oscillator.connect(gain).connect(destination);
+          oscillator.start(at); oscillator.stop(at + 5);
+        });
       };
       const stream = destination.stream;
       const track = stream.getAudioTracks()[0];
@@ -525,9 +538,11 @@ test('game chord feedback credits only detected strings and marks the absent one
   await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'partial.gp', mimeType: 'application/octet-stream', buffer });
   await page.getByRole('button', { name: 'Start Practice' }).click();
   await expect(page.getByRole('status')).toContainText('Waiting for');
-  await page.getByRole('button', { name: 'Wait Mode On' }).click();
-  await page.evaluate(() => (window as any).testGuitar.chord([40, 47]));
-  await expect(page.getByRole('status')).toContainText('Incomplete chord · 2/3');
+  await page.evaluate(() => {
+    [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Wait Mode'))!.click();
+    (window as any).testGuitar.chord([40, 47]);
+  });
+  await expect(page.getByRole('status')).toContainText('Chord · 2/3');
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByText('67%', { exact: true })).toBeVisible();
 });
@@ -567,4 +582,49 @@ test('a held chord cannot clear its repeated bass as the following single note',
   await expect(page.getByRole('progressbar')).toHaveAttribute('value', '2000');
   await page.getByRole('button', { name: 'Finish practice' }).click();
   await expect(page.getByText('3 notes practiced \u00b7 no timing or score.')).toBeVisible();
+});
+
+test('game accepts later strings of a strum and counts a repeated chord once', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Repeated strums" \\tempo 120 . (0.6 2.5 2.4).4 r.4 (0.6 2.5 2.4).4 | r.1', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'strums.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for');
+  // Schedule the playing and transport transition in one browser task so
+  // renderer/automation overhead cannot shift a real-time audio fixture.
+  await page.evaluate(() => {
+    const wait = [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Wait Mode'))!;
+    wait.click();
+    (window as any).testGuitar.strum([40, 47, 52]);
+    (window as any).testGuitar.strum([40, 47, 52], 0.11, 1);
+  });
+  await expect(page.getByRole('status')).toContainText('Correct chord \u00b7 3/3');
+  await page.waitForTimeout(1800);
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('100%', { exact: true })).toBeVisible();
+  await expect(page.getByText('6 of 6 notes played correctly.')).toBeVisible();
+});
+
+test('a strum collection window expires and missing strings are still scored as misses', async ({ page }) => {
+  await silentGuitar(page);
+  await page.goto('/');
+  const importer = new alphaTab.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Unfinished strum" \\tempo 120 . (0.6 2.5 2.4).1 | r.1', new alphaTab.Settings());
+  const buffer = Buffer.from(new alphaTab.exporter.Gp7Exporter().export(importer.readScore()));
+  await page.getByLabel('Guitar Pro file', { exact: true }).setInputFiles({ name: 'unfinished.gp', mimeType: 'application/octet-stream', buffer });
+  await page.getByRole('button', { name: 'Start Practice' }).click();
+  await expect(page.getByRole('status')).toContainText('Waiting for');
+  await page.evaluate(() => {
+    [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Wait Mode'))!.click();
+    (window as any).testGuitar.strum([40, 47]);
+  });
+  const hud = page.getByRole('region', { name: 'Live practice feedback' });
+  await expect(hud.getByText('2 correct', { exact: true })).toBeVisible();
+  await expect(hud.getByText('1 wrong', { exact: true })).toBeVisible({ timeout: 2000 });
+  await page.getByRole('button', { name: 'Finish practice' }).click();
+  await expect(page.getByText('67%', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 of 3 notes played correctly.')).toBeVisible();
 });

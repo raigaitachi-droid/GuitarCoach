@@ -158,10 +158,17 @@ Wait Mode accepts each freshly detected chord tone and waits for the remaining
 tones; individual picking is supported. In game mode only matched pitches receive
 credit: missing tones are missed, and adjacent frets are not accepted. A held
 string from the preceding chord must gain fresh energy before it can count again.
-Short strums are collected in one window, with a single report per captured attack.
+Short strums share a 350-ms collection window. Newly heard tones are reported
+progressively, once each, so the first strings can count without waiting for the
+last string. A completed chord closes the group before the next chord. In game
+mode an in-window attack gets a bounded allowance for audio/worker delivery;
+unheard strings are still missed when it expires. Finishing a partial chord counts
+its absent tones without penalizing untouched future bars.
 
 The realtime path uses a local spectrum worker without downloading a neural model.
 This is an initial implementation, not verified accuracy on arbitrary microphones.
+Freshness is conservative: re-picks with no clear amplitude rise over a ringing
+tone (including phase cancellation) can still be omitted.
 Before a paid release, record clean double-stops, strums, repeated chords and
 ringing chord changes on physical guitars/interfaces; check both false successes
 and missed tones, response time, and rendering smoothness. The historical MVP

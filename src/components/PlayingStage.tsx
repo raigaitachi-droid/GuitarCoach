@@ -8,6 +8,7 @@ import { NoteHighway } from './NoteHighway';
 import { SpeedControl } from './SpeedControl';
 import { isLinkedLegato } from '../utils/practiceSession';
 import { TIMING_FEEDBACK_THRESHOLD_MS } from '../utils/practiceSession';
+import { POLY_COLLECTION_MS } from '../utils/polyphonicStream';
 
 interface Props {
   song: ImportedSong;
@@ -116,7 +117,8 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
   const lastJudgedAttack = useRef<{ midiNumber: number; pluckId: number } | null>(null);
   const pendingAttackAudioTime = useRef<number | null>(null);
   const sustainedPitchCooldownUntil = useRef(-Infinity);
-  const chordAttacks = useRef<{ audioTimeMs: number; expectedTimestampMs: number; timingOffsetMs: number }[]>([]);
+  const chordAttackTarget = useRef<number | null>(null);
+  const chordAttacks = useRef<{ audioTimeMs: number; expectedTimestampMs: number; timingOffsetMs: number; expiresAt: number }[]>([]);
   const lastHeardPitchUpdate = useRef(0);
   const quickOnsetTimer = useRef<number | null>(null);
   const scorableIds = useMemo(() => singleNoteIds(song.notes), [song]);
@@ -169,6 +171,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     setFeedback(null);
     setLiveStats(emptyLiveStats());
     chordAttacks.current = [];
+    chordAttackTarget.current = null;
     micDetector.clearPolyphonicHistory();
   };
   const clearLoopPass = (boundaries: NonNullable<ReturnType<typeof loopBoundaries>>) => {
@@ -182,6 +185,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastJudgedAttack.current = null;
     pendingAttackAudioTime.current = null;
     chordAttacks.current = [];
+    chordAttackTarget.current = null;
     sustainedPitchCooldownUntil.current = -Infinity;
     setFeedback(null);
     setLiveStats(emptyLiveStats());
@@ -216,6 +220,7 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
     lastJudgedAttack.current = null;
     pendingAttackAudioTime.current = null;
     chordAttacks.current = [];
+    chordAttackTarget.current = null;
     sustainedPitchCooldownUntil.current = -Infinity;
     setFeedback(null);
     setLiveStats(emptyLiveStats());
@@ -314,10 +319,15 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
       if (result.quickOnset) {
         pendingAttackAudioTime.current = result.audioTimeMs;
         const expectedTimestampMs = nearestChordTimestamp(notesRef.current, playbackRef.current);
-        if (expectedTimestampMs !== null && Math.abs(expectedTimestampMs - playbackRef.current) <= TIMING_WINDOW_MS) {
+        if (expectedTimestampMs !== null && Math.abs(expectedTimestampMs - playbackRef.current) <= TIMING_WINDOW_MS * tempoRef.current) {
+          if (chordAttackTarget.current !== expectedTimestampMs) {
+            micDetector.beginPolyphonicAttack(result.audioTimeMs);
+            chordAttackTarget.current = expectedTimestampMs;
+          }
           chordAttacks.current.push({
               audioTimeMs: result.audioTimeMs,
               expectedTimestampMs,
+              expiresAt: performance.now() + POLY_COLLECTION_MS + 100,
               timingOffsetMs: Math.round((playbackRef.current - expectedTimestampMs) / tempoRef.current - micDetector.getEstimatedInputLatencyMs()),
             });
           if (chordAttacks.current.length > 16) chordAttacks.current.shift();
@@ -337,11 +347,10 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         setHeardChord(result.polyphonicMidiNumbers);
         const fresh = result.polyphonicFreshMidiNumbers || [];
         if (!fresh.length) return;
-        // Bind a completed window to its original attack, not to a newer
+        // Bind every progressive reading to its original attack, not to a newer
         // transient that arrived while the worker was analysing the audio.
         const attackTime = result.polyphonicAttackAudioTimeMs ?? result.audioTimeMs;
         const pending = [...chordAttacks.current].reverse().find((attack) => attack.audioTimeMs <= attackTime + 1);
-        chordAttacks.current = chordAttacks.current.filter((attack) => attack.audioTimeMs > result.audioTimeMs);
         if (pending && attackTime - pending.audioTimeMs < 250) {
           const timing = {
             expectedToReadingMs: Math.round(playbackRef.current - pending.expectedTimestampMs),
@@ -357,6 +366,13 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
             waitModeRef.current ? 0 : undefined
           );
           if (chord.kind === 'resolved') {
+            const group = notesRef.current.filter(note => note.timestampMs === pending.expectedTimestampMs);
+            const totalHits = group.filter(note => note.hitState === 'hit' || note.hitState === 'close').length + chord.matched.length;
+            const complete = totalHits === group.length;
+            if (complete) {
+              micDetector.finishPolyphonicAttack(attackTime);
+              chordAttacks.current = chordAttacks.current.filter(attack => attack.audioTimeMs > result.audioTimeMs);
+            }
             if (waitModeRef.current) {
               // Practice each unresolved chord tone; a partial reading must
               // never mark the remaining strings missed or award them for free.
@@ -376,26 +392,23 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
             }
             if (chord.matched.length) lastConsumedPluck.current = Math.max(lastConsumedPluck.current, result.pluckId);
             const hitIds = new Set(chord.matched.map((note) => note.id));
-            const chordIds = new Set(chord.expected.map((note) => note.id));
+            const wrongId = chord.matched.length ? null : chord.expected[0]?.id;
             updateNotes(notesRef.current.map((note) => {
-              if (!chordIds.has(note.id)) return note;
-              return hitIds.has(note.id)
-                ? { ...note, hitState: 'hit', timingOffsetMs: pending.timingOffsetMs }
-                : { ...note, hitState: 'miss' };
+              if (hitIds.has(note.id)) return { ...note, hitState: 'hit', timingOffsetMs: pending.timingOffsetMs };
+              return note.id === wrongId ? { ...note, mistakeCount: (note.mistakeCount || 0) + 1 } : note;
             }));
             micDetector.clearPitchHistory();
             const chordTimingLabel = pending.timingOffsetMs < -TIMING_FEEDBACK_THRESHOLD_MS ? 'early'
               : pending.timingOffsetMs > TIMING_FEEDBACK_THRESHOLD_MS ? 'late' : 'on-time';
             setFeedback({
-              text: chord.passed
-                ? `Correct chord · ${chord.matched.length}/${chord.expected.length}`
-                : `Incomplete chord · ${chord.matched.length}/${chord.expected.length} · need ${chord.requiredHits}`,
-              kind: chord.passed ? 'correct' : 'wrong',
-              timing: chord.passed && chordTimingLabel !== 'on-time' ? chordTimingLabel.toUpperCase() : undefined,
+              text: complete
+                ? `Correct chord · ${totalHits}/${group.length}`
+                : `Chord · ${totalHits}/${group.length}`,
+              kind: chord.matched.length ? 'correct' : 'wrong',
+              timing: complete && chordTimingLabel !== 'on-time' ? chordTimingLabel.toUpperCase() : undefined,
               at: performance.now(),
             });
             if (chord.matched.length) registerCorrect(chordTimingLabel, chord.matched.length);
-            if (chord.missed.length) registerWrong(chord.missed.length);
           }
         }
         return;
@@ -503,6 +516,15 @@ export function PlayingStage({ song, withAudio, tempoPercent, initialLoopRange, 
         }
         if (withAudio && !waitModeRef.current && !wrapped) {
           const missedIds = missedNoteIds(notesRef.current, waitNoteIds, next, tempoRef.current);
+          // The attack was inside the existing timing window. Allow its
+          // bounded audio collection/worker delivery to finish before a miss,
+          // even when later strum strings arrive after the transport deadline.
+          if (missedIds.size) {
+            for (const note of notesRef.current) {
+              if (missedIds.has(note.id) && chordAttacks.current.some(attack =>
+                attack.expectedTimestampMs === note.timestampMs && now < attack.expiresAt)) missedIds.delete(note.id);
+            }
+          }
           if (missedIds.size > 0) {
             const judged = notesRef.current.map((note) => missedIds.has(note.id) ? { ...note, hitState: 'miss' as const } : note);
             updateNotes(judged);
